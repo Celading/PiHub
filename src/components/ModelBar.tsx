@@ -3,7 +3,6 @@ import type { RpcState } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import './ModelBar.css';
-
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 interface ModelBarProps {
@@ -21,6 +20,23 @@ interface ModelOption {
 export function ModelBar({ rpcState, onSetModel, onSetThinking }: ModelBarProps): React.JSX.Element {
   const { t } = useI18n();
   const [options, setOptions] = useState<ModelOption[]>([]);
+  const [savedNotice, setSavedNotice] = useState(false);
+
+  const saveCurrent = async (): Promise<void> => {
+    const model = rpcState?.model;
+    if (model === undefined || model === null) {
+      return;
+    }
+    try {
+      await api.saveModel(model.provider, model.id);
+      setSavedNotice(true);
+      window.setTimeout(() => {
+        setSavedNotice(false);
+      }, 2500);
+    } catch {
+      setSavedNotice(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +124,20 @@ export function ModelBar({ rpcState, onSetModel, onSetThinking }: ModelBarProps)
           ))}
         </select>
       </label>
+      {savedNotice ? (
+        <span className="modelbar-saved mono">{t('session.save.done')}</span>
+      ) : (
+        <button
+          type="button"
+          className="modelbar-save"
+          onClick={() => {
+            void saveCurrent();
+          }}
+          disabled={rpcState?.model === null || rpcState?.model === undefined}
+        >
+          {t('session.saveModel')}
+        </button>
+      )}
     </div>
   );
 }

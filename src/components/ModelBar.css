@@ -29,3 +29,31 @@
   font-family: inherit;
   font-size: var(--text-sm);
 }
+
+.modelbar-save {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-thin) solid var(--primary);
+  border-radius: var(--radius-none);
+  background-color: transparent;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.modelbar-save:hover:not(:disabled) {
+  background-color: var(--primary-subtle);
+}
+
+.modelbar-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.modelbar-saved {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--green-60);
+}

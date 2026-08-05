@@ -109,6 +109,41 @@
   background-color: var(--surface-hover);
 }
 
+.session-auto-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.stats-modal-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.stats-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+}
+
+.stats-modal-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.stats-modal-value {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
 .session-meta {
   margin-top: var(--space-2);
   font-size: var(--text-xs);

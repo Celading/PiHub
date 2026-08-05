@@ -49,6 +49,9 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
   const [showAll, setShowAll] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [statsData, setStatsData] = useState<Record<string, unknown> | null>(null);
+  const [autoCompact, setAutoCompact] = useState(false);
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -95,6 +98,84 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
     },
     [reload, runAction],
   );
+
+  const handleCompact = useCallback(async (): Promise<void> => {
+    setError(null);
+    try {
+      const response = await api.compact();
+      if (!response.success) {
+        setError(response.error ?? 'compact failed');
+        return;
+      }
+      setNotice(t('session.compact.done'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [t]);
+
+  const handleExport = useCallback(async (): Promise<void> => {
+    setError(null);
+    try {
+      const response = await api.exportHtml();
+      if (!response.success) {
+        setError(response.error ?? 'export failed');
+        return;
+      }
+      setNotice(t('session.export.done'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [t]);
+
+  const handleStats = useCallback(async (): Promise<void> => {
+    setError(null);
+    try {
+      const data = await api.sessionStats();
+      setStatsData(data as Record<string, unknown>);
+      setStatsOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const handleAutoCompact = useCallback(async (): Promise<void> => {
+    setError(null);
+    try {
+      const state = await api.rpcState();
+      const next = !(state.autoCompactionEnabled ?? false);
+      await api.setAutoCompaction(next);
+      setAutoCompact(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  // compaction lifecycle banner
+  useEffect(() => {
+    const source = new EventSource('/api/events');
+    const onPiEvent = (event: MessageEvent<string>): void => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(event.data) as unknown;
+      } catch {
+        return;
+      }
+      if (typeof parsed !== 'object' || parsed === null) {
+        return;
+      }
+      const record = parsed as Record<string, unknown>;
+      if (record['type'] === 'compaction_start') {
+        setNotice(t('session.compacting'));
+      } else if (record['type'] === 'compaction_end') {
+        setNotice(t('session.compact.done'));
+        void reload();
+      }
+    };
+    source.addEventListener('pi', onPiEvent);
+    return () => {
+      source.close();
+    };
+  }, [reload, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,6 +304,25 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
           <button type="button" className="session-action-btn" onClick={() => { void handleClone(); }}>
             {t('session.clone')}
           </button>
+          <button type="button" className="session-action-btn" onClick={() => { void handleStats(); }}>
+            {t('session.stats')}
+          </button>
+          <button type="button" className="session-action-btn" onClick={() => { void handleCompact(); }}>
+            {t('session.compact')}
+          </button>
+          <button type="button" className="session-action-btn" onClick={() => { void handleExport(); }}>
+            {t('session.export')}
+          </button>
+          <label className="session-auto-compact mono">
+            <input
+              type="checkbox"
+              checked={autoCompact}
+              onChange={() => {
+                void handleAutoCompact();
+              }}
+            />
+            {t('session.autoCompact')}
+          </label>
           {offBranchCount > 0 ? (
             <button
               type="button"
@@ -274,6 +374,17 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
       {composer.error !== null ? (
         <div className="sessions-error mono">{composer.error}</div>
       ) : null}
+
+      {statsOpen ? (
+        <SessionStatsModal
+          data={statsData}
+          onClose={() => {
+            setStatsOpen(false);
+          }}
+          t={t}
+        />
+      ) : null}
+
       <div className="session-composer">
         <Composer
           isAgentRunning={composer.isRunning}
@@ -289,5 +400,83 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
         />
       </div>
     </section>
+  );
+}
+
+interface SessionStatsModalProps {
+  data: Record<string, unknown> | null;
+  onClose: () => void;
+  t: (key: MessageKey, params?: Record<string, string | number>) => string;
+}
+
+function SessionStatsModal({ data, onClose, t }: SessionStatsModalProps): React.JSX.Element {
+  const tokens = (data?.['tokens'] as Record<string, unknown> | undefined) ?? null;
+  const context = (data?.['contextUsage'] as Record<string, unknown> | undefined) ?? null;
+  const cost = data?.['cost'];
+
+  const rows: Array<{ label: string; value: string }> = [];
+  if (data !== null) {
+    for (const key of ['userMessages', 'assistantMessages', 'toolCalls', 'toolResults', 'totalMessages']) {
+      const value = data[key];
+      if (typeof value === 'number') {
+        rows.push({ label: key, value: String(value) });
+      }
+    }
+    if (tokens !== null) {
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'total']) {
+        const value = tokens[key];
+        if (typeof value === 'number') {
+          rows.push({ label: `tokens.${key}`, value: String(value) });
+        }
+      }
+    }
+    if (typeof cost === 'number') {
+      rows.push({ label: 'cost', value: `$${cost.toFixed(4)}` });
+    }
+    if (context !== null) {
+      const percent = context['percent'];
+      if (typeof percent === 'number') {
+        rows.push({
+          label: t('session.stats.context'),
+          value: t('session.stats.percent', { percent: String(percent) }),
+        });
+      }
+    }
+  }
+
+  return (
+    <div className="palette-overlay" role="presentation">
+      <div className="palette" role="dialog" aria-modal="true" aria-label={t('session.stats.title')}>
+        <div className="palette-head">
+          <span className="palette-title">{t('session.stats.title')}</span>
+        </div>
+        <div className="palette-body">
+          {rows.length === 0 ? (
+            <p className="palette-hint">{t('settings.loading')}</p>
+          ) : (
+            <div className="stats-modal-rows">
+              {rows.map((row) => (
+                <div key={row.label} className="stats-modal-row">
+                  <span className="stats-modal-label mono">{row.label}</span>
+                  <span className="stats-modal-value mono">{row.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="palette-foot mono">
+          <span />
+          <button
+            type="button"
+            className="palette-close"
+            onClick={() => {
+              onClose();
+            }}
+          >
+            {t('palette.close')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

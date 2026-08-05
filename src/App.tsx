@@ -23,6 +23,39 @@ export function App(): React.JSX.Element {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  // Global shortcuts: Esc=abort (when no modal is open), Ctrl+Shift+M=
+  // command palette, Alt+1..4=view switch.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        const viewNumber = Number(event.key);
+        if (viewNumber >= 1 && viewNumber <= 4) {
+          const views: View[] = ['chat', 'sessions', 'stats', 'settings'];
+          const target = views[viewNumber - 1];
+          if (target !== undefined) {
+            event.preventDefault();
+            setView(target);
+          }
+        }
+        return;
+      }
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        setCommandOpen(true);
+        return;
+      }
+      if (event.key === 'Escape' && !commandOpen) {
+        void api.abort().catch(() => {
+          // offline or idle; ignore
+        });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [commandOpen]);
+
   const renderPage = (): React.JSX.Element => {
     switch (view) {
       case 'chat':

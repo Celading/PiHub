@@ -147,8 +147,11 @@ export interface RpcState {
   model: ModelInfo | null;
   thinkingLevel: string;
   isStreaming: boolean;
+  isCompacting?: boolean;
   sessionFile?: string;
   sessionId?: string;
+  sessionName?: string;
+  autoCompactionEnabled?: boolean;
   messageCount?: number;
   pendingMessageCount?: number;
 }

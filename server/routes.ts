@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -11,9 +11,16 @@ import type { SseHub } from './sse.js';
 
 const AGENT_DIR = path.join(os.homedir(), '.pi', 'agent');
 
+const promptImageSchema = z.object({
+  type: z.literal('image'),
+  data: z.string(),
+  mimeType: z.string().optional(),
+});
+
 const promptBodySchema = z.object({
   message: z.string().min(1).max(32_000),
   streamingBehavior: z.enum(['steer', 'followUp']).optional(),
+  images: z.array(promptImageSchema).max(8).optional(),
 });
 
 const steerBodySchema = z.object({
@@ -39,6 +46,19 @@ const forkBodySchema = z.object({
 
 const renameBodySchema = z.object({
   name: z.string().max(256),
+});
+
+const bashBodySchema = z.object({
+  command: z.string().min(1).max(4096),
+});
+
+const autoCompactionBodySchema = z.object({
+  enabled: z.boolean(),
+});
+
+const saveModelBodySchema = z.object({
+  provider: z.string().min(1).max(128),
+  modelId: z.string().min(1).max(256),
 });
 
 async function readJson(fileName: string): Promise<unknown> {
@@ -135,6 +155,7 @@ export function createRouter(
         ...(body.data.streamingBehavior !== undefined
           ? { streamingBehavior: body.data.streamingBehavior }
           : {}),
+        ...(body.data.images !== undefined ? { images: body.data.images } : {}),
       }),
     );
   });
@@ -254,6 +275,91 @@ export function createRouter(
 
   router.get('/api/rpc/commands', async (_req, res) => {
     await withBridge(res, () => bridge.send({ type: 'get_commands' }));
+  });
+
+  router.post('/api/rpc/bash', async (req, res) => {
+    const body = bashBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid bash command' });
+      return;
+    }
+    try {
+      const response = await bridge.send({ type: 'bash', command: body.data.command });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/abort-bash', async (_req, res) => {
+    try {
+      const response = await bridge.send({ type: 'abort_bash' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/compact', async (_req, res) => {
+    try {
+      const response = await bridge.send({ type: 'compact' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/auto-compaction', async (req, res) => {
+    const body = autoCompactionBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid auto-compaction body' });
+      return;
+    }
+    try {
+      const response = await bridge.send({
+        type: 'set_auto_compaction',
+        enabled: body.data.enabled,
+      });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/rpc/session-stats', async (_req, res) => {
+    await withBridge(res, () => bridge.send({ type: 'get_session_stats' }));
+  });
+
+  router.post('/api/rpc/export-html', async (_req, res) => {
+    try {
+      const response = await bridge.send({ type: 'export_html' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/settings/model', async (req, res) => {
+    const body = saveModelBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid model body' });
+      return;
+    }
+    try {
+      const settingsPath = path.join(AGENT_DIR, 'settings.json');
+      const raw = await readJson(settingsPath);
+      const current =
+        typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+      const next = {
+        ...current,
+        defaultProvider: body.data.provider,
+        defaultModel: body.data.modelId,
+      };
+      await writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+      res.json({ success: true, saved: { provider: body.data.provider, modelId: body.data.modelId } });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.get('/api/events', (req, res) => {

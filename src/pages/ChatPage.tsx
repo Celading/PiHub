@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useChatSession } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
 import { ModelBar } from '../components/ModelBar.js';
+import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import './ChatPage.css';
 
@@ -10,6 +11,8 @@ export function ChatPage(): React.JSX.Element {
   const chat = useChatSession();
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const wasRunningRef = useRef(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -17,6 +20,23 @@ export function ChatPage(): React.JSX.Element {
       element.scrollTop = element.scrollHeight;
     }
   }, [chat.messages.length, chat.isAgentRunning]);
+
+  // Browser notification when the agent settles after a run.
+  useEffect(() => {
+    const wasRunning = wasRunningRef.current;
+    wasRunningRef.current = chat.isAgentRunning;
+    if (wasRunning && !chat.isAgentRunning && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        new Notification(t('notify.settled.title'), { body: t('notify.settled.body') });
+      } else if (Notification.permission === 'default') {
+        void Notification.requestPermission().then((permission) => {
+          if (permission === 'granted') {
+            new Notification(t('notify.settled.title'), { body: t('notify.settled.body') });
+          }
+        });
+      }
+    }
+  }, [chat.isAgentRunning, t]);
 
   return (
     <section className="chatpage">
@@ -54,18 +74,30 @@ export function ChatPage(): React.JSX.Element {
           </div>
         )}
       </div>
-      <Composer
-        isAgentRunning={chat.isAgentRunning}
-        onSendPrompt={(text) => {
-          void chat.sendPrompt(text);
-        }}
-        onSendSteer={(text) => {
-          void chat.sendSteer(text);
-        }}
-        onAbort={() => {
-          void chat.abort();
-        }}
-      />
+      {terminalOpen ? <TerminalPanel /> : null}
+      <div className="chatpage-bottom">
+        <button
+          type="button"
+          className="chatpage-terminal-toggle mono"
+          onClick={() => {
+            setTerminalOpen(!terminalOpen);
+          }}
+        >
+          {terminalOpen ? '▾' : '▴'} {t('terminal.title')}
+        </button>
+        <Composer
+          isAgentRunning={chat.isAgentRunning}
+          onSendPrompt={(text, images) => {
+            void chat.sendPrompt(text, images);
+          }}
+          onSendSteer={(text) => {
+            void chat.sendSteer(text);
+          }}
+          onAbort={() => {
+            void chat.abort();
+          }}
+        />
+      </div>
     </section>
   );
 }

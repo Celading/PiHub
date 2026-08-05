@@ -7,6 +7,34 @@
   background-color: var(--surface);
 }
 
+.composer-images {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.composer-image-wrap {
+  position: relative;
+}
+
+.composer-image {
+  max-height: 5rem;
+  border: var(--border-thin) solid var(--border-strong);
+}
+
+.composer-image-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0;
+  background-color: var(--red-60);
+  color: #ffffff;
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+
 .composer-input {
   width: 100%;
   padding: var(--space-3);

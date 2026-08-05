@@ -19,13 +19,18 @@ export type RpcCommand =
   | { type: 'fork'; entryId: string }
   | { type: 'clone' }
   | { type: 'set_session_name'; name: string }
+  | { type: 'bash'; command: string }
+  | { type: 'abort_bash' }
+  | { type: 'compact' }
+  | { type: 'set_auto_compaction'; enabled: boolean }
+  | { type: 'get_session_stats' }
+  | { type: 'export_html'; outputPath?: string }
   | { type: 'get_commands' }
   | { type: 'get_state' }
   | { type: 'get_messages' }
   | { type: 'get_entries'; since?: string }
   | { type: 'get_tree' }
   | { type: 'get_available_models' }
-  | { type: 'get_session_stats' }
   | { type: 'get_fork_messages' };
 
 interface PendingRequest {

@@ -31,6 +31,12 @@ export interface MessagesResponse {
   messages: unknown[];
 }
 
+export interface PromptImage {
+  type: 'image';
+  data: string;
+  mimeType?: string;
+}
+
 export const api = {
   sessions(): Promise<SessionListResponse> {
     return request<SessionListResponse>('/api/sessions');
@@ -60,12 +66,18 @@ export const api = {
     return request<MessagesResponse>('/api/rpc/messages');
   },
 
-  prompt(message: string, streamingBehavior?: 'steer' | 'followUp'): Promise<RpcResponse> {
+  prompt(
+    message: string,
+    streamingBehavior?: 'steer' | 'followUp',
+    images?: PromptImage[],
+  ): Promise<RpcResponse> {
     return request<RpcResponse>('/api/rpc/prompt', {
       method: 'POST',
-      body: JSON.stringify(
-        streamingBehavior === undefined ? { message } : { message, streamingBehavior },
-      ),
+      body: JSON.stringify({
+        message,
+        ...(streamingBehavior === undefined ? {} : { streamingBehavior }),
+        ...(images === undefined || images.length === 0 ? {} : { images }),
+      }),
     });
   },
 
@@ -120,6 +132,43 @@ export const api = {
     return request<RpcResponse>('/api/rpc/rename', {
       method: 'POST',
       body: JSON.stringify({ name }),
+    });
+  },
+
+  bash(command: string): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/bash', {
+      method: 'POST',
+      body: JSON.stringify({ command }),
+    });
+  },
+
+  abortBash(): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/abort-bash', { method: 'POST' });
+  },
+
+  compact(): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/compact', { method: 'POST' });
+  },
+
+  setAutoCompaction(enabled: boolean): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/auto-compaction', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  sessionStats(): Promise<unknown> {
+    return request<unknown>('/api/rpc/session-stats');
+  },
+
+  exportHtml(): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/export-html', { method: 'POST' });
+  },
+
+  saveModel(provider: string, modelId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/settings/model', {
+      method: 'POST',
+      body: JSON.stringify({ provider, modelId }),
     });
   },
 

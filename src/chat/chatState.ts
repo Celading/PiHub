@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer } from 'react';
 import type { AgentMessage, RpcState, RpcStreamEvent } from '../../shared/types.js';
-import { api } from '../api/client.js';
+import { api, type PromptImage } from '../api/client.js';
 
 export interface ChatMessage {
   key: string;
@@ -159,7 +159,7 @@ export interface ChatSession {
   pendingFollowUp: string[];
   rpcState: RpcState | null;
   error: string | null;
-  sendPrompt: (text: string) => Promise<void>;
+  sendPrompt: (text: string, images?: PromptImage[]) => Promise<void>;
   sendSteer: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   setModel: (provider: string, modelId: string) => Promise<void>;
@@ -233,17 +233,20 @@ export function useChatSession(): ChatSession {
     }
   }, []);
 
-  const sendPrompt = useCallback(async (text: string): Promise<void> => {
-    try {
-      await api.prompt(text);
-      void refreshState();
-    } catch (error) {
-      dispatch({
-        type: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }, [refreshState]);
+  const sendPrompt = useCallback(
+    async (text: string, images?: PromptImage[]): Promise<void> => {
+      try {
+        await api.prompt(text, undefined, images);
+        void refreshState();
+      } catch (error) {
+        dispatch({
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [refreshState],
+  );
 
   const sendSteer = useCallback(async (text: string): Promise<void> => {
     try {
