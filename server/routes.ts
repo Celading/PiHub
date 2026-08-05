@@ -162,6 +162,15 @@ export function createRouter(
     res.json(response.data);
   });
 
+  router.get('/api/rpc/messages', async (_req, res) => {
+    const response = await bridge.send({ type: 'get_messages' });
+    if (!response.success) {
+      res.status(502).json({ error: 'pi messages unavailable' });
+      return;
+    }
+    res.json(response.data);
+  });
+
   router.get('/api/events', (req, res) => {
     hub.addClient(res);
     req.on('close', () => {
