@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SessionSummary } from '../../shared/types.js';
-import type { View } from '../types/app.js';
+import type { SettingsSectionId, View } from '../types/app.js';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
@@ -13,9 +13,45 @@ const MAX_SESSIONS = 24;
 
 interface SidebarProps {
   view: View;
+  mode: 'primary' | 'settings';
+  settingsSection: SettingsSectionId;
+  onSettingsSectionChange: (section: SettingsSectionId) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
   onOpenCommands: () => void;
+}
+
+/** Settings modal tree: shown in the global sidebar while the settings
+ *  view is active (phase-3 modal switch). */
+const SETTINGS_SECTIONS: ReadonlyArray<{
+  id: SettingsSectionId;
+  icon: string;
+}> = [
+  { id: 'general', icon: 'hico-gearshape' },
+  { id: 'personal', icon: 'hico-sliders' },
+  { id: 'models', icon: 'hico-square-grid' },
+  { id: 'sessions', icon: 'hico-rectangle-stack' },
+  { id: 'permissions', icon: 'hico-lock' },
+  { id: 'favorites', icon: 'hico-bookmark' },
+  { id: 'lab', icon: 'hico-flask' },
+];
+
+type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
+
+const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
+  general: 'settings.nav.general',
+  personal: 'settings.nav.personal',
+  models: 'settings.nav.models',
+  sessions: 'settings.nav.sessions',
+  permissions: 'settings.nav.permissions',
+  favorites: 'settings.nav.favorites',
+  lab: 'settings.nav.lab',
+};
+
+function settingsSectionLabelKey(id: SettingsSectionId): MessageKey {
+  return SETTINGS_SECTION_LABELS[id];
 }
 
 function formatTime(iso: string, intlTag: string): string {
@@ -115,6 +151,11 @@ function SessionRow({ session, intlTag, onOpen, onClone, onArchive, t }: Session
 
 export function Sidebar({
   view,
+  mode,
+  settingsSection,
+  onSettingsSectionChange,
+  collapsed,
+  onToggleCollapsed,
   onViewChange,
   onSessionChanged,
   onOpenCommands,
@@ -368,6 +409,65 @@ export function Sidebar({
     t,
   };
 
+  if (collapsed) {
+    return (
+      <nav className="sidebar sidebar-collapsed" aria-label="Sidebar collapsed">
+        <button
+          type="button"
+          className="sidebar-collapse-expand"
+          onClick={onToggleCollapsed}
+          title={t('sidebar.expand')}
+          aria-label={t('sidebar.expand')}
+        >
+          <span className="hico hico-chevron-right" aria-hidden="true" />
+        </button>
+        <span className="sidebar-collapse-mark" aria-hidden="true">
+          π
+        </span>
+      </nav>
+    );
+  }
+
+  if (mode === 'settings') {
+    return (
+      <nav className="sidebar" aria-label="Settings">
+        <div className="sidebar-settings-head">
+          <span className="sidebar-settings-title mono">{t('settings.title')}</span>
+        </div>
+        <hr className="swiss-rule" />
+        <div className="sidebar-settings-tree scroll-area">
+          {SETTINGS_SECTIONS.map((entry, index) => (
+            <button
+              key={entry.id}
+              type="button"
+              className="sidebar-settings-item"
+              data-active={settingsSection === entry.id}
+              onClick={() => {
+                onSettingsSectionChange(entry.id);
+              }}
+            >
+              <span className="sidebar-settings-number mono">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <span className={`hico ${entry.icon}`} aria-hidden="true" />
+              <span>{t(settingsSectionLabelKey(entry.id))}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="sidebar-back-wide mono"
+          onClick={() => {
+            onViewChange('chat');
+          }}
+        >
+          <span className="hico hico-arrow-left" aria-hidden="true" />
+          <span>{t('settings.back')}</span>
+        </button>
+      </nav>
+    );
+  }
+
   return (
     <nav className="sidebar" aria-label="Primary">
       <div className="sidebar-top">
@@ -514,33 +614,30 @@ export function Sidebar({
 
       <div className="sidebar-footer">
         <div className="sidebar-footer-actions">
-          <button
-            type="button"
-            className="sidebar-footer-link"
-            title={t('sidebar.help')}
-            aria-disabled="true"
-          >
-            <span className="hico hico-questionmark-circle" aria-hidden="true" />
-            <span className="mono">{t('sidebar.help')}</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-footer-link"
-            data-active={view === 'sessions'}
-            onClick={() => { onViewChange('sessions'); }}
-          >
-            <span className="hico hico-clock" aria-hidden="true" />
-            <span className="mono">{t('sidebar.history')}</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-footer-link"
-            data-active={view === 'stats'}
-            onClick={() => { onViewChange('stats'); }}
-          >
-            <span className="hico hico-square-grid" aria-hidden="true" />
-            <span className="mono">{t('sidebar.stats')}</span>
-          </button>
+          <IconButton
+            icon="hico-questionmark-circle"
+            label={t('sidebar.help')}
+            placement="bottom"
+            disabled
+          />
+          <IconButton
+            icon="hico-clock"
+            label={t('sidebar.history')}
+            placement="bottom"
+            dataActive={view === 'sessions'}
+            onClick={() => {
+              onViewChange('sessions');
+            }}
+          />
+          <IconButton
+            icon="hico-square-grid"
+            label={t('sidebar.stats')}
+            placement="bottom"
+            dataActive={view === 'stats'}
+            onClick={() => {
+              onViewChange('stats');
+            }}
+          />
         </div>
         <div className="sidebar-user">
           {editingUser ? (
@@ -562,7 +659,9 @@ export function Sidebar({
             <button
               type="button"
               className="sidebar-user-id"
-              onClick={() => { setEditingUser(true); }}
+              onClick={() => {
+                setEditingUser(true);
+              }}
               title={t('sidebar.user.id')}
             >
               <span className="sidebar-user-avatar" aria-hidden="true">
@@ -571,15 +670,15 @@ export function Sidebar({
               <span className="mono">{userId}</span>
             </button>
           )}
-          <button
-            type="button"
-            className="sidebar-footer-link"
-            data-active={view === 'settings'}
-            onClick={() => { onViewChange('settings'); }}
-          >
-            <span className="hico hico-gearshape" aria-hidden="true" />
-            <span className="mono">{t('sidebar.settings')}</span>
-          </button>
+          <IconButton
+            icon="hico-gearshape"
+            label={t('sidebar.settings')}
+            placement="bottom"
+            dataActive={view === 'settings'}
+            onClick={() => {
+              onViewChange('settings');
+            }}
+          />
         </div>
       </div>
     </nav>

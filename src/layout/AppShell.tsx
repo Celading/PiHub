@@ -1,12 +1,22 @@
-import type { ReactNode } from 'react';
-import type { Theme, View } from '../types/app';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import type { SettingsSectionId, Theme, View } from '../types/app';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import './AppShell.css';
 
+const SIDEBAR_WIDTH_KEY = 'pi-panel:sidebar-width';
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_DEFAULT = 272;
+const RESIZER_WIDTH = 6;
+
 interface AppShellProps {
   view: View;
   theme: Theme;
+  settingsSection: SettingsSectionId;
+  onSettingsSectionChange: (section: SettingsSectionId) => void;
+  sidebarCollapsed: boolean;
+  onToggleCollapsed: () => void;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
   onOpenCommands: () => void;
@@ -14,23 +24,91 @@ interface AppShellProps {
   children: ReactNode;
 }
 
+function loadSidebarWidth(): number {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (raw !== null) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, parsed));
+      }
+    }
+  } catch {
+    // storage unavailable — keep default
+  }
+  return SIDEBAR_DEFAULT;
+}
+
 export function AppShell({
   view,
   theme,
+  settingsSection,
+  onSettingsSectionChange,
+  sidebarCollapsed,
+  onToggleCollapsed,
   onViewChange,
   onSessionChanged,
   onOpenCommands,
   onThemeToggle,
   children,
 }: AppShellProps): React.JSX.Element {
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {
+      // storage unavailable
+    }
+  }, [sidebarWidth]);
+
+  // Drag-to-resize: mousemove/mouseup listeners live on the window so the
+  // drag keeps tracking outside the resizer strip.
+  const startResize = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (moveEvent: MouseEvent): void => {
+      const next = Math.min(
+        SIDEBAR_MAX,
+        Math.max(SIDEBAR_MIN, startWidth + (moveEvent.clientX - startX)),
+      );
+      setSidebarWidth(next);
+    };
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [sidebarWidth]);
+
+  const sidebarCol = sidebarCollapsed ? '2rem' : `${String(sidebarWidth)}px`;
+
   return (
-    <div className="shell">
+    <div
+      className="shell"
+      style={{ gridTemplateColumns: `${sidebarCol} ${String(RESIZER_WIDTH)}px minmax(0, 1fr)` }}
+    >
       <Header theme={theme} onThemeToggle={onThemeToggle} />
       <Sidebar
         view={view}
+        mode={view === 'settings' ? 'settings' : 'primary'}
+        settingsSection={settingsSection}
+        onSettingsSectionChange={onSettingsSectionChange}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={onToggleCollapsed}
         onViewChange={onViewChange}
         onSessionChanged={onSessionChanged}
         onOpenCommands={onOpenCommands}
+      />
+      <div
+        className="shell-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onMouseDown={startResize}
+        data-collapsed={sidebarCollapsed}
       />
       <main className="shell-main scroll-area">{children}</main>
     </div>

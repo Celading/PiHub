@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import { useLabFlag } from '../lab/labFlags.js';
 import './MessageItem.css';
+
+export type ThinkingStatus = 'active' | 'done' | 'interrupted';
 
 function ToolCallBlock({
   block,
@@ -35,12 +39,52 @@ function ToolCallBlock({
 
 function ThinkingBlock({
   text,
+  status,
+  animate,
 }: {
   text: string;
+  status: ThinkingStatus;
+  animate: boolean;
 }): React.JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+
+  const label =
+    status === 'active'
+      ? t('thinking.active')
+      : status === 'interrupted'
+        ? t('thinking.interrupted')
+        : t('thinking.done');
+  const iconClass =
+    status === 'interrupted' ? 'hico-exclamationmark' : 'hico-waveform';
+
+  if (status === 'active') {
+    // During streaming the thinking body stays collapsed: only the
+    // transition animation is shown — the label characters fade in/out
+    // one by one (owner spec).
+    return (
+      <div className="thinking thinking-active" data-anim={animate} data-expanded={false}>
+        <div className="thinking-toggle" aria-live="polite">
+          <span className={`hico ${iconClass} thinking-icon`} aria-hidden="true" />
+          <span className="thinking-label mono" aria-hidden="true">
+            {label.split('').map((char, index) => (
+              <span
+                key={index}
+                className="thinking-char"
+                style={{ animationDelay: `${String(index * 0.18)}s` }}
+              >
+                {char}
+              </span>
+            ))}
+          </span>
+          <span className="thinking-label mono thinking-sr">{label}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="thinking" data-expanded={expanded}>
+    <div className="thinking" data-expanded={expanded} data-status={status}>
       <button
         type="button"
         className="thinking-toggle"
@@ -49,8 +93,9 @@ function ThinkingBlock({
         }}
         aria-expanded={expanded}
       >
-        <span className="thinking-label mono">thinking</span>
-        <span aria-hidden="true">{expanded ? '−' : '+'}</span>
+        <span className={`hico ${iconClass} thinking-icon`} aria-hidden="true" />
+        <span className="thinking-label mono">{label}</span>
+        <span className="hico hico-chevron-down thinking-chevron" aria-hidden="true" />
       </button>
       {expanded ? <div className="thinking-body">{text}</div> : null}
     </div>
@@ -71,8 +116,12 @@ function ImageBlock({
 
 function ContentBlocks({
   blocks,
+  thinkingStatus,
+  animate,
 }: {
   blocks: ContentBlock[];
+  thinkingStatus: ThinkingStatus;
+  animate: boolean;
 }): React.JSX.Element {
   return (
     <>
@@ -81,7 +130,14 @@ function ContentBlocks({
           case 'text':
             return <Markdown key={index} text={block.text} />;
           case 'thinking':
-            return <ThinkingBlock key={index} text={block.thinking} />;
+            return (
+              <ThinkingBlock
+                key={index}
+                text={block.thinking}
+                status={thinkingStatus}
+                animate={animate}
+              />
+            );
           case 'toolCall':
             return <ToolCallBlock key={index} block={block} />;
           case 'image':
@@ -103,7 +159,7 @@ function UserMessageView({ message }: { message: Extract<AgentMessage, { role: '
   }
   return (
     <div className="user-bubble">
-      <ContentBlocks blocks={content} />
+      <ContentBlocks blocks={content} thinkingStatus="done" animate={false} />
     </div>
   );
 }
@@ -111,20 +167,25 @@ function UserMessageView({ message }: { message: Extract<AgentMessage, { role: '
 function AssistantMessageView({
   message,
   isStreaming,
+  thinkingStatus,
+  animate,
 }: {
   message: Extract<AgentMessage, { role: 'assistant' }>;
   isStreaming: boolean;
+  thinkingStatus: ThinkingStatus;
+  animate: boolean;
 }): React.JSX.Element {
   return (
     <div className="assistant-body" data-streaming={isStreaming}>
-      <ContentBlocks blocks={message.content} />
-      {isStreaming ? <span className="stream-cursor" aria-hidden="true" /> : null}
+      <ContentBlocks blocks={message.content} thinkingStatus={thinkingStatus} animate={animate} />
+      {isStreaming && animate ? <span className="stream-cursor" aria-hidden="true" /> : null}
     </div>
   );
 }
 
 function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 'toolResult' }> }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(true);
+  const compactTools = useLabFlag('compactTools');
+  const [expanded, setExpanded] = useState(!compactTools);
   const text = message.content
     .map((block) => (block.type === 'text' ? block.text : ''))
     .join('\n')
@@ -165,9 +226,15 @@ function BashExecutionView({ message }: { message: Extract<AgentMessage, { role:
 interface MessageItemProps {
   message: AgentMessage;
   isStreaming: boolean;
+  thinkingStatus?: ThinkingStatus;
 }
 
-export function MessageItem({ message, isStreaming }: MessageItemProps): React.JSX.Element {
+export function MessageItem({
+  message,
+  isStreaming,
+  thinkingStatus = 'done',
+}: MessageItemProps): React.JSX.Element {
+  const streamAnimation = useLabFlag('streamAnimation');
   switch (message.role) {
     case 'user':
       return (
@@ -178,7 +245,12 @@ export function MessageItem({ message, isStreaming }: MessageItemProps): React.J
     case 'assistant':
       return (
         <div className="message message-assistant">
-          <AssistantMessageView message={message} isStreaming={isStreaming} />
+          <AssistantMessageView
+            message={message}
+            isStreaming={isStreaming}
+            thinkingStatus={thinkingStatus}
+            animate={streamAnimation}
+          />
         </div>
       );
     case 'toolResult':

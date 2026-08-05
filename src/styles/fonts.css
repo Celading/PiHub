@@ -64,3 +64,14 @@
 .hico-arrow-left::before { content: '\F00CA'; }
 .hico-person::before { content: '\F0465'; }
 .hico-sun::before { content: '\F04FA'; }
+/* phase-3 additions */
+.hico-waveform::before { content: '\F0159'; }
+.hico-exclamationmark::before { content: '\F010A'; }
+.hico-checkmark::before { content: '\F0013'; }
+.hico-bookmark::before { content: '\F000A'; }
+.hico-lock::before { content: '\F0008'; }
+.hico-sliders::before { content: '\F0072'; }
+.hico-flask::before { content: '\F0157'; }
+.hico-chevron-right::before { content: '\F00D9'; }
+.hico-chevron-left::before { content: '\F00DA'; }
+.hico-chevron-down::before { content: '\F00DB'; }

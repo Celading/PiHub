@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ModelInfo, SessionSummary } from '../../shared/types.js';
+import type { SettingsSectionId, Theme } from '../types/app.js';
 import { api } from '../api/client.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { ChannelsSection } from './ChannelsSection.js';
+import { FavoritesSection } from './FavoritesSection.js';
+import { LabSection } from './LabSection.js';
+import { PermissionsSection } from './PermissionsSection.js';
 import './SettingsPage.css';
 
 const ARCHIVED_STORAGE_KEY = 'pi-panel:archived';
+const USER_ID_STORAGE_KEY = 'pi-panel:userId';
 
 function loadArchivedIds(): string[] {
   try {
@@ -31,6 +36,12 @@ function persistArchivedIds(ids: string[]): void {
 }
 
 interface SettingsPageProps {
+  section: SettingsSectionId;
+  onSectionChange: (section: SettingsSectionId) => void;
+  theme: Theme;
+  onThemeToggle: () => void;
+  sidebarCollapsed: boolean;
+  onToggleCollapsed: () => void;
   onBack: () => void;
 }
 
@@ -73,16 +84,25 @@ const LOCALE_OPTIONS: ReadonlyArray<{ value: Locale; label: string }> = [
   { value: 'en', label: 'English' },
 ];
 
-type SectionId = 'language' | 'agent' | 'models' | 'channels' | 'archived';
-
-export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
+export function SettingsPage({
+  section,
+  onSectionChange,
+  theme,
+  onThemeToggle,
+  sidebarCollapsed,
+  onToggleCollapsed,
+  onBack,
+}: SettingsPageProps): React.JSX.Element {
   const { t, locale, setLocale } = useI18n();
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [providers, setProviders] = useState<Array<{ provider: string; models: ModelInfo[] }>>([]);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<SectionId>('language');
   const [archivedIds, setArchivedIds] = useState<string[]>(() => loadArchivedIds());
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [userId, setUserId] = useState<string>(() => {
+    return localStorage.getItem(USER_ID_STORAGE_KEY) ?? 'guest';
+  });
+  const [editingUser, setEditingUser] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,106 +151,205 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
     };
   }, []);
 
-  const scrollToSection = useCallback((section: SectionId): void => {
-    setActiveSection(section);
-    const element = document.getElementById(`settings-section-${section}`);
-    element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const saveUserId = (value: string): void => {
+    const trimmed = value.trim();
+    const next = trimmed.length === 0 ? 'guest' : trimmed;
+    setUserId(next);
+    localStorage.setItem(USER_ID_STORAGE_KEY, next);
+    setEditingUser(false);
+  };
+
+  const scrollTop = useCallback((): void => {
+    const element = document.getElementById('settings-content');
+    if (element !== null) {
+      element.scrollTop = 0;
+    }
   }, []);
 
-  const treeItems: ReadonlyArray<{ id: SectionId; label: string }> = [
-    { id: 'language', label: t('settings.language') },
-    { id: 'agent', label: t('settings.agent') },
-    { id: 'models', label: t('settings.modelStore') },
-    { id: 'channels', label: t('settings.channels') },
-    { id: 'archived', label: t('settings.archived') },
-  ];
+  useEffect(() => {
+    scrollTop();
+  }, [section, scrollTop]);
+
+  const title =
+    section === 'general'
+      ? t('settings.nav.general')
+      : section === 'personal'
+        ? t('settings.nav.personal')
+        : section === 'models'
+          ? t('settings.nav.models')
+          : section === 'sessions'
+            ? t('settings.nav.sessions')
+            : section === 'permissions'
+              ? t('settings.nav.permissions')
+              : section === 'favorites'
+                ? t('settings.nav.favorites')
+                : t('settings.nav.lab');
 
   return (
     <section className="settings-page">
       <div className="settings-head">
-        <h1 className="panel-title">{t('settings.title')}</h1>
+        <h1 className="panel-title">{title}</h1>
         <p className="settings-head-hint mono">{t('settings.readonly')}</p>
       </div>
 
       {error !== null ? <div className="settings-error mono">{error}</div> : null}
 
-      <div className="settings-layout">
-        <nav className="settings-tree" aria-label="Settings sections">
-          {treeItems.map((item, index) => (
-            <button
-              key={item.id}
-              type="button"
-              className="settings-tree-item"
-              data-active={activeSection === item.id}
-              onClick={() => {
-                scrollToSection(item.id);
-              }}
-            >
-              <span className="settings-tree-number mono">0{String(index + 1)}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
+      <div className="settings-content scroll-area" id="settings-content">
+        {section === 'general' ? (
+          <>
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.language')}</h2>
+              <div className="settings-language">
+                {LOCALE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="settings-language-btn"
+                    data-active={locale === option.value}
+                    onClick={() => {
+                      setLocale(option.value);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </section>
 
-        <div className="settings-content">
-          <section id="settings-section-language" className="settings-section">
-            <h2 className="settings-section-title mono">{t('settings.language')}</h2>
-            <div className="settings-language">
-              {LOCALE_OPTIONS.map((option) => (
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.theme')}</h2>
+              <div className="settings-language">
                 <button
-                  key={option.value}
                   type="button"
                   className="settings-language-btn"
-                  data-active={locale === option.value}
+                  data-active={theme === 'light'}
                   onClick={() => {
-                    setLocale(option.value);
+                    if (theme !== 'light') {
+                      onThemeToggle();
+                    }
                   }}
                 >
-                  {option.label}
+                  {t('theme.light')}
                 </button>
-              ))}
-            </div>
-          </section>
+                <button
+                  type="button"
+                  className="settings-language-btn"
+                  data-active={theme === 'dark'}
+                  onClick={() => {
+                    if (theme !== 'dark') {
+                      onThemeToggle();
+                    }
+                  }}
+                >
+                  {t('theme.dark')}
+                </button>
+              </div>
+            </section>
 
-          <section id="settings-section-agent" className="settings-section">
-            <h2 className="settings-section-title mono">{t('settings.agent')}</h2>
-            <div className="settings-list">
-              {settings === null ? (
-                <p className="settings-hint">{t('settings.loading')}</p>
-              ) : Object.entries(settings).length === 0 ? (
-                <p className="settings-hint">{t('settings.empty')}</p>
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.agent')}</h2>
+              <div className="settings-list">
+                {settings === null ? (
+                  <p className="settings-hint">{t('settings.loading')}</p>
+                ) : Object.entries(settings).length === 0 ? (
+                  <p className="settings-hint">{t('settings.empty')}</p>
+                ) : (
+                  Object.entries(settings).map(([key, value]) => (
+                    <SettingRow key={key} label={key} value={JSON.stringify(value)} />
+                  ))
+                )}
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        {section === 'personal' ? (
+          <>
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.nav.personal')}</h2>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.personal.userId')}</span>
+                {editingUser ? (
+                  <input
+                    className="sidebar-user-input mono"
+                    defaultValue={userId}
+                    autoFocus
+                    aria-label={t('settings.personal.userId')}
+                    onBlur={(event) => {
+                      saveUserId(event.target.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                        saveUserId((event.target as HTMLInputElement).value);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="setting-row-value">
+                    <span className="setting-value mono">{userId}</span>
+                    <button
+                      type="button"
+                      className="setting-restore"
+                      onClick={() => {
+                        setEditingUser(true);
+                      }}
+                    >
+                      {t('settings.personal.edit')}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p className="settings-hint">{t('settings.personal.userIdHint')}</p>
+            </section>
+
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.personal.sidebar')}</h2>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.personal.sidebarState')}</span>
+                <div className="setting-row-value">
+                  <span className="setting-value mono">
+                    {sidebarCollapsed
+                      ? t('settings.personal.sidebarCollapsed')
+                      : t('settings.personal.sidebarExpanded')}
+                  </span>
+                  <button type="button" className="setting-restore" onClick={onToggleCollapsed}>
+                    {sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+                  </button>
+                </div>
+              </div>
+              <p className="settings-hint">{t('settings.personal.sidebarHint')}</p>
+            </section>
+          </>
+        ) : null}
+
+        {section === 'models' ? (
+          <>
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.modelStore')}</h2>
+              {providers.length === 0 ? (
+                <p className="settings-hint">{t('settings.emptyModels')}</p>
               ) : (
-                Object.entries(settings).map(([key, value]) => (
-                  <SettingRow key={key} label={key} value={JSON.stringify(value)} />
+                providers.map((entry) => (
+                  <div key={entry.provider} className="settings-provider">
+                    <div className="settings-provider-label mono">{entry.provider}</div>
+                    <div className="settings-provider-models">
+                      {entry.models.map((model) => (
+                        <ModelCard key={model.id} model={model} />
+                      ))}
+                    </div>
+                  </div>
                 ))
               )}
-            </div>
-          </section>
+            </section>
+            <section className="settings-section">
+              <ChannelsSection />
+            </section>
+          </>
+        ) : null}
 
-          <section id="settings-section-models" className="settings-section">
-            <h2 className="settings-section-title mono">{t('settings.modelStore')}</h2>
-            {providers.length === 0 ? (
-              <p className="settings-hint">{t('settings.emptyModels')}</p>
-            ) : (
-              providers.map((entry) => (
-                <div key={entry.provider} className="settings-provider">
-                  <div className="settings-provider-label mono">{entry.provider}</div>
-                  <div className="settings-provider-models">
-                    {entry.models.map((model) => (
-                      <ModelCard key={model.id} model={model} />
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
-          </section>
-
-          <section id="settings-section-channels" className="settings-section">
-            <ChannelsSection />
-          </section>
-
-          <section id="settings-section-archived" className="settings-section">
-            <h2 className="settings-section-title mono">{t('settings.archived')}</h2>
+        {section === 'sessions' ? (
+          <section className="settings-section">
+            <h2 className="settings-section-title mono">{t('settings.nav.sessions')}</h2>
             {archivedIds.length === 0 ? (
               <p className="settings-hint">{t('settings.emptyArchived')}</p>
             ) : (
@@ -259,13 +378,24 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
               </div>
             )}
           </section>
-        </div>
-      </div>
+        ) : null}
 
-      <button type="button" className="settings-back-bar" onClick={onBack}>
-        <span className="hico hico-arrow-left" aria-hidden="true" />
-        <span>{t('settings.back')}</span>
-      </button>
+        {section === 'permissions' ? <PermissionsSection /> : null}
+        {section === 'favorites' ? (
+          <FavoritesSection
+            onRun={(text) => {
+              // Switch to the chat view immediately; pi's prompt ack only
+              // arrives when the run settles, so do not block on it.
+              onBack();
+              onSectionChange('general');
+              void api.prompt(text).catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+            }}
+          />
+        ) : null}
+        {section === 'lab' ? <LabSection /> : null}
+      </div>
     </section>
   );
 }

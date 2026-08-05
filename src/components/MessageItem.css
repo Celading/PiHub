@@ -56,10 +56,14 @@
   background-color: var(--background-subtle);
 }
 
+.thinking[data-status='interrupted'] {
+  border-left-color: var(--error, #c62828);
+}
+
 .thinking-toggle {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 0;
@@ -72,6 +76,72 @@
 .thinking-label {
   font-size: var(--text-xs);
   letter-spacing: 0.06em;
+}
+
+.thinking-icon {
+  color: var(--primary);
+  font-size: 0.875rem;
+}
+
+.thinking[data-status='interrupted'] .thinking-icon {
+  color: var(--error, #c62828);
+}
+
+.thinking-chevron {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-placeholder);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.thinking[data-expanded='true'] .thinking-chevron {
+  transform: rotate(180deg);
+}
+
+/* streaming thinking transition: pulsing icon + per-character fade. The
+ * label characters brighten/dim one after another (owner spec). */
+.thinking-active[data-anim='false'] .thinking-icon,
+.thinking-active[data-anim='false'] .thinking-char {
+  animation: none;
+}
+
+.thinking-active .thinking-icon {
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-char {
+  display: inline-block;
+  animation: thinking-char-fade 1.8s ease-in-out infinite;
+  opacity: 0.35;
+}
+
+.thinking-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes thinking-char-fade {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .thinking-body {

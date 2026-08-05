@@ -11,6 +11,8 @@ interface IconButtonProps {
   /** Tooltip placement: above or below the button. */
   placement?: 'top' | 'bottom';
   className?: string;
+  /** Rendered as data-active for active-view styling. */
+  dataActive?: boolean;
 }
 
 const LONG_PRESS_MS = 450;
@@ -27,6 +29,7 @@ export function IconButton({
   disabled = false,
   placement = 'top',
   className,
+  dataActive = false,
 }: IconButtonProps): React.JSX.Element {
   const [tooltip, setTooltip] = useState(false);
   const pressTimer = useRef<number | undefined>(undefined);
@@ -102,6 +105,7 @@ export function IconButton({
         className={`icon-button${className === undefined ? '' : ` ${className}`}`}
         disabled={disabled}
         aria-label={label}
+        data-active={dataActive}
         onClick={onClick}
         onPointerDown={handlePointerDown}
         onPointerUp={hideTooltip}

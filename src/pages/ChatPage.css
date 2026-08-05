@@ -72,3 +72,85 @@
   background-color: var(--surface-hover);
   color: var(--primary);
 }
+
+/* ---- phase-3: workflow units ---- */
+.chat-unit {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-unit-summary {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-3) 0 var(--space-4);
+}
+
+.chat-unit-summary-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-placeholder);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.chat-unit-summary-line:hover {
+  color: var(--primary);
+}
+
+.chat-unit-summary-line:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.chat-unit-elapsed {
+  color: var(--primary);
+}
+
+.chat-unit-aborted {
+  color: var(--error, #c62828);
+}
+
+.chat-unit-running {
+  color: var(--primary);
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-unit-chevron {
+  font-weight: 700;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chat-unit[data-collapsed='false'] .chat-unit-chevron {
+  transform: rotate(90deg);
+}
+
+.chat-unit-divider {
+  /* Full-width divider line closing a completed workflow (owner spec:
+   * "---" is a full rule, not three characters). */
+  border-top: 1px solid var(--border-subtle);
+  margin-top: var(--space-2);
+  user-select: none;
+}
+
+.chat-unit-settle {
+  color: var(--text-placeholder);
+  font-size: var(--text-xs);
+  letter-spacing: 0.4em;
+  user-select: none;
+  margin-top: var(--space-1);
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}

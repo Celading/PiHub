@@ -35,6 +35,8 @@ export const zhMessages = {
   'sidebar.settings': '设置',
   'sidebar.user.id': '自定义用户 ID',
   'sidebar.msgs': '条消息',
+  'sidebar.collapse': '收起侧边栏',
+  'sidebar.expand': '展开侧边栏',
 
   // sidebar collections (phase-3 batch)
   'sidebar.collections': '集合',
@@ -57,6 +59,8 @@ export const zhMessages = {
   'composer.send': '发送',
   'composer.steer': '引导',
   'composer.abort': '中断',
+  'composer.favorite': '收藏当前输入',
+  'composer.favoriteAdded': '已收藏',
 
   // model bar
   'modelbar.model': '模型',
@@ -67,6 +71,15 @@ export const zhMessages = {
   'chat.empty.hint': '与 pi agent 开始对话，消息通过 RPC 桥实时流入。',
   'chat.queued': '队列：{steer} 引导 · {followUp} 跟进',
   'chat.error.prefix': '',
+
+  // thinking + workflow (phase-3)
+  'thinking.active': '思考中…',
+  'thinking.done': '思考过程…',
+  'thinking.interrupted': '思考被打断！',
+  'workflow.elapsed': '已消耗 {time}',
+  'workflow.running': '工作流运行中…',
+  'workflow.interrupted': '本次运行被打断',
+  'workflow.collapse': '折叠 / 展开本次工作流',
 
   // sessions
   'sessions.title': '会话',
@@ -164,6 +177,59 @@ export const zhMessages = {
   'settings.empty': '未找到设置文件。',
   'settings.emptyModels': '未找到模型。',
   'settings.back': '返回主界面',
+  'settings.theme': '主题',
+  'theme.light': '浅色',
+  'theme.dark': '深色',
+  'settings.personal.userId': '用户 ID',
+  'settings.personal.edit': '编辑',
+  'settings.personal.userIdHint': '会话归属标识，仅存于本机浏览器。',
+  'settings.personal.sidebar': '侧边栏',
+  'settings.personal.sidebarState': '状态',
+  'settings.personal.sidebarExpanded': '展开',
+  'settings.personal.sidebarCollapsed': '已收起',
+  'settings.personal.sidebarHint': '收起后可通过左侧窄条或此处重新展开。',
+
+  // settings modal nav (phase-3)
+  'settings.nav.general': '通用设置',
+  'settings.nav.personal': '个性化设置',
+  'settings.nav.models': '模型渠道',
+  'settings.nav.sessions': '会话管理',
+  'settings.nav.permissions': '权限管理',
+  'settings.nav.favorites': '提示词收藏夹',
+  'settings.nav.lab': '实验室能力',
+
+  // permissions section
+  'permissions.notify': '通知',
+  'permissions.notify.state': '浏览器通知',
+  'permissions.notify.granted': '已授权',
+  'permissions.notify.denied': '已拒绝',
+  'permissions.notify.default': '未请求',
+  'permissions.notify.unsupported': '当前环境不支持',
+  'permissions.notify.request': '请求权限',
+  'permissions.notifyHint': 'agent 运行完成后发送浏览器通知。',
+  'permissions.localTitle': '本机边界',
+  'permissions.localHint1': '面板仅监听本机回环地址（127.0.0.1 / localhost）。',
+  'permissions.localHint2': '面板不读取、不存储任何凭据文件（如 ~/.pi/agent/auth.json）。',
+
+  // favorites section
+  'favorites.hint': '收藏常用提示词，可在输入框旁一键收藏。',
+  'favorites.placeholder': '输入要收藏的提示词…',
+  'favorites.add': '添加',
+  'favorites.empty': '暂无收藏',
+  'favorites.run': '运行',
+  'favorites.delete': '删除',
+  'favorites.refresh': '刷新列表',
+
+  // lab section
+  'lab.hint': '实验性功能，可能随时调整或移除。',
+  'lab.streamAnimation': '流式动画',
+  'lab.streamAnimationHint': '消息流式输出光标与思考过渡动画',
+  'lab.compactTools': '紧凑工具卡片',
+  'lab.compactToolsHint': '工具结果默认折叠展示',
+  'lab.settledNotify': '完成后通知',
+  'lab.settledNotifyHint': 'agent 运行完成时发送浏览器通知',
+  'lab.simplifiedOutput': '简化输出',
+  'lab.simplifiedOutputHint': '完成的会话自动折叠为结算摘要，并用 ..... 标记被省略的后续内容',
 
   // command palette
   'palette.title': '自动化 / 技能 / 工程流',
@@ -206,6 +272,8 @@ export const enMessages: Record<MessageKey, string> = {
   'sidebar.settings': 'Settings',
   'sidebar.user.id': 'Custom user ID',
   'sidebar.msgs': 'msgs',
+  'sidebar.collapse': 'Collapse sidebar',
+  'sidebar.expand': 'Expand sidebar',
 
   'sidebar.collections': 'Collections',
   'sidebar.ungrouped': 'Ungrouped',
@@ -226,6 +294,8 @@ export const enMessages: Record<MessageKey, string> = {
   'composer.send': 'send',
   'composer.steer': 'steer',
   'composer.abort': 'abort',
+  'composer.favorite': 'Save current input to favorites',
+  'composer.favoriteAdded': 'saved',
 
   'modelbar.model': 'model',
   'modelbar.thinking': 'thinking',
@@ -234,6 +304,15 @@ export const enMessages: Record<MessageKey, string> = {
   'chat.empty.hint': 'Start a conversation with the pi agent. Messages stream here in real time via the RPC bridge.',
   'chat.queued': 'queued: {steer} steer · {followUp} follow-up',
   'chat.error.prefix': '',
+
+  // thinking + workflow (phase-3)
+  'thinking.active': 'Thinking…',
+  'thinking.done': 'Thought process…',
+  'thinking.interrupted': 'Thinking interrupted!',
+  'workflow.elapsed': 'Elapsed {time}',
+  'workflow.running': 'Workflow in progress…',
+  'workflow.interrupted': 'Run interrupted',
+  'workflow.collapse': 'Collapse / expand this workflow',
 
   'sessions.title': 'Sessions',
   'sessions.hint.loading': 'loading…',
@@ -323,6 +402,59 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.empty': 'No settings file found.',
   'settings.emptyModels': 'No models found.',
   'settings.back': 'Back to home',
+  'settings.theme': 'Theme',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+  'settings.personal.userId': 'User ID',
+  'settings.personal.edit': 'Edit',
+  'settings.personal.userIdHint': 'Session attribution label, stored locally in this browser only.',
+  'settings.personal.sidebar': 'Sidebar',
+  'settings.personal.sidebarState': 'State',
+  'settings.personal.sidebarExpanded': 'expanded',
+  'settings.personal.sidebarCollapsed': 'collapsed',
+  'settings.personal.sidebarHint': 'While collapsed, reopen from the slim left bar or here.',
+
+  // settings modal nav (phase-3)
+  'settings.nav.general': 'General',
+  'settings.nav.personal': 'Personalization',
+  'settings.nav.models': 'Models & Channels',
+  'settings.nav.sessions': 'Session Management',
+  'settings.nav.permissions': 'Permissions',
+  'settings.nav.favorites': 'Prompt Favorites',
+  'settings.nav.lab': 'Lab',
+
+  // permissions section
+  'permissions.notify': 'Notifications',
+  'permissions.notify.state': 'Browser notifications',
+  'permissions.notify.granted': 'granted',
+  'permissions.notify.denied': 'denied',
+  'permissions.notify.default': 'not requested',
+  'permissions.notify.unsupported': 'unsupported here',
+  'permissions.notify.request': 'Request permission',
+  'permissions.notifyHint': 'Sent when the agent settles after a run.',
+  'permissions.localTitle': 'Local boundary',
+  'permissions.localHint1': 'This panel only listens on the loopback address (127.0.0.1 / localhost).',
+  'permissions.localHint2': 'It never reads or stores credential files (e.g. ~/.pi/agent/auth.json).',
+
+  // favorites section
+  'favorites.hint': 'Save frequently used prompts; the composer offers a one-click bookmark.',
+  'favorites.placeholder': 'Enter a prompt to save…',
+  'favorites.add': 'Add',
+  'favorites.empty': 'No favorites yet',
+  'favorites.run': 'Run',
+  'favorites.delete': 'Delete',
+  'favorites.refresh': 'Refresh list',
+
+  // lab section
+  'lab.hint': 'Experimental capabilities that may change or disappear.',
+  'lab.streamAnimation': 'Streaming animation',
+  'lab.streamAnimationHint': 'Stream cursor and thinking transition animation',
+  'lab.compactTools': 'Compact tool cards',
+  'lab.compactToolsHint': 'Tool results collapsed by default',
+  'lab.settledNotify': 'Notify on settle',
+  'lab.settledNotifyHint': 'Browser notification when the agent finishes a run',
+  'lab.simplifiedOutput': 'Simplified output',
+  'lab.simplifiedOutputHint': 'Settled conversations auto-collapse to a settlement summary; ..... marks folded content',
 
   'palette.title': 'Automation / Skills / Workflows',
   'palette.search': 'Search commands…',

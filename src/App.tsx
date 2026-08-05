@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Theme, View } from './types/app';
+import type { SettingsSectionId, Theme, View } from './types/app';
 import { THEME_STORAGE_KEY } from './types/app';
 import { AppShell } from './layout/AppShell';
 import { ChatPage } from './pages/ChatPage';
@@ -9,6 +9,16 @@ import { SettingsPage } from './pages/SettingsPage';
 import { CommandPalette } from './components/CommandPalette';
 import { api } from './api/client.js';
 
+const SIDEBAR_COLLAPSED_KEY = 'pi-panel:sidebar-collapsed';
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function App(): React.JSX.Element {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
@@ -17,6 +27,18 @@ export function App(): React.JSX.Element {
   const [view, setView] = useState<View>('chat');
   const [chatSessionKey, setChatSessionKey] = useState(0);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+    loadSidebarCollapsed(),
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0');
+    } catch {
+      // storage unavailable
+    }
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -69,6 +91,16 @@ export function App(): React.JSX.Element {
       case 'settings':
         return (
           <SettingsPage
+            section={settingsSection}
+            onSectionChange={setSettingsSection}
+            theme={theme}
+            onThemeToggle={() => {
+              setTheme(theme === 'light' ? 'dark' : 'light');
+            }}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleCollapsed={() => {
+              setSidebarCollapsed(!sidebarCollapsed);
+            }}
             onBack={() => {
               setView('chat');
             }}
@@ -81,6 +113,12 @@ export function App(): React.JSX.Element {
     <AppShell
       view={view}
       theme={theme}
+      settingsSection={settingsSection}
+      onSettingsSectionChange={setSettingsSection}
+      sidebarCollapsed={sidebarCollapsed}
+      onToggleCollapsed={() => {
+        setSidebarCollapsed(!sidebarCollapsed);
+      }}
       onViewChange={setView}
       onSessionChanged={() => {
         setChatSessionKey(chatSessionKey + 1);

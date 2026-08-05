@@ -1,13 +1,33 @@
-/* Swiss grid shell: header spans full width; sidebar + main below. */
+/* Swiss grid shell: header spans full width; sidebar + resizer + main below. */
 .shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr);
   grid-template-rows: var(--header-height) minmax(0, 1fr);
   height: 100%;
 }
 
-.shell-main {
+.shell-resizer {
   grid-column: 2;
+  grid-row: 2;
+  cursor: col-resize;
+  background-color: transparent;
+  border-left: 1px solid var(--border-subtle);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.shell-resizer:hover,
+.shell-resizer:active {
+  background-color: var(--primary);
+  border-left-color: var(--primary);
+}
+
+.shell-resizer[data-collapsed='true'] {
+  cursor: pointer;
+  border-left-color: var(--primary);
+}
+
+.shell-main {
+  grid-column: 3;
   grid-row: 2;
   min-width: 0;
   background-color: var(--background);

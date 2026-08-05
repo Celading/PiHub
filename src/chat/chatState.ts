@@ -8,6 +8,13 @@ export interface ChatMessage {
   isStreaming: boolean;
 }
 
+export interface RunSummary {
+  /** Duration of the last completed run, computed from the prompt message
+   *  timestamp (or agent start as fallback) to agent settle. */
+  durationMs: number;
+  aborted: boolean;
+}
+
 interface ChatState {
   messages: ChatMessage[];
   isAgentRunning: boolean;
@@ -15,6 +22,12 @@ interface ChatState {
   pendingFollowUp: string[];
   rpcState: RpcState | null;
   error: string | null;
+  /** Start of the current run (epoch ms). Null when idle. */
+  runStartedAt: number | null;
+  /** Summary of the most recent completed run. */
+  lastRun: RunSummary | null;
+  /** Set when the user aborts the current run (cleared on settle). */
+  runAbortedFlag: boolean;
 }
 
 type ChatAction =
@@ -25,7 +38,9 @@ type ChatAction =
   | { type: 'agentRunning'; running: boolean }
   | { type: 'queue'; steer: string[]; followUp: string[] }
   | { type: 'rpcState'; rpcState: RpcState }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | { type: 'runSettled'; at: number }
+  | { type: 'runAborted' };
 
 let nextKey = 0;
 
@@ -43,19 +58,37 @@ function initialState(): ChatState {
     pendingFollowUp: [],
     rpcState: null,
     error: null,
+    runStartedAt: null,
+    lastRun: null,
+    runAbortedFlag: false,
   };
 }
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'reset':
-      return { ...state, messages: action.messages, rpcState: action.rpcState, error: null };
+      return {
+        ...state,
+        messages: action.messages,
+        rpcState: action.rpcState,
+        error: null,
+        runStartedAt: null,
+        lastRun: null,
+        runAbortedFlag: false,
+      };
     case 'push': {
       const next: ChatMessage[] = [
         ...state.messages,
         { key: makeKey(), message: action.message, isStreaming: false },
       ];
-      return { ...state, messages: next };
+      const runStartedAt =
+        action.message.role === 'user' &&
+        typeof action.message.timestamp === 'number' &&
+        action.message.timestamp > 0 &&
+        state.runStartedAt === null
+          ? action.message.timestamp
+          : state.runStartedAt;
+      return { ...state, messages: next, runStartedAt };
     }
     case 'updateLast': {
       if (state.messages.length === 0) {
@@ -87,8 +120,31 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       return { ...state, messages };
     }
-    case 'agentRunning':
-      return { ...state, isAgentRunning: action.running };
+    case 'agentRunning': {
+      if (action.running) {
+        // Anchor the run clock at the prompt message timestamp when known;
+        // fall back to the agent-start moment.
+        const runStartedAt = state.runStartedAt ?? Date.now();
+        return { ...state, isAgentRunning: true, runStartedAt, lastRun: null };
+      }
+      return { ...state, isAgentRunning: false };
+    }
+    case 'runSettled':
+      if (state.runStartedAt !== null) {
+        return {
+          ...state,
+          isAgentRunning: false,
+          runStartedAt: null,
+          lastRun: {
+            durationMs: Math.max(0, action.at - state.runStartedAt),
+            aborted: state.runAbortedFlag,
+          },
+          runAbortedFlag: false,
+        };
+      }
+      return { ...state, isAgentRunning: false };
+    case 'runAborted':
+      return { ...state, runAbortedFlag: true };
     case 'queue':
       return { ...state, pendingSteer: action.steer, pendingFollowUp: action.followUp };
     case 'rpcState':
@@ -117,7 +173,7 @@ function eventToAction(event: RpcStreamEvent): ChatAction | null {
       return { type: 'agentRunning', running: true };
     case 'agent_end':
     case 'agent_settled':
-      return { type: 'agentRunning', running: false };
+      return { type: 'runSettled', at: Date.now() };
     case 'message_start':
       if (isAgentMessage(event['message'])) {
         return { type: 'push', message: event['message'] };
@@ -159,6 +215,10 @@ export interface ChatSession {
   pendingFollowUp: string[];
   rpcState: RpcState | null;
   error: string | null;
+  /** Epoch ms when the current run started (null when idle). */
+  runStartedAt: number | null;
+  /** Duration + abort status of the most recent completed run. */
+  lastRun: RunSummary | null;
   sendPrompt: (text: string, images?: PromptImage[]) => Promise<void>;
   sendSteer: (text: string) => Promise<void>;
   abort: () => Promise<void>;
@@ -261,6 +321,9 @@ export function useChatSession(): ChatSession {
   }, [refreshState]);
 
   const abort = useCallback(async (): Promise<void> => {
+    // Optimistic: mark the run aborted before the RPC response returns —
+    // the settle event usually arrives first and must see the flag.
+    dispatch({ type: 'runAborted' });
     try {
       await api.abort();
     } catch (error) {
@@ -308,6 +371,8 @@ export function useChatSession(): ChatSession {
     pendingFollowUp: state.pendingFollowUp,
     rpcState: state.rpcState,
     error: state.error,
+    runStartedAt: state.runStartedAt,
+    lastRun: state.lastRun,
     sendPrompt,
     sendSteer,
     abort,

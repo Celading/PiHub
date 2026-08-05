@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { api, type PromptImage } from '../api/client.js';
+import { addFavorite } from '../favorites/favoritesStore.js';
 import type { PiCommand } from '../../shared/types.js';
 import './Composer.css';
 
@@ -27,6 +28,7 @@ export function Composer({
   const [commands, setCommands] = useState<PiCommand[] | null>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [favoriteNotice, setFavoriteNotice] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load commands once for the "/" suggestion surface.
@@ -237,6 +239,25 @@ export function Composer({
         <span className="composer-hint mono">
           {isAgentRunning ? t('composer.hint.steer') : t('composer.hint')}
         </span>
+        <button
+          type="button"
+          className="composer-favorite"
+          title={t('composer.favorite')}
+          aria-label={t('composer.favorite')}
+          disabled={text.trim().length === 0}
+          onClick={() => {
+            addFavorite(text);
+            setFavoriteNotice(true);
+            window.setTimeout(() => {
+              setFavoriteNotice(false);
+            }, 1800);
+          }}
+        >
+          <span className="hico hico-bookmark" aria-hidden="true" />
+          {favoriteNotice ? (
+            <span className="composer-favorite-notice mono">{t('composer.favoriteAdded')}</span>
+          ) : null}
+        </button>
         {isAgentRunning ? (
           <button type="button" className="composer-abort" onClick={onAbort}>
             {t('composer.abort')}
