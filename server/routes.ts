@@ -362,6 +362,31 @@ export function createRouter(
     }
   });
 
+  router.get('/api/models-config', async (_req, res) => {
+    const raw = await readJson(path.join(AGENT_DIR, 'models.json'));
+    res.json(raw === undefined ? { providers: {} } : raw);
+  });
+
+  router.post('/api/models-config', async (req, res) => {
+    const raw: unknown = req.body;
+    if (typeof raw !== 'object' || raw === null) {
+      res.status(400).json({ error: 'invalid models config' });
+      return;
+    }
+    const providers = (raw as Record<string, unknown>)['providers'];
+    if (typeof providers !== 'object' || providers === null) {
+      res.status(400).json({ error: 'models config must contain providers object' });
+      return;
+    }
+    try {
+      const configPath = path.join(AGENT_DIR, 'models.json');
+      await writeFile(configPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+      res.json({ success: true });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   router.get('/api/events', (req, res) => {
     hub.addClient(res);
     req.on('close', () => {

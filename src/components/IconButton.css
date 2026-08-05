@@ -1,0 +1,46 @@
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: var(--radius-none);
+  background-color: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled),
+.icon-button:focus-visible {
+  background-color: var(--surface-hover);
+  color: var(--primary);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon-button .hico {
+  font-size: var(--text-sm);
+}
+
+/* Fixed-position tooltip: never expands the parent layout, clamps to the
+ * viewport, and may overflow intermediate containers. */
+.icon-tooltip {
+  position: fixed;
+  z-index: 200;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--background-inverse);
+  color: var(--text-inverse);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

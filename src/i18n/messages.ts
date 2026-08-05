@@ -36,6 +36,19 @@ export const zhMessages = {
   'sidebar.user.id': '自定义用户 ID',
   'sidebar.msgs': '条消息',
 
+  // sidebar collections (phase-3 batch)
+  'sidebar.collections': '集合',
+  'sidebar.ungrouped': '未分组',
+  'sidebar.addCollection': '新建集合',
+  'sidebar.collectionName': '集合名称',
+  'sidebar.renameCollection': '重命名集合',
+  'sidebar.deleteCollection': '删除集合',
+  'sidebar.newBranch': '新增分支',
+  'sidebar.archive': '归档',
+  'sidebar.restore': '恢复',
+  'sidebar.archived': '归档会话',
+  'sidebar.emptyArchived': '无归档会话',
+
   // composer
   'composer.placeholder': '给 pi 发送消息…',
   'composer.placeholder.steer': '引导运行中的 agent…',
@@ -103,6 +116,33 @@ export const zhMessages = {
   'notify.settled.title': 'pi agent',
   'notify.settled.body': 'agent 已完成当前任务',
 
+  // channels (custom providers) — phase-3
+  'settings.channels': '渠道',
+  'settings.channels.hint': '自定义 API 渠道与模型（写入 ~/.pi/agent/models.json）',
+  'channels.addProvider': '添加渠道',
+  'channels.removeProvider': '删除渠道',
+  'channels.addModel': '添加模型',
+  'channels.removeModel': '移除模型',
+  'channels.save': '保存',
+  'channels.saved': '已保存',
+  'channels.empty': '暂无自定义渠道',
+  'provider.name': '渠道名称',
+  'provider.baseUrl': 'Base URL',
+  'provider.apiKey': 'API Token',
+  'provider.api': 'API 类型',
+  'model.id': '模型 ID',
+  'model.name': '模型名称',
+  'model.contextWindow': '最大上下文',
+  'model.maxTokens': '最大输出',
+  'model.reasoning': '支持思考',
+  'model.details': '详细',
+  'model.inputTypes': '输入类型',
+
+  // archived sessions
+  'settings.archived': '归档会话',
+  'settings.restore': '恢复',
+  'settings.emptyArchived': '无归档会话',
+
   // stats
   'stats.title': '统计',
   'stats.sessions': '会话',
@@ -117,7 +157,7 @@ export const zhMessages = {
 
   // settings
   'settings.title': '设置',
-  'settings.readonly': '只读 · ~/.pi/agent',
+  'settings.readonly': '本地 · ~/.pi/agent',
   'settings.agent': 'agent 设置',
   'settings.modelStore': '模型仓库',
   'settings.loading': '加载中…',
@@ -166,6 +206,18 @@ export const enMessages: Record<MessageKey, string> = {
   'sidebar.settings': 'Settings',
   'sidebar.user.id': 'Custom user ID',
   'sidebar.msgs': 'msgs',
+
+  'sidebar.collections': 'Collections',
+  'sidebar.ungrouped': 'Ungrouped',
+  'sidebar.addCollection': 'New collection',
+  'sidebar.collectionName': 'Collection name',
+  'sidebar.renameCollection': 'Rename collection',
+  'sidebar.deleteCollection': 'Delete collection',
+  'sidebar.newBranch': 'New branch',
+  'sidebar.archive': 'Archive',
+  'sidebar.restore': 'Restore',
+  'sidebar.archived': 'Archived sessions',
+  'sidebar.emptyArchived': 'No archived sessions',
 
   'composer.placeholder': 'Message pi…',
   'composer.placeholder.steer': 'Steer the running agent…',
@@ -227,6 +279,31 @@ export const enMessages: Record<MessageKey, string> = {
   'notify.settled.title': 'pi agent',
   'notify.settled.body': 'The agent finished its current task',
 
+  'settings.channels': 'Channels',
+  'settings.channels.hint': 'Custom API channels and models (written to ~/.pi/agent/models.json)',
+  'channels.addProvider': 'Add channel',
+  'channels.removeProvider': 'Remove channel',
+  'channels.addModel': 'Add model',
+  'channels.removeModel': 'Remove model',
+  'channels.save': 'Save',
+  'channels.saved': 'Saved',
+  'channels.empty': 'No custom channels yet',
+  'provider.name': 'Channel name',
+  'provider.baseUrl': 'Base URL',
+  'provider.apiKey': 'API Token',
+  'provider.api': 'API type',
+  'model.id': 'Model ID',
+  'model.name': 'Model name',
+  'model.contextWindow': 'Max context',
+  'model.maxTokens': 'Max output',
+  'model.reasoning': 'Reasoning',
+  'model.details': 'Details',
+  'model.inputTypes': 'Input types',
+
+  'settings.archived': 'Archived sessions',
+  'settings.restore': 'Restore',
+  'settings.emptyArchived': 'No archived sessions',
+
   'stats.title': 'Stats',
   'stats.sessions': 'sessions',
   'stats.messages': 'messages',
@@ -239,7 +316,7 @@ export const enMessages: Record<MessageKey, string> = {
   'stats.assistant': 'assistant',
 
   'settings.title': 'Settings',
-  'settings.readonly': 'read-only · ~/.pi/agent',
+  'settings.readonly': 'local · ~/.pi/agent',
   'settings.agent': 'agent settings',
   'settings.modelStore': 'model store',
   'settings.loading': 'loading…',

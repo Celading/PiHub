@@ -1,6 +1,7 @@
-import { useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { useI18n } from '../i18n/I18nProvider.js';
-import type { PromptImage } from '../api/client.js';
+import { api, type PromptImage } from '../api/client.js';
+import type { PiCommand } from '../../shared/types.js';
 import './Composer.css';
 
 interface PendingImage extends PromptImage {
@@ -23,6 +24,95 @@ export function Composer({
   const { t } = useI18n();
   const [text, setText] = useState('');
   const [images, setImages] = useState<PendingImage[]>([]);
+  const [commands, setCommands] = useState<PiCommand[] | null>(null);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load commands once for the "/" suggestion surface.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const list = await api.commands();
+        if (!cancelled) {
+          setCommands(list);
+        }
+      } catch {
+        if (!cancelled) {
+          setCommands([]);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const slashSuggestions = useMemo(() => {
+    if (!slashOpen || commands === null) {
+      return [];
+    }
+    const raw = text.slice(1);
+    const needle = raw.trim().toLowerCase();
+    const filtered = commands.filter((command) => {
+      return (
+        needle.length === 0 ||
+        command.name.toLowerCase().includes(needle) ||
+        (command.description ?? '').toLowerCase().includes(needle)
+      );
+    });
+    return filtered.slice(0, 8);
+  }, [slashOpen, commands, text]);
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [text]);
+
+  const applySuggestion = (commandName: string): void => {
+    setText(`/${commandName} `);
+    setSlashOpen(false);
+    textareaRef.current?.focus();
+  };
+
+  const handleTextChange = (value: string): void => {
+    setText(value);
+    const isSlashMode = value.startsWith('/') && !value.includes(' ');
+    setSlashOpen(isSlashMode);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (slashOpen && slashSuggestions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSlashIndex((prev) => (prev + 1) % slashSuggestions.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSlashIndex((prev) => (prev - 1 + slashSuggestions.length) % slashSuggestions.length);
+        return;
+      }
+      if (event.key === 'Tab' || event.key === 'Enter') {
+        const suggestion = slashSuggestions[slashIndex];
+        if (suggestion !== undefined) {
+          event.preventDefault();
+          applySuggestion(suggestion.name);
+        }
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSlashOpen(false);
+        return;
+      }
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      submit();
+    }
+  };
 
   const submit = (): void => {
     const trimmed = text.trim();
@@ -45,6 +135,7 @@ export function Composer({
     }
     setText('');
     setImages([]);
+    setSlashOpen(false);
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
@@ -83,15 +174,33 @@ export function Composer({
     }
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      submit();
-    }
-  };
-
   return (
     <div className="composer">
+      {slashOpen && slashSuggestions.length > 0 ? (
+        <div className="composer-slash" role="listbox" aria-label={t('sidebar.features')}>
+          {slashSuggestions.map((suggestion, index) => (
+            <button
+              key={`${suggestion.source}:${suggestion.name}`}
+              type="button"
+              className="composer-slash-item"
+              data-active={index === slashIndex}
+              role="option"
+              aria-selected={index === slashIndex}
+              onMouseEnter={() => {
+                setSlashIndex(index);
+              }}
+              onClick={() => {
+                applySuggestion(suggestion.name);
+              }}
+            >
+              <span className="composer-slash-name mono">/{suggestion.name}</span>
+              {suggestion.description !== undefined && suggestion.description.length > 0 ? (
+                <span className="composer-slash-desc">{suggestion.description}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {images.length > 0 ? (
         <div className="composer-images">
           {images.map((image, index) => (
@@ -112,11 +221,12 @@ export function Composer({
         </div>
       ) : null}
       <textarea
+        ref={textareaRef}
         className="composer-input"
         value={text}
         placeholder={isAgentRunning ? t('composer.placeholder.steer') : t('composer.placeholder')}
         onChange={(event) => {
-          setText(event.target.value);
+          handleTextChange(event.target.value);
         }}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}

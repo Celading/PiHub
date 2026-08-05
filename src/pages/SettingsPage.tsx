@@ -1,8 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ModelInfo } from '../../shared/types.js';
+import type { ModelInfo, SessionSummary } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
+import { ChannelsSection } from './ChannelsSection.js';
 import './SettingsPage.css';
+
+const ARCHIVED_STORAGE_KEY = 'pi-panel:archived';
+
+function loadArchivedIds(): string[] {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_STORAGE_KEY);
+    if (raw === null) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistArchivedIds(ids: string[]): void {
+  try {
+    localStorage.setItem(ARCHIVED_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // storage unavailable — restore still works for this session
+  }
+}
 
 interface SettingsPageProps {
   onBack: () => void;
@@ -47,7 +73,7 @@ const LOCALE_OPTIONS: ReadonlyArray<{ value: Locale; label: string }> = [
   { value: 'en', label: 'English' },
 ];
 
-type SectionId = 'language' | 'agent' | 'models';
+type SectionId = 'language' | 'agent' | 'models' | 'channels' | 'archived';
 
 export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
   const { t, locale, setLocale } = useI18n();
@@ -55,15 +81,22 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
   const [providers, setProviders] = useState<Array<{ provider: string; models: ModelInfo[] }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SectionId>('language');
+  const [archivedIds, setArchivedIds] = useState<string[]>(() => loadArchivedIds());
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const [settingsRes, modelsRes] = await Promise.all([api.settings(), api.models()]);
+        const [settingsRes, modelsRes, sessionsRes] = await Promise.all([
+          api.settings(),
+          api.models(),
+          api.sessions(),
+        ]);
         if (!cancelled) {
           setSettings(settingsRes);
           setProviders(modelsRes.providers);
+          setSessions(sessionsRes.sessions);
         }
       } catch (err) {
         if (!cancelled) {
@@ -77,6 +110,27 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
     };
   }, []);
 
+  const restoreSession = (id: string): void => {
+    const next = archivedIds.filter((archivedId) => archivedId !== id);
+    setArchivedIds(next);
+    persistArchivedIds(next);
+    window.dispatchEvent(new CustomEvent('pihub:archived-changed', { detail: next }));
+  };
+
+  // Stay in sync when the sidebar archives a session while this page is open.
+  useEffect(() => {
+    const syncArchived = (event: Event): void => {
+      const detail = (event as CustomEvent<string[]>).detail;
+      if (Array.isArray(detail)) {
+        setArchivedIds(detail);
+      }
+    };
+    window.addEventListener('pihub:archived-changed', syncArchived);
+    return () => {
+      window.removeEventListener('pihub:archived-changed', syncArchived);
+    };
+  }, []);
+
   const scrollToSection = useCallback((section: SectionId): void => {
     setActiveSection(section);
     const element = document.getElementById(`settings-section-${section}`);
@@ -87,6 +141,8 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
     { id: 'language', label: t('settings.language') },
     { id: 'agent', label: t('settings.agent') },
     { id: 'models', label: t('settings.modelStore') },
+    { id: 'channels', label: t('settings.channels') },
+    { id: 'archived', label: t('settings.archived') },
   ];
 
   return (
@@ -166,6 +222,41 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.JSX.Element {
                   </div>
                 </div>
               ))
+            )}
+          </section>
+
+          <section id="settings-section-channels" className="settings-section">
+            <ChannelsSection />
+          </section>
+
+          <section id="settings-section-archived" className="settings-section">
+            <h2 className="settings-section-title mono">{t('settings.archived')}</h2>
+            {archivedIds.length === 0 ? (
+              <p className="settings-hint">{t('settings.emptyArchived')}</p>
+            ) : (
+              <div className="settings-list">
+                {archivedIds.map((id) => {
+                  const session = sessions.find((entry) => entry.id === id);
+                  if (session === undefined) {
+                    return null;
+                  }
+                  return (
+                    <div key={id} className="setting-row">
+                      <span className="setting-label mono">{session.name ?? session.fileName}</span>
+                      <span className="setting-value mono">{session.cwd}</span>
+                      <button
+                        type="button"
+                        className="setting-restore"
+                        onClick={() => {
+                          restoreSession(id);
+                        }}
+                      >
+                        {t('settings.restore')}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </section>
         </div>

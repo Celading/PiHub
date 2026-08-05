@@ -172,6 +172,17 @@ export const api = {
     });
   },
 
+  modelsConfig(): Promise<Record<string, unknown>> {
+    return request<Record<string, unknown>>('/api/models-config');
+  },
+
+  saveModelsConfig(config: Record<string, unknown>): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/models-config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  },
+
   commands(): Promise<PiCommand[]> {
     return request<{ commands: PiCommand[] }>('/api/rpc/commands').then((response) => response.commands);
   },
