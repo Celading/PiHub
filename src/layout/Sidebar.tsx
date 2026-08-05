@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, View } from '../types/app.js';
+import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
+import { ContextMenu } from '../components/ContextMenu.js';
+import { archiveSession } from '../sessions/sessionActions.js';
 import './Sidebar.css';
 
 const USER_ID_STORAGE_KEY = 'pi-panel:userId';
@@ -18,6 +21,8 @@ interface SidebarProps {
   onSettingsSectionChange: (section: SettingsSectionId) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  sessionFile: string | null;
+  sessionStatus: SessionStatus;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
   onOpenCommands: () => void;
@@ -87,18 +92,37 @@ function loadJson(key: string, fallback: string): string {
 interface SessionRowProps {
   session: SessionSummary;
   intlTag: string;
+  active: boolean;
+  status: SessionStatus;
   onOpen: (session: SessionSummary) => void;
-  onClone: (session: SessionSummary) => void;
-  onArchive: (session: SessionSummary) => void;
+  onContextMenu: (event: React.MouseEvent, session: SessionSummary) => void;
   t: (key: Parameters<ReturnType<typeof useI18n>['t']>[0], params?: Record<string, string | number>) => string;
 }
 
-function SessionRow({ session, intlTag, onOpen, onClone, onArchive, t }: SessionRowProps): React.JSX.Element {
+function SessionRow({
+  session,
+  intlTag,
+  active,
+  status,
+  onOpen,
+  onContextMenu,
+  t,
+}: SessionRowProps): React.JSX.Element {
   const [dragId, setDragId] = useState<string | null>(null);
+
+  const statusLabel =
+    status === 'running'
+      ? t('session.status.running')
+      : status === 'aborted'
+        ? t('session.status.aborted')
+        : status === 'pending'
+          ? t('session.status.pending')
+          : t('session.status.done');
 
   return (
     <div
       className="sidebar-session-row"
+      data-active={active}
       draggable
       onDragStart={(event) => {
         setDragId(session.id);
@@ -116,35 +140,28 @@ function SessionRow({ session, intlTag, onOpen, onClone, onArchive, t }: Session
         onClick={() => {
           onOpen(session);
         }}
+        onContextMenu={(event) => {
+          onContextMenu(event, session);
+        }}
         title={session.cwd}
       >
-        <span className="sidebar-session-cwd mono">
-          {session.name !== undefined && session.name.length > 0
-            ? session.name
-            : shortCwd(session.cwd)}
+        <span className="sidebar-session-head">
+          <span
+            className="session-status-dot"
+            data-status={status}
+            title={statusLabel}
+            aria-label={statusLabel}
+          />
+          <span className="sidebar-session-cwd mono">
+            {session.name !== undefined && session.name.length > 0
+              ? session.name
+              : shortCwd(session.cwd)}
+          </span>
         </span>
         <span className="sidebar-session-meta mono">
           {String(session.messageCount)} {t('sidebar.msgs')} · {formatTime(session.lastActivityAt, intlTag)}
         </span>
       </button>
-      <div className="sidebar-session-icons">
-        <IconButton
-          icon="hico-square-grid"
-          label={t('sidebar.newBranch')}
-          placement="bottom"
-          onClick={() => {
-            onClone(session);
-          }}
-        />
-        <IconButton
-          icon="hico-rectangle-stack"
-          label={t('sidebar.archive')}
-          placement="bottom"
-          onClick={() => {
-            onArchive(session);
-          }}
-        />
-      </div>
     </div>
   );
 }
@@ -156,6 +173,8 @@ export function Sidebar({
   onSettingsSectionChange,
   collapsed,
   onToggleCollapsed,
+  sessionFile,
+  sessionStatus,
   onViewChange,
   onSessionChanged,
   onOpenCommands,
@@ -168,6 +187,11 @@ export function Sidebar({
   });
   const [editingUser, setEditingUser] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    session: SessionSummary;
+  } | null>(null);
   const [collections, setCollections] = useState<Record<string, string[]>>(() => {
     try {
       return JSON.parse(loadJson(COLLECTIONS_STORAGE_KEY, '{}')) as Record<string, string[]>;
@@ -294,35 +318,17 @@ export function Sidebar({
     [onSessionChanged, onViewChange, t],
   );
 
-  const handleClone = useCallback(async (): Promise<void> => {
-    setError(null);
-    try {
-      const response = await api.cloneSession();
-      if (!response.success) {
-        setError(response.error ?? 'clone failed');
-        return;
+  const handleArchive = useCallback((sessionId: string): void => {
+    setArchived((prev) => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
+    setCollections((prev) => {
+      const updated: Record<string, string[]> = {};
+      for (const [name, ids] of Object.entries(prev)) {
+        updated[name] = ids.filter((id) => id !== sessionId);
       }
-      onSessionChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [onSessionChanged]);
-
-  const handleArchive = useCallback(
-    (sessionId: string): void => {
-      const next = archived.includes(sessionId) ? archived : [...archived, sessionId];
-      setArchived(next);
-      setCollections((prev) => {
-        const updated: Record<string, string[]> = {};
-        for (const [name, ids] of Object.entries(prev)) {
-          updated[name] = ids.filter((id) => id !== sessionId);
-        }
-        return updated;
-      });
-      window.dispatchEvent(new CustomEvent('pihub:archived-changed', { detail: next }));
-    },
-    [archived],
-  );
+      return updated;
+    });
+    archiveSession(sessionId);
+  }, []);
 
   // Re-read the archived list when the settings page restores a session
   // (the settings page stays open while this sidebar stays mounted).
@@ -395,18 +401,53 @@ export function Sidebar({
     setEditingUser(false);
   };
 
+  const openContextMenu = useCallback(
+    (event: React.MouseEvent, session: SessionSummary): void => {
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY, session });
+    },
+    [],
+  );
+
+  // Right-click "new branch": switch to the target session first (pi's
+  // clone RPC forks the current RPC session), then clone it.
+  const cloneTargetSession = useCallback(
+    async (session: SessionSummary): Promise<void> => {
+      setError(null);
+      try {
+        const switched = await api.switchSession(session.fileName);
+        if (!switched.success) {
+          setError(switched.error ?? t('sessions.openSessionError'));
+          return;
+        }
+        const response = await api.cloneSession();
+        if (!response.success) {
+          setError(response.error ?? 'clone failed');
+          return;
+        }
+        onSessionChanged();
+        onViewChange('chat');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [onSessionChanged, onViewChange, t],
+  );
+
   const sessionRowProps = {
     intlTag,
     onOpen: (session: SessionSummary) => {
       void handleResume(session);
     },
-    onClone: () => {
-      void handleClone();
-    },
-    onArchive: (session: SessionSummary) => {
-      handleArchive(session.id);
-    },
+    onContextMenu: openContextMenu,
     t,
+  };
+
+  const statusOf = (session: SessionSummary): SessionStatus => {
+    if (session.fileName !== sessionFile) {
+      return 'done';
+    }
+    return sessionStatus;
   };
 
   if (collapsed) {
@@ -456,7 +497,7 @@ export function Sidebar({
         </div>
         <button
           type="button"
-          className="sidebar-back-wide mono"
+          className="sidebar-back-wide btn-primary mono"
           onClick={() => {
             onViewChange('chat');
           }}
@@ -584,7 +625,12 @@ export function Sidebar({
                   <ul className="sidebar-session-list">
                     {entry.sessions.map((session) => (
                       <li key={session.id}>
-                        <SessionRow session={session} {...sessionRowProps} />
+                        <SessionRow
+                          session={session}
+                          active={session.fileName === sessionFile}
+                          status={statusOf(session)}
+                          {...sessionRowProps}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -605,7 +651,12 @@ export function Sidebar({
           <ul className="sidebar-session-list">
             {ungrouped.map((session) => (
               <li key={session.id}>
-                <SessionRow session={session} {...sessionRowProps} />
+                <SessionRow
+                          session={session}
+                          active={session.fileName === sessionFile}
+                          status={statusOf(session)}
+                          {...sessionRowProps}
+                        />
               </li>
             ))}
           </ul>
@@ -681,6 +732,39 @@ export function Sidebar({
           />
         </div>
       </div>
+      {contextMenu !== null ? (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => {
+            setContextMenu(null);
+          }}
+          items={[
+            {
+              label: t('sessions.open'),
+              icon: 'hico-arrow-left',
+              onSelect: () => {
+                void handleResume(contextMenu.session);
+              },
+            },
+            {
+              label: t('sidebar.newBranch'),
+              icon: 'hico-square-grid',
+              onSelect: () => {
+                void cloneTargetSession(contextMenu.session);
+              },
+            },
+            {
+              label: t('sidebar.archive'),
+              icon: 'hico-rectangle-stack',
+              danger: true,
+              onSelect: () => {
+                handleArchive(contextMenu.session.id);
+              },
+            },
+          ]}
+        />
+      ) : null}
     </nav>
   );
 }

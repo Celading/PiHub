@@ -3,6 +3,14 @@ import type { ModelInfo, SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, Theme } from '../types/app.js';
 import { api } from '../api/client.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
+import { restoreSession as restoreArchived } from '../sessions/sessionActions.js';
+import {
+  getPrefs,
+  PREF_CHANGED_EVENT,
+  setPref,
+  type CommandKey,
+  type SendMode,
+} from '../prefs/preferences.js';
 import { ChannelsSection } from './ChannelsSection.js';
 import { FavoritesSection } from './FavoritesSection.js';
 import { LabSection } from './LabSection.js';
@@ -24,14 +32,6 @@ function loadArchivedIds(): string[] {
       : [];
   } catch {
     return [];
-  }
-}
-
-function persistArchivedIds(ids: string[]): void {
-  try {
-    localStorage.setItem(ARCHIVED_STORAGE_KEY, JSON.stringify(ids));
-  } catch {
-    // storage unavailable — restore still works for this session
   }
 }
 
@@ -103,6 +103,35 @@ export function SettingsPage({
     return localStorage.getItem(USER_ID_STORAGE_KEY) ?? 'guest';
   });
   const [editingUser, setEditingUser] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [, forceRender] = useState(0);
+  const prefs = getPrefs();
+
+  // Re-render when preferences change elsewhere (send mode / cmd key).
+  useEffect(() => {
+    const sync = (): void => {
+      forceRender((prev) => prev + 1);
+    };
+    window.addEventListener(PREF_CHANGED_EVENT, sync);
+    return () => {
+      window.removeEventListener(PREF_CHANGED_EVENT, sync);
+    };
+  }, []);
+
+  const handleExportHtml = useCallback(async (): Promise<void> => {
+    setExportNotice(null);
+    setError(null);
+    try {
+      const response = await api.exportHtml();
+      if (!response.success) {
+        setError(response.error ?? 'export failed');
+        return;
+      }
+      setExportNotice(t('sessions.export.done'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,13 +160,10 @@ export function SettingsPage({
   }, []);
 
   const restoreSession = (id: string): void => {
-    const next = archivedIds.filter((archivedId) => archivedId !== id);
-    setArchivedIds(next);
-    persistArchivedIds(next);
-    window.dispatchEvent(new CustomEvent('pihub:archived-changed', { detail: next }));
+    restoreArchived(id);
   };
 
-  // Stay in sync when the sidebar archives a session while this page is open.
+  // Stay in sync when the sidebar archives/restores while this page is open.
   useEffect(() => {
     const syncArchived = (event: Event): void => {
       const detail = (event as CustomEvent<string[]>).detail;
@@ -289,7 +315,7 @@ export function SettingsPage({
                     <span className="setting-value mono">{userId}</span>
                     <button
                       type="button"
-                      className="setting-restore"
+                      className="btn-primary"
                       onClick={() => {
                         setEditingUser(true);
                       }}
@@ -312,12 +338,62 @@ export function SettingsPage({
                       ? t('settings.personal.sidebarCollapsed')
                       : t('settings.personal.sidebarExpanded')}
                   </span>
-                  <button type="button" className="setting-restore" onClick={onToggleCollapsed}>
+                  <button type="button" className="btn-primary" onClick={onToggleCollapsed}>
                     {sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')}
                   </button>
                 </div>
               </div>
               <p className="settings-hint">{t('settings.personal.sidebarHint')}</p>
+            </section>
+
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.personal.sendMode')}</h2>
+              <div className="settings-language">
+                {(
+                  [
+                    { value: 'enter', label: t('settings.personal.sendMode.enter') },
+                    { value: 'cmd-enter', label: t('settings.personal.sendMode.cmdEnter') },
+                    { value: 'ctrl-enter', label: t('settings.personal.sendMode.ctrlEnter') },
+                  ] as ReadonlyArray<{ value: SendMode; label: string }>
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="settings-language-btn"
+                    data-active={prefs.sendMode === option.value}
+                    onClick={() => {
+                      setPref('sendMode', option.value);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.personal.cmdKey')}</h2>
+              <div className="settings-language">
+                {(
+                  [
+                    { value: 'meta', label: t('settings.personal.cmdKey.meta') },
+                    { value: 'ctrl', label: t('settings.personal.cmdKey.ctrl') },
+                  ] as ReadonlyArray<{ value: CommandKey; label: string }>
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="settings-language-btn"
+                    data-active={prefs.cmdKey === option.value}
+                    onClick={() => {
+                      setPref('cmdKey', option.value);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="settings-hint">{t('settings.personal.keysHint')}</p>
             </section>
           </>
         ) : null}
@@ -348,36 +424,54 @@ export function SettingsPage({
         ) : null}
 
         {section === 'sessions' ? (
-          <section className="settings-section">
-            <h2 className="settings-section-title mono">{t('settings.nav.sessions')}</h2>
-            {archivedIds.length === 0 ? (
-              <p className="settings-hint">{t('settings.emptyArchived')}</p>
-            ) : (
-              <div className="settings-list">
-                {archivedIds.map((id) => {
-                  const session = sessions.find((entry) => entry.id === id);
-                  if (session === undefined) {
-                    return null;
-                  }
-                  return (
-                    <div key={id} className="setting-row">
-                      <span className="setting-label mono">{session.name ?? session.fileName}</span>
-                      <span className="setting-value mono">{session.cwd}</span>
-                      <button
-                        type="button"
-                        className="setting-restore"
-                        onClick={() => {
-                          restoreSession(id);
-                        }}
-                      >
-                        {t('settings.restore')}
-                      </button>
-                    </div>
-                  );
-                })}
+          <>
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.nav.sessions')}</h2>
+              {archivedIds.length === 0 ? (
+                <p className="settings-hint">{t('settings.emptyArchived')}</p>
+              ) : (
+                <div className="settings-list">
+                  {archivedIds.map((id) => {
+                    const session = sessions.find((entry) => entry.id === id);
+                    if (session === undefined) {
+                      return null;
+                    }
+                    return (
+                      <div key={id} className="setting-row">
+                        <span className="setting-label mono">{session.name ?? session.fileName}</span>
+                        <span className="setting-value mono">{session.cwd}</span>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => {
+                            restoreSession(id);
+                          }}
+                        >
+                          {t('settings.restore')}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('sessions.export.title')}</h2>
+              <p className="settings-hint">{t('sessions.export.hint')}</p>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('sessions.export.current')}</span>
+                <div className="setting-row-value">
+                  {exportNotice !== null ? (
+                    <span className="setting-value mono">{exportNotice}</span>
+                  ) : null}
+                  <button type="button" className="btn-primary" onClick={() => { void handleExportHtml(); }}>
+                    {t('sessions.export.action')}
+                  </button>
+                </div>
               </div>
-            )}
-          </section>
+            </section>
+          </>
         ) : null}
 
         {section === 'permissions' ? <PermissionsSection /> : null}

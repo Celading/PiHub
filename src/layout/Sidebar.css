@@ -421,28 +421,14 @@
 }
 
 .sidebar-back-wide {
+  /* Shape only — colors/animation come from the unified .btn-primary. */
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   width: 100%;
+  border-radius: 0;
   padding: var(--space-3);
-  border: 0;
-  border-top: var(--border-thin) solid var(--border-subtle);
-  background-color: transparent;
-  color: var(--primary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.sidebar-back-wide:hover {
-  background-color: var(--surface-hover);
-}
-
-.sidebar-back-wide:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
 }
 
 .sidebar-settings-tree {
@@ -497,3 +483,53 @@
 .sidebar-settings-item[data-active='true'] .hico {
   color: var(--primary);
 }
+
+/* ---- phase-3 batch 2: active highlight + traffic light ---- */
+.sidebar-session-row[data-active='true'] .sidebar-session-item {
+  background-color: var(--surface-subtle);
+  border-left-color: var(--primary);
+}
+
+.sidebar-session-item {
+  border-left: var(--border-thick) solid transparent;
+}
+
+.sidebar-session-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.session-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--ok, #198038);
+}
+
+.session-status-dot[data-status='running'] {
+  background-color: var(--info, #0072c3);
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+
+.session-status-dot[data-status='aborted'] {
+  background-color: var(--error, #c62828);
+}
+
+.session-status-dot[data-status='pending'] {
+  background-color: var(--warning, #f1c21b);
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* (back button styling lives with the primary definition above) */

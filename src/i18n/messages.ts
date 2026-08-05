@@ -37,6 +37,10 @@ export const zhMessages = {
   'sidebar.msgs': '条消息',
   'sidebar.collapse': '收起侧边栏',
   'sidebar.expand': '展开侧边栏',
+  'session.status.done': '已完成',
+  'session.status.running': '任务进行中',
+  'session.status.aborted': '任务中断',
+  'session.status.pending': '请求权限阻塞中',
 
   // sidebar collections (phase-3 batch)
   'sidebar.collections': '集合',
@@ -61,6 +65,9 @@ export const zhMessages = {
   'composer.abort': '中断',
   'composer.favorite': '收藏当前输入',
   'composer.favoriteAdded': '已收藏',
+  'composer.hint.cmdEnter': '⌘+回车发送 · Shift+回车换行',
+  'composer.hint.ctrlEnter': 'Ctrl+回车发送 · Shift+回车换行',
+  'composer.modelNote': '选择立即生效',
 
   // model bar
   'modelbar.model': '模型',
@@ -94,6 +101,12 @@ export const zhMessages = {
   'sessions.tokens': 'tokens',
   'sessions.tools': '次工具调用',
   'sessions.openSessionError': '无法打开会话',
+  'sessions.open': '打开',
+  'sessions.export.title': '导出',
+  'sessions.export.hint': '将当前会话导出为 HTML 文件（保存至 ~/.pi）。',
+  'sessions.export.current': '当前会话',
+  'sessions.export.action': '导出 HTML',
+  'sessions.export.done': '已导出 HTML',
 
   // session actions (phase-2)
   'session.rename': '重命名',
@@ -188,6 +201,14 @@ export const zhMessages = {
   'settings.personal.sidebarExpanded': '展开',
   'settings.personal.sidebarCollapsed': '已收起',
   'settings.personal.sidebarHint': '收起后可通过左侧窄条或此处重新展开。',
+  'settings.personal.sendMode': '发送方式',
+  'settings.personal.sendMode.enter': '回车直接发送',
+  'settings.personal.sendMode.cmdEnter': '⌘ + 回车发送',
+  'settings.personal.sendMode.ctrlEnter': 'Ctrl + 回车发送',
+  'settings.personal.cmdKey': '切换会话修饰键',
+  'settings.personal.cmdKey.meta': '⌘ Command',
+  'settings.personal.cmdKey.ctrl': 'Ctrl',
+  'settings.personal.keysHint': '修饰键 + ↑ / ↓ 在会话间循环切换。',
 
   // settings modal nav (phase-3)
   'settings.nav.general': '通用设置',
@@ -274,6 +295,10 @@ export const enMessages: Record<MessageKey, string> = {
   'sidebar.msgs': 'msgs',
   'sidebar.collapse': 'Collapse sidebar',
   'sidebar.expand': 'Expand sidebar',
+  'session.status.done': 'Done',
+  'session.status.running': 'Running',
+  'session.status.aborted': 'Interrupted',
+  'session.status.pending': 'Waiting for permission',
 
   'sidebar.collections': 'Collections',
   'sidebar.ungrouped': 'Ungrouped',
@@ -296,6 +321,9 @@ export const enMessages: Record<MessageKey, string> = {
   'composer.abort': 'abort',
   'composer.favorite': 'Save current input to favorites',
   'composer.favoriteAdded': 'saved',
+  'composer.hint.cmdEnter': '⌘+enter to send · shift+enter for newline',
+  'composer.hint.ctrlEnter': 'ctrl+enter to send · shift+enter for newline',
+  'composer.modelNote': 'takes effect immediately',
 
   'modelbar.model': 'model',
   'modelbar.thinking': 'thinking',
@@ -326,6 +354,12 @@ export const enMessages: Record<MessageKey, string> = {
   'sessions.tokens': 'tokens',
   'sessions.tools': 'tools',
   'sessions.openSessionError': 'failed to open session',
+  'sessions.open': 'Open',
+  'sessions.export.title': 'Export',
+  'sessions.export.hint': 'Exports the current session as an HTML file (saved under ~/.pi).',
+  'sessions.export.current': 'Current session',
+  'sessions.export.action': 'Export HTML',
+  'sessions.export.done': 'Exported as HTML',
 
   'session.rename': 'Rename',
   'session.rename.placeholder': 'Session name…',
@@ -413,6 +447,14 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.personal.sidebarExpanded': 'expanded',
   'settings.personal.sidebarCollapsed': 'collapsed',
   'settings.personal.sidebarHint': 'While collapsed, reopen from the slim left bar or here.',
+  'settings.personal.sendMode': 'Send mode',
+  'settings.personal.sendMode.enter': 'Enter sends',
+  'settings.personal.sendMode.cmdEnter': '⌘ + Enter sends',
+  'settings.personal.sendMode.ctrlEnter': 'Ctrl + Enter sends',
+  'settings.personal.cmdKey': 'Session-switch modifier',
+  'settings.personal.cmdKey.meta': '⌘ Command',
+  'settings.personal.cmdKey.ctrl': 'Ctrl',
+  'settings.personal.keysHint': 'Modifier + ↑ / ↓ cycles through sessions.',
 
   // settings modal nav (phase-3)
   'settings.nav.general': 'General',

@@ -50,7 +50,7 @@ export function FavoritesSection({ onRun }: FavoritesSectionProps): React.JSX.El
             }
           }}
         />
-        <button type="button" className="setting-restore" onClick={addDraft}>
+        <button type="button" className="btn-primary" onClick={addDraft}>
           {t('favorites.add')}
         </button>
       </div>
@@ -65,7 +65,7 @@ export function FavoritesSection({ onRun }: FavoritesSectionProps): React.JSX.El
               <div className="favorites-actions">
                 <button
                   type="button"
-                  className="setting-restore"
+                  className="btn-primary"
                   onClick={() => {
                     onRun(text);
                   }}

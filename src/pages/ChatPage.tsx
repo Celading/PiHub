@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
+import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
-import { ModelBar } from '../components/ModelBar.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
+import { archiveSession } from '../sessions/sessionActions.js';
+import { api } from '../api/client.js';
 import './ChatPage.css';
 
 /** One user prompt and everything that followed it until the next prompt. */
@@ -45,7 +47,11 @@ function formatDuration(ms: number, locale: Locale): string {
   return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
 }
 
-export function ChatPage(): React.JSX.Element {
+interface ChatPageProps {
+  onSessionChanged: () => void;
+}
+
+export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element {
   const chat = useChatSession();
   const { t, locale } = useI18n();
   const settledNotify = useLabFlag('settledNotify');
@@ -125,15 +131,40 @@ export function ChatPage(): React.JSX.Element {
 
   return (
     <section className="chatpage">
-      <ModelBar
-        rpcState={chat.rpcState}
-        onSetModel={(provider, modelId) => {
-          void chat.setModel(provider, modelId);
-        }}
-        onSetThinking={(level) => {
-          void chat.setThinkingLevel(level);
-        }}
-      />
+      <div className="chatpage-toolbar">
+        <div className="chatpage-toolbar-spacer" />
+        <div className="chatpage-toolbar-actions">
+          <IconButton
+            icon="hico-square-grid"
+            label={t('sidebar.newBranch')}
+            placement="bottom"
+            onClick={() => {
+              void api
+                .cloneSession()
+                .then((response) => {
+                  if (response.success) {
+                    onSessionChanged();
+                  }
+                })
+                .catch(() => {
+                  // chat state surfaces backend errors
+                });
+            }}
+          />
+          <IconButton
+            icon="hico-rectangle-stack"
+            label={t('sidebar.archive')}
+            placement="bottom"
+            onClick={() => {
+              const file = chat.rpcState?.sessionFile;
+              if (file !== undefined && file.length > 0) {
+                archiveSession(file);
+                onSessionChanged();
+              }
+            }}
+          />
+        </div>
+      </div>
       <div className="chatpage-scroll scroll-area" ref={scrollRef}>
         {chat.error !== null ? (
           <div className="chatpage-error mono">{chat.error}</div>
@@ -258,6 +289,7 @@ export function ChatPage(): React.JSX.Element {
         </button>
         <Composer
           isAgentRunning={chat.isAgentRunning}
+          rpcState={chat.rpcState}
           onSendPrompt={(text, images) => {
             void chat.sendPrompt(text, images);
           }}
@@ -266,6 +298,13 @@ export function ChatPage(): React.JSX.Element {
           }}
           onAbort={() => {
             void chat.abort();
+            window.dispatchEvent(new Event('pihub:run-aborted'));
+          }}
+          onSetModel={(provider, modelId) => {
+            void chat.setModel(provider, modelId);
+          }}
+          onSetThinking={(level) => {
+            void chat.setThinkingLevel(level);
           }}
         />
       </div>

@@ -6,3 +6,6 @@ dist-server/
 .env
 .env.local
 coverage/
+
+# session HTML exports (user data)
+pi-session-*.html

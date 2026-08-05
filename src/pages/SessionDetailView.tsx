@@ -113,20 +113,6 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
     }
   }, [t]);
 
-  const handleExport = useCallback(async (): Promise<void> => {
-    setError(null);
-    try {
-      const response = await api.exportHtml();
-      if (!response.success) {
-        setError(response.error ?? 'export failed');
-        return;
-      }
-      setNotice(t('session.export.done'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [t]);
-
   const handleStats = useCallback(async (): Promise<void> => {
     setError(null);
     try {
@@ -309,9 +295,6 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
           </button>
           <button type="button" className="session-action-btn" onClick={() => { void handleCompact(); }}>
             {t('session.compact')}
-          </button>
-          <button type="button" className="session-action-btn" onClick={() => { void handleExport(); }}>
-            {t('session.export')}
           </button>
           <label className="session-auto-compact mono">
             <input

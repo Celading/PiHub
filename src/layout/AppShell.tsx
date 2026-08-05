@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { SettingsSectionId, Theme, View } from '../types/app';
+import type { SessionStatus } from '../chat/sessionWatch.js';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import './AppShell.css';
@@ -17,6 +18,8 @@ interface AppShellProps {
   onSettingsSectionChange: (section: SettingsSectionId) => void;
   sidebarCollapsed: boolean;
   onToggleCollapsed: () => void;
+  sessionFile: string | null;
+  sessionStatus: SessionStatus;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
   onOpenCommands: () => void;
@@ -46,6 +49,8 @@ export function AppShell({
   onSettingsSectionChange,
   sidebarCollapsed,
   onToggleCollapsed,
+  sessionFile,
+  sessionStatus,
   onViewChange,
   onSessionChanged,
   onOpenCommands,
@@ -98,6 +103,8 @@ export function AppShell({
         onSettingsSectionChange={onSettingsSectionChange}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={onToggleCollapsed}
+        sessionFile={sessionFile}
+        sessionStatus={sessionStatus}
         onViewChange={onViewChange}
         onSessionChanged={onSessionChanged}
         onOpenCommands={onOpenCommands}

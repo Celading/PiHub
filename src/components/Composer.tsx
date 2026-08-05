@@ -2,33 +2,52 @@ import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type Keyboar
 import { useI18n } from '../i18n/I18nProvider.js';
 import { api, type PromptImage } from '../api/client.js';
 import { addFavorite } from '../favorites/favoritesStore.js';
-import type { PiCommand } from '../../shared/types.js';
+import { usePref } from '../prefs/preferences.js';
+import type { PiCommand, RpcState } from '../../shared/types.js';
 import './Composer.css';
+
+const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 interface PendingImage extends PromptImage {
   previewUrl: string;
 }
 
+interface ModelOption {
+  provider: string;
+  modelId: string;
+  label: string;
+}
+
 interface ComposerProps {
   isAgentRunning: boolean;
+  /** Optional: when absent (e.g. session detail resume composer) the
+   *  model/thinking row is not rendered. */
+  rpcState?: RpcState | null;
   onSendPrompt: (text: string, images?: PromptImage[]) => void;
   onSendSteer: (text: string) => void;
   onAbort: () => void;
+  onSetModel?: (provider: string, modelId: string) => void;
+  onSetThinking?: (level: string) => void;
 }
 
 export function Composer({
   isAgentRunning,
+  rpcState,
   onSendPrompt,
   onSendSteer,
   onAbort,
+  onSetModel,
+  onSetThinking,
 }: ComposerProps): React.JSX.Element {
   const { t } = useI18n();
+  const sendMode = usePref('sendMode');
   const [text, setText] = useState('');
   const [images, setImages] = useState<PendingImage[]>([]);
   const [commands, setCommands] = useState<PiCommand[] | null>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [favoriteNotice, setFavoriteNotice] = useState(false);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load commands once for the "/" suggestion surface.
@@ -51,6 +70,51 @@ export function Composer({
       cancelled = true;
     };
   }, []);
+
+  // Load model options once for the inline model selector (phase-3: the
+  // model/thinking controls moved down next to the send button).
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const response = await api.models();
+        if (cancelled) {
+          return;
+        }
+        const flat: ModelOption[] = [];
+        for (const entry of response.providers) {
+          for (const model of entry.models) {
+            flat.push({
+              provider: entry.provider,
+              modelId: model.id,
+              label: model.name,
+            });
+          }
+        }
+        setModelOptions(flat);
+      } catch {
+        if (!cancelled) {
+          setModelOptions([]);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const modelChanged = (value: string): void => {
+    if (onSetModel === undefined) {
+      return;
+    }
+    const option = modelOptions.find(
+      (item) => `${item.provider}/${item.modelId}` === value,
+    );
+    if (option !== undefined) {
+      onSetModel(option.provider, option.modelId);
+    }
+  };
 
   const slashSuggestions = useMemo(() => {
     if (!slashOpen || commands === null) {
@@ -84,6 +148,19 @@ export function Composer({
     setSlashOpen(isSlashMode);
   };
 
+  const isSubmitKey = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
+      return false;
+    }
+    if (sendMode === 'enter') {
+      return true;
+    }
+    if (sendMode === 'cmd-enter') {
+      return event.metaKey;
+    }
+    return event.ctrlKey;
+  };
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (slashOpen && slashSuggestions.length > 0) {
       if (event.key === 'ArrowDown') {
@@ -110,7 +187,7 @@ export function Composer({
         return;
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if (isSubmitKey(event)) {
       event.preventDefault();
       submit();
     }
@@ -237,7 +314,13 @@ export function Composer({
       />
       <div className="composer-actions">
         <span className="composer-hint mono">
-          {isAgentRunning ? t('composer.hint.steer') : t('composer.hint')}
+          {isAgentRunning
+            ? t('composer.hint.steer')
+            : sendMode === 'cmd-enter'
+              ? t('composer.hint.cmdEnter')
+              : sendMode === 'ctrl-enter'
+                ? t('composer.hint.ctrlEnter')
+                : t('composer.hint')}
         </span>
         <button
           type="button"
@@ -272,6 +355,51 @@ export function Composer({
           {isAgentRunning ? t('composer.steer') : t('composer.send')}
         </button>
       </div>
+      {/* Model / thinking selectors sit at the very bottom, next to the
+          send button area (owner: "这俩按钮放底下"). Selection takes effect
+          immediately; no save button. */}
+      {rpcState !== undefined && rpcState !== null && onSetModel !== undefined && onSetThinking !== undefined ? (
+        <div className="composer-model-row">
+          <label className="modelbar-field">
+            <span className="modelbar-label mono">{t('modelbar.model')}</span>
+            <select
+              className="modelbar-select"
+              value={`${rpcState.model?.provider ?? ''}/${rpcState.model?.id ?? ''}`}
+              onChange={(event) => {
+                modelChanged(event.target.value);
+              }}
+              aria-label={t('modelbar.model')}
+            >
+              <option value="/" disabled>
+                {rpcState.model?.name ?? 'model'}
+              </option>
+              {modelOptions.map((option) => (
+                <option key={`${option.provider}/${option.modelId}`} value={`${option.provider}/${option.modelId}`}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="modelbar-field">
+            <span className="modelbar-label mono">{t('modelbar.thinking')}</span>
+            <select
+              className="modelbar-select"
+              value={rpcState.thinkingLevel}
+              onChange={(event) => {
+                onSetThinking(event.target.value);
+              }}
+              aria-label={t('modelbar.thinking')}
+            >
+              {THINKING_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="composer-model-note mono">{t('composer.modelNote')}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SettingsSectionId, Theme, View } from './types/app';
 import { THEME_STORAGE_KEY } from './types/app';
 import { AppShell } from './layout/AppShell';
@@ -8,6 +8,8 @@ import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CommandPalette } from './components/CommandPalette';
 import { api } from './api/client.js';
+import { useSessionWatch } from './chat/sessionWatch.js';
+import { usePref } from './prefs/preferences.js';
 
 const SIDEBAR_COLLAPSED_KEY = 'pi-panel:sidebar-collapsed';
 
@@ -31,6 +33,8 @@ export function App(): React.JSX.Element {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
     loadSidebarCollapsed(),
   );
+  const sessionWatch = useSessionWatch();
+  const cmdKey = usePref('cmdKey');
 
   useEffect(() => {
     try {
@@ -39,6 +43,31 @@ export function App(): React.JSX.Element {
       // storage unavailable
     }
   }, [sidebarCollapsed]);
+
+  // Command (optionally Ctrl) + ArrowUp/Down cycles the session list.
+  const switchSessionByOffset = useCallback(async (offset: number): Promise<void> => {
+    try {
+      const [list, state] = await Promise.all([api.sessions(), api.rpcState()]);
+      const sessions = list.sessions;
+      if (sessions.length === 0) {
+        return;
+      }
+      const current = state.sessionFile;
+      const index = sessions.findIndex((session) => session.fileName === current);
+      const base = index === -1 ? 0 : index;
+      const next = sessions[(base + offset + sessions.length) % sessions.length];
+      if (next === undefined) {
+        return;
+      }
+      const response = await api.switchSession(next.fileName);
+      if (response.success) {
+        setChatSessionKey((prev) => prev + 1);
+        setView('chat');
+      }
+    } catch {
+      // offline or idle; ignore
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -70,20 +99,39 @@ export function App(): React.JSX.Element {
         void api.abort().catch(() => {
           // offline or idle; ignore
         });
+        return;
+      }
+      // Command (optional Ctrl) + ArrowUp/Down: switch session.
+      const modDown =
+        cmdKey === 'meta'
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey;
+      if (modDown && !event.shiftKey && !event.altKey) {
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault();
+          void switchSessionByOffset(event.key === 'ArrowUp' ? -1 : 1);
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [commandOpen]);
+  }, [commandOpen, cmdKey, switchSessionByOffset]);
 
   const renderPage = (): React.JSX.Element => {
     switch (view) {
       case 'chat':
         // key forces a remount after new/resume so the chat reloads the
         // switched RPC session's messages.
-        return <ChatPage key={chatSessionKey} />;
+        return (
+          <ChatPage
+            key={chatSessionKey}
+            onSessionChanged={() => {
+              setChatSessionKey((prev) => prev + 1);
+            }}
+          />
+        );
       case 'sessions':
         return <SessionsPage />;
       case 'stats':
@@ -119,6 +167,8 @@ export function App(): React.JSX.Element {
       onToggleCollapsed={() => {
         setSidebarCollapsed(!sidebarCollapsed);
       }}
+      sessionFile={sessionWatch.sessionFile}
+      sessionStatus={sessionWatch.status}
       onViewChange={setView}
       onSessionChanged={() => {
         setChatSessionKey(chatSessionKey + 1);

@@ -45,7 +45,7 @@ export function PermissionsSection(): React.JSX.Element {
             {notifyLabel}
           </span>
           {notifyState === 'default' ? (
-            <button type="button" className="setting-restore" onClick={requestNotify}>
+            <button type="button" className="btn-primary" onClick={requestNotify}>
               {t('permissions.notify.request')}
             </button>
           ) : null}
