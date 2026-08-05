@@ -43,6 +43,20 @@ function currentTheme(): 'light' | 'dark' {
 
 function CodeBlock({ code, lang }: { code: string; lang: string | undefined }): React.JSX.Element {
   const [html, setHtml] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => currentTheme());
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(currentTheme());
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,11 +66,11 @@ function CodeBlock({ code, lang }: { code: string; lang: string | undefined }): 
         if (cancelled) {
           return;
         }
-        const theme = currentTheme() === 'dark' ? DARK_THEME : LIGHT_THEME;
+        const shikiTheme = theme === 'dark' ? DARK_THEME : LIGHT_THEME;
         setHtml(
           highlighter.codeToHtml(code, {
             lang: lang ?? 'text',
-            theme,
+            theme: shikiTheme,
           }),
         );
       } catch {
@@ -69,7 +83,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string | undefined }): 
     return () => {
       cancelled = true;
     };
-  }, [code, lang]);
+  }, [code, lang, theme]);
 
   if (html === null) {
     return (

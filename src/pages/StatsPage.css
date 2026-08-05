@@ -1,0 +1,111 @@
+.stats-page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.stats-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  padding-bottom: var(--space-4);
+}
+
+.stats-head-hint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.stats-hint {
+  color: var(--text-secondary);
+}
+
+.stats-error {
+  padding: var(--space-3);
+  border-left: var(--border-thick) solid var(--red-60);
+  background-color: var(--background-subtle);
+  color: var(--red-60);
+  font-size: var(--text-sm);
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.kpi-card {
+  padding: var(--space-4);
+  border-top: var(--border-thick) solid var(--primary);
+  border-right: var(--border-thin) solid var(--border-subtle);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  border-left: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface);
+}
+
+.kpi-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.kpi-value {
+  margin-top: var(--space-2);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.kpi-sub {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stats-section-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.datatable-wrap {
+  overflow-x: auto;
+}
+
+.datatable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.datatable th,
+.datatable td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  text-align: left;
+}
+
+.datatable th {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  border-bottom: var(--border-thick) solid var(--border-strong);
+}
+
+.datatable tbody tr:hover {
+  background-color: var(--surface-hover);
+}
