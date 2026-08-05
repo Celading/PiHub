@@ -99,4 +99,8 @@ export const api = {
       body: JSON.stringify({ sessionPath }),
     });
   },
+
+  newSession(): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/new_session', { method: 'POST' });
+  },
 };

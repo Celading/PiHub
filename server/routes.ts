@@ -184,9 +184,24 @@ export function createRouter(
       res.status(400).json({ error: 'invalid session path' });
       return;
     }
-    await withBridge(res, () =>
-      bridge.send({ type: 'switch_session', sessionPath: body.data.sessionPath }),
-    );
+    try {
+      const response = await bridge.send({
+        type: 'switch_session',
+        sessionPath: body.data.sessionPath,
+      });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/new_session', async (_req, res) => {
+    try {
+      const response = await bridge.send({ type: 'new_session' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.get('/api/events', (req, res) => {

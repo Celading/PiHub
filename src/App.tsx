@@ -13,6 +13,7 @@ export function App(): React.JSX.Element {
     return saved === 'dark' ? 'dark' : 'light';
   });
   const [view, setView] = useState<View>('chat');
+  const [chatSessionKey, setChatSessionKey] = useState(0);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -22,7 +23,9 @@ export function App(): React.JSX.Element {
   const renderPage = (): React.JSX.Element => {
     switch (view) {
       case 'chat':
-        return <ChatPage />;
+        // key forces a remount after new/resume so the chat reloads the
+        // switched RPC session's messages.
+        return <ChatPage key={chatSessionKey} />;
       case 'sessions':
         return <SessionsPage />;
       case 'stats':
@@ -37,6 +40,9 @@ export function App(): React.JSX.Element {
       view={view}
       theme={theme}
       onViewChange={setView}
+      onSessionChanged={() => {
+        setChatSessionKey(chatSessionKey + 1);
+      }}
       onThemeToggle={() => {
         setTheme(theme === 'light' ? 'dark' : 'light');
       }}
