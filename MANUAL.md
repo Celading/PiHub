@@ -221,8 +221,8 @@ Layout: `src/` (React SPA) · `server/` (RPC bridge, REST, SSE) · `shared/`
 (zod boundary schemas) · `public/` (PWA manifest, icon, service worker).
 
 ### Contributing
-Open issues/PRs against the repository. The project is Apache-2.0 with
-an independent clean-room implementation, written from scratch.
+Open issues/PRs against the repository. The project is Apache-2.0, an
+independent clean-room implementation written from scratch.
 
 ---
 
