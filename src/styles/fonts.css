@@ -1,0 +1,66 @@
+/* Font faces: HarmonyOS Sans SC (body/content) + HMSymbols (HarmonyOS icons).
+ * HarmonyOS Sans is embedded under the HarmonyOS Sans Fonts License Agreement
+ * (see assets/fonts/LICENSE.txt); a prominent notice is in README.md.
+ * HMSymbolVF.ttf subset (13 glyphs) converted to woff2.
+ */
+
+/* ---- HarmonyOS Sans SC: body / non-control content ---- */
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('../assets/fonts/harmonyos-sans-sc-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('../assets/fonts/harmonyos-sans-sc-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('../assets/fonts/harmonyos-sans-sc-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---- HM Symbols (HarmonyOS icon font, subset) ---- */
+@font-face {
+  font-family: 'HMSymbols';
+  src: url('../assets/fonts/hm-symbols.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+.hico {
+  font-family: 'HMSymbols';
+  font-size: 1em;
+  line-height: 1;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  -webkit-font-smoothing: antialiased;
+  speak: never;
+  display: inline-block;
+}
+
+.hico-plus::before { content: '\F0005'; }
+.hico-magnifyingglass::before { content: '\F0009'; }
+.hico-gearshape::before { content: '\F0020'; }
+.hico-moon::before { content: '\F002E'; }
+.hico-bolt::before { content: '\F0242'; }
+.hico-wand-stars::before { content: '\F00D7'; }
+.hico-rectangle-stack::before { content: '\F0583'; }
+.hico-clock::before { content: '\F031D'; }
+.hico-square-grid::before { content: '\F00A3'; }
+.hico-questionmark-circle::before { content: '\F00C0'; }
+.hico-arrow-left::before { content: '\F00CA'; }
+.hico-person::before { content: '\F0465'; }
+.hico-sun::before { content: '\F04FA'; }

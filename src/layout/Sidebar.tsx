@@ -121,37 +121,33 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
 
   return (
     <nav className="sidebar" aria-label="Primary">
-      <div className="sidebar-brand">
-        <span className="sidebar-brand-mark" aria-hidden="true">
-          π
-        </span>
-        <span className="sidebar-brand-name">{t('brand.name')}</span>
-      </div>
-
       <div className="sidebar-top">
         <button type="button" className="sidebar-new" onClick={() => { void handleNewSession(); }}>
-          <span aria-hidden="true">＋</span>
+          <span className="hico hico-plus" aria-hidden="true" />
           <span>{t('sidebar.new')}</span>
         </button>
-        <input
-          className="sidebar-search"
-          type="search"
-          placeholder={t('sidebar.search')}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          aria-label={t('sidebar.search')}
-        />
+        <div className="sidebar-search-wrap">
+          <span className="hico hico-magnifyingglass sidebar-search-icon" aria-hidden="true" />
+          <input
+            className="sidebar-search"
+            type="search"
+            placeholder={t('sidebar.search')}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+            aria-label={t('sidebar.search')}
+          />
+        </div>
         <button
           type="button"
           className="sidebar-feature"
           title={t('sidebar.features')}
           aria-disabled="true"
         >
-          <span className="sidebar-feature-icon" aria-hidden="true">
-            ⚙
-          </span>
+          <span className="hico hico-bolt" aria-hidden="true" />
+          <span className="hico hico-wand-stars" aria-hidden="true" />
+          <span className="hico hico-rectangle-stack" aria-hidden="true" />
           <span>{t('sidebar.features')}</span>
           <span className="sidebar-feature-tag mono">{t('sidebar.features.phase2')}</span>
         </button>
@@ -191,27 +187,30 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
         <div className="sidebar-footer-actions">
           <button
             type="button"
-            className="sidebar-footer-link mono"
+            className="sidebar-footer-link"
             title={t('sidebar.help')}
             aria-disabled="true"
           >
-            {t('sidebar.help')}
+            <span className="hico hico-questionmark-circle" aria-hidden="true" />
+            <span className="mono">{t('sidebar.help')}</span>
           </button>
           <button
             type="button"
-            className="sidebar-footer-link mono"
+            className="sidebar-footer-link"
             data-active={view === 'sessions'}
             onClick={() => { onViewChange('sessions'); }}
           >
-            {t('sidebar.history')}
+            <span className="hico hico-clock" aria-hidden="true" />
+            <span className="mono">{t('sidebar.history')}</span>
           </button>
           <button
             type="button"
-            className="sidebar-footer-link mono"
+            className="sidebar-footer-link"
             data-active={view === 'stats'}
             onClick={() => { onViewChange('stats'); }}
           >
-            {t('sidebar.stats')}
+            <span className="hico hico-square-grid" aria-hidden="true" />
+            <span className="mono">{t('sidebar.stats')}</span>
           </button>
         </div>
         <div className="sidebar-user">
@@ -233,26 +232,26 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
           ) : (
             <button
               type="button"
-              className="sidebar-user-id mono"
+              className="sidebar-user-id"
               onClick={() => { setEditingUser(true); }}
               title={t('sidebar.user.id')}
             >
               <span className="sidebar-user-avatar" aria-hidden="true">
                 {userId.slice(0, 1).toUpperCase()}
               </span>
-              {userId}
+              <span className="mono">{userId}</span>
             </button>
           )}
           <button
             type="button"
-            className="sidebar-footer-link mono"
+            className="sidebar-footer-link"
             data-active={view === 'settings'}
             onClick={() => { onViewChange('settings'); }}
           >
-            {t('sidebar.settings')}
+            <span className="hico hico-gearshape" aria-hidden="true" />
+            <span className="mono">{t('sidebar.settings')}</span>
           </button>
         </div>
-        <div className="sidebar-slogan">{t('brand.slogan')}</div>
       </div>
     </nav>
   );

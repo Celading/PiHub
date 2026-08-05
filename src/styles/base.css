@@ -15,7 +15,7 @@ body,
 }
 
 body {
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   font-size: var(--text-base);
   line-height: 1.5;
   color: var(--text-primary);
@@ -51,8 +51,16 @@ a:hover {
   text-decoration: underline;
 }
 
+/* Controls use IBM Plex (brand differentiation); body content uses
+ * HarmonyOS Sans SC via the body font-family. */
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+}
+
 button {
-  font-family: inherit;
   font-size: inherit;
   cursor: pointer;
 }

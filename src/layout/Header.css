@@ -36,6 +36,7 @@
 }
 
 .header-brand-name {
+  font-family: var(--font-ui);
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--text-primary);
@@ -43,9 +44,10 @@
 }
 
 .header-brand-sub {
+  font-family: var(--font-serif);
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.01em;
 }
 
 .header-actions {

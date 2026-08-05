@@ -4,8 +4,13 @@
  */
 
 :root {
-  /* ---- IBM Plex type families ---- */
-  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  /* ---- type families ----
+   * HarmonyOS Sans SC: body / non-control content (owner direction).
+   * IBM Plex Sans: controls and brand marks (product differentiation).
+   * IBM Plex Mono: code / data. IBM Plex Serif: brand headlines.
+   */
+  --font-body: 'HarmonyOS Sans SC', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
   --font-serif: 'IBM Plex Serif', Georgia, serif;
 

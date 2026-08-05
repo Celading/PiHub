@@ -31,7 +31,13 @@ export function App(): React.JSX.Element {
       case 'stats':
         return <StatsPage />;
       case 'settings':
-        return <SettingsPage />;
+        return (
+          <SettingsPage
+            onBack={() => {
+              setView('chat');
+            }}
+          />
+        );
     }
   };
 

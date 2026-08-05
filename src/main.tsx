@@ -7,6 +7,7 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/ibm-plex-serif/500.css';
 import '@fontsource/ibm-plex-serif/600.css';
+import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/base.css';
 import { App } from './App';

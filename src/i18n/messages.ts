@@ -89,6 +89,7 @@ export const zhMessages = {
   'settings.loading': '加载中…',
   'settings.empty': '未找到设置文件。',
   'settings.emptyModels': '未找到模型。',
+  'settings.back': '返回主界面',
 } as const;
 
 export type MessageKey = keyof typeof zhMessages;
@@ -168,6 +169,7 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.loading': 'loading…',
   'settings.empty': 'No settings file found.',
   'settings.emptyModels': 'No models found.',
+  'settings.back': 'Back to home',
 };
 
 export const LOCALES = ['zh', 'en'] as const;

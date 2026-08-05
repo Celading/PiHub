@@ -23,7 +23,9 @@ export function Header({ theme, onThemeToggle }: HeaderProps): React.JSX.Element
         </span>
         <div className="header-brand-text">
           <span className="header-brand-name">{t('brand.name')}</span>
-          <span className="header-brand-sub mono">{t('brand.tagline')}</span>
+          <span className="header-brand-sub" title={t('brand.tagline')}>
+            {t('brand.slogan')}
+          </span>
         </div>
       </div>
 
