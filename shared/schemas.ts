@@ -136,6 +136,15 @@ export const sessionHeaderEventSchema = z
     cwd: z.string(),
     name: z.string().optional(),
   })
+
+export const sessionInfoEventSchema = z
+  .object({
+    type: z.literal('session_info'),
+    id: z.string(),
+    parentId: z.string().nullable(),
+    timestamp: z.string(),
+    name: z.string(),
+  })
   
 
 export const messageEventSchema = z
@@ -170,12 +179,13 @@ export const modelChangeEventSchema = z
   
 
 /**
- * Session JSONL line schema: strict discriminated union over the four known
- * kinds. Unknown kinds (labels, future events) are rejected and skipped by the
+ * Session JSONL line schema: strict discriminated union over the known kinds.
+ * Unknown kinds (labels, future events) are rejected and skipped by the
  * parser; they carry no panel data.
  */
 export const sessionEventSchema = z.discriminatedUnion('type', [
   sessionHeaderEventSchema,
+  sessionInfoEventSchema,
   messageEventSchema,
   thinkingLevelChangeEventSchema,
   modelChangeEventSchema,

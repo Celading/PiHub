@@ -105,6 +105,24 @@ export const api = {
     return request<RpcResponse>('/api/rpc/new_session', { method: 'POST' });
   },
 
+  forkSession(entryId: string): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/fork', {
+      method: 'POST',
+      body: JSON.stringify({ entryId }),
+    });
+  },
+
+  cloneSession(): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/clone', { method: 'POST' });
+  },
+
+  renameSession(name: string): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/rename', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
   commands(): Promise<PiCommand[]> {
     return request<{ commands: PiCommand[] }>('/api/rpc/commands').then((response) => response.commands);
   },

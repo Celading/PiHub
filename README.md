@@ -8,6 +8,16 @@ historical session browsing, and model/cost statistics for pi's local agent data
 It is an independent, clean-room implementation — written from scratch,
 no external UI source is reused.
 
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+Third-party assets:
+- HarmonyOS Sans SC fonts embedded under the [HarmonyOS Sans Fonts License
+  Agreement](src/assets/fonts/LICENSE-HarmonyOS-Sans.txt) (Huawei Device Co., Ltd.)
+- HM Symbols icon font subset from the `hm_symbol` pub.dev package
+  (HarmonyOS Symbols; see its package license)
+
 ## Stack
 
 - React 19 + TypeScript (strict mode, zero `any`) + Vite 7

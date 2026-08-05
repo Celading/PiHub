@@ -4,7 +4,7 @@ import { api } from '../api/client.js';
 import { useSessionComposer } from '../chat/sessionComposer.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
-import { useI18n } from '../i18n/I18nProvider.js';
+import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import './SessionDetailView.css';
 
 function formatDate(iso: string, intlTag: string): string {
@@ -45,7 +45,10 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
   const { t, intlTag } = useI18n();
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -55,6 +58,43 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [id]);
+
+  const runAction = useCallback(
+    async (action: () => Promise<unknown>, doneKey: MessageKey): Promise<void> => {
+      setError(null);
+      try {
+        await action();
+        setNotice(t(doneKey));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [t],
+  );
+
+  const handleRename = useCallback(async (): Promise<void> => {
+    const trimmed = nameDraft.trim();
+    if (trimmed.length === 0) {
+      setEditingName(false);
+      return;
+    }
+    await runAction(() => api.renameSession(trimmed), 'session.rename');
+    setEditingName(false);
+    void reload();
+  }, [nameDraft, reload, runAction]);
+
+  const handleClone = useCallback(async (): Promise<void> => {
+    await runAction(() => api.cloneSession(), 'session.clone.done');
+    void reload();
+  }, [reload, runAction]);
+
+  const handleFork = useCallback(
+    async (entryId: string): Promise<void> => {
+      await runAction(() => api.forkSession(entryId), 'session.fork.done');
+      void reload();
+    },
+    [reload, runAction],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +170,11 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
 
       <div className="session-header">
         <div>
-          <h2 className="panel-title">{detail.cwd}</h2>
+          <h2 className="panel-title">
+            {detail.name !== undefined && detail.name.length > 0
+              ? detail.name
+              : detail.cwd}
+          </h2>
           <p className="session-meta mono">
             {formatDate(detail.startedAt, intlTag)} · {String(detail.entries.length)}{' '}
             {t('sessions.entries')}
@@ -140,25 +184,79 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
             {detail.totalCost > 0 ? ` · ${formatCost(detail.totalCost)}` : ''}
           </p>
         </div>
-        {offBranchCount > 0 ? (
-          <button
-            type="button"
-            className="sessions-toggle"
-            onClick={() => {
-              setShowAll(!showAll);
-            }}
-          >
-            {showAll
-              ? t('sessions.mainline')
-              : t('sessions.showAll', { count: String(offBranchCount) })}
+        <div className="session-actions">
+          {notice !== null ? <span className="session-notice mono">{notice}</span> : null}
+          {editingName ? (
+            <input
+              className="session-name-input mono"
+              value={nameDraft}
+              autoFocus
+              placeholder={t('session.rename.placeholder')}
+              aria-label={t('session.rename.placeholder')}
+              onChange={(event) => {
+                setNameDraft(event.target.value);
+              }}
+              onBlur={() => {
+                void handleRename();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  void handleRename();
+                }
+                if (event.key === 'Escape') {
+                  setEditingName(false);
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="session-action-btn"
+              onClick={() => {
+                setNameDraft('');
+                setEditingName(true);
+              }}
+            >
+              {t('session.rename')}
+            </button>
+          )}
+          <button type="button" className="session-action-btn" onClick={() => { void handleClone(); }}>
+            {t('session.clone')}
           </button>
-        ) : null}
+          {offBranchCount > 0 ? (
+            <button
+              type="button"
+              className="sessions-toggle"
+              onClick={() => {
+                setShowAll(!showAll);
+              }}
+            >
+              {showAll
+                ? t('sessions.mainline')
+                : t('sessions.showAll', { count: String(offBranchCount) })}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="session-stream">
         {visible.map((entry) =>
           entry.type === 'message' && entry.message !== undefined ? (
             <div key={entry.id} data-offbranch={!mainlineIds.has(entry.id)}>
+              {entry.message.role === 'user' && mainlineIds.has(entry.id) ? (
+                <div className="session-message-fork">
+                  <button
+                    type="button"
+                    className="session-fork-btn"
+                    onClick={() => {
+                      void handleFork(entry.id);
+                    }}
+                  >
+                    <span className="hico hico-square-grid" aria-hidden="true" />
+                    {t('session.fork')}
+                  </button>
+                </div>
+              ) : null}
               <MessageItem message={entry.message} isStreaming={false} />
             </div>
           ) : (

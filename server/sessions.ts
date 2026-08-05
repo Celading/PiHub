@@ -106,6 +106,7 @@ async function parseSessionFile(fileName: string): Promise<SessionDetail | null>
 
   const entries: SessionEntry[] = [];
   let header: SessionHeaderEvent | null = null;
+  let sessionName: string | undefined;
   let lineCount = 0;
 
   for (const line of content.split('\n')) {
@@ -130,6 +131,15 @@ async function parseSessionFile(fileName: string): Promise<SessionDetail | null>
     const event = result.data;
     if (event.type === 'session') {
       header = event;
+      continue;
+    }
+    if (event.type === 'session_info') {
+      // Display name; the latest entry wins (explicit clears are empty).
+      if (event.name.trim().length > 0) {
+        sessionName = event.name;
+      } else {
+        sessionName = undefined;
+      }
       continue;
     }
     const entry: SessionEntry = {
@@ -158,6 +168,7 @@ async function parseSessionFile(fileName: string): Promise<SessionDetail | null>
     id: header.id,
     fileName,
     cwd: header.cwd,
+    ...(sessionName !== undefined ? { name: sessionName } : {}),
     startedAt: header.timestamp,
     entries,
     tree,
@@ -258,6 +269,7 @@ function summarize(detail: SessionDetail): SessionSummary {
     id: detail.id,
     fileName: detail.fileName,
     cwd: detail.cwd,
+    ...(detail.name !== undefined ? { name: detail.name } : {}),
     startedAt: detail.startedAt,
     messageCount: detail.entries.filter((entry) => entry.type === 'message').length,
     userMessages,

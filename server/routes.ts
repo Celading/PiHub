@@ -33,6 +33,14 @@ const switchSessionBodySchema = z.object({
   sessionPath: z.string().min(1).max(4096),
 });
 
+const forkBodySchema = z.object({
+  entryId: z.string().min(1).max(256),
+});
+
+const renameBodySchema = z.object({
+  name: z.string().max(256),
+});
+
 async function readJson(fileName: string): Promise<unknown> {
   try {
     const content = await readFile(fileName, 'utf8');
@@ -198,6 +206,46 @@ export function createRouter(
   router.post('/api/rpc/new_session', async (_req, res) => {
     try {
       const response = await bridge.send({ type: 'new_session' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/fork', async (req, res) => {
+    const body = forkBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid entry id' });
+      return;
+    }
+    try {
+      const response = await bridge.send({ type: 'fork', entryId: body.data.entryId });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/clone', async (_req, res) => {
+    try {
+      const response = await bridge.send({ type: 'clone' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/rename', async (req, res) => {
+    const body = renameBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid session name' });
+      return;
+    }
+    try {
+      const response = await bridge.send({
+        type: 'set_session_name',
+        name: body.data.name,
+      });
       res.json(response);
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });

@@ -158,4 +158,19 @@ describe('session event schema', () => {
     const result = sessionEventSchema.safeParse(unknown);
     expect(result.success).toBe(false);
   });
+
+  it('accepts session_info entries (display name)', () => {
+    const info = {
+      type: 'session_info',
+      id: 'a93d11f8',
+      parentId: '5f977488',
+      timestamp: '2026-08-05T10:44:11.499Z',
+      name: 'PiHub Smoke Session',
+    };
+    const result = sessionEventSchema.safeParse(info);
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === 'session_info') {
+      expect(result.data.name).toBe('PiHub Smoke Session');
+    }
+  });
 });

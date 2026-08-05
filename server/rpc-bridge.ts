@@ -16,6 +16,9 @@ export type RpcCommand =
   | { type: 'set_thinking_level'; level: string }
   | { type: 'switch_session'; sessionPath: string }
   | { type: 'new_session' }
+  | { type: 'fork'; entryId: string }
+  | { type: 'clone' }
+  | { type: 'set_session_name'; name: string }
   | { type: 'get_commands' }
   | { type: 'get_state' }
   | { type: 'get_messages' }

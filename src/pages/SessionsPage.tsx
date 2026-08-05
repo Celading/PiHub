@@ -45,7 +45,11 @@ function SessionRow({
         onOpen(session.id);
       }}
     >
-      <span className="session-row-cwd mono">{shortCwd(session.cwd)}</span>
+      <span className="session-row-cwd mono">
+        {session.name !== undefined && session.name.length > 0
+          ? session.name
+          : shortCwd(session.cwd)}
+      </span>
       <span className="session-row-stats mono">
         {String(session.messageCount)} {t('sidebar.msgs')} · {String(session.toolCalls)}{' '}
         {t('sessions.tools')}

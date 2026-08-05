@@ -56,6 +56,7 @@ export interface SessionSummary {
   id: string;
   fileName: string;
   cwd: string;
+  name?: string;
   startedAt: string;
   messageCount: number;
   userMessages: number;
@@ -81,6 +82,7 @@ export interface SessionDetail {
   id: string;
   fileName: string;
   cwd: string;
+  name?: string;
   startedAt: string;
   entries: SessionEntry[];
   tree: SessionTreeNode[];

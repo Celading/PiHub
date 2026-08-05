@@ -69,6 +69,16 @@ export const zhMessages = {
   'sessions.tools': '次工具调用',
   'sessions.openSessionError': '无法打开会话',
 
+  // session actions (phase-2)
+  'session.rename': '重命名',
+  'session.rename.placeholder': '输入会话名称…',
+  'session.rename.save': '保存',
+  'session.rename.cancel': '取消',
+  'session.clone': '克隆',
+  'session.clone.done': '已克隆新会话',
+  'session.fork': '分叉',
+  'session.fork.done': '已从此处分叉',
+
   // stats
   'stats.title': '统计',
   'stats.sessions': '会话',
@@ -161,6 +171,15 @@ export const enMessages: Record<MessageKey, string> = {
   'sessions.tokens': 'tokens',
   'sessions.tools': 'tools',
   'sessions.openSessionError': 'failed to open session',
+
+  'session.rename': 'Rename',
+  'session.rename.placeholder': 'Session name…',
+  'session.rename.save': 'Save',
+  'session.rename.cancel': 'Cancel',
+  'session.clone': 'Clone',
+  'session.clone.done': 'Session cloned',
+  'session.fork': 'Fork',
+  'session.fork.done': 'Forked from here',
 
   'stats.title': 'Stats',
   'stats.sessions': 'sessions',
