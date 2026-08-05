@@ -6,7 +6,7 @@ import { createRouter } from './routes.js';
 import { createSessionStore } from './sessions.js';
 import { SseHub } from './sse.js';
 
-const PORT = Number(process.env.PORT ?? 3001);
+const PORT = Number(process.env.PORT ?? 18384);
 const HOST = '127.0.0.1';
 const PI_BINARY = process.env.PI_BINARY ?? 'pi';
 const AGENT_CWD = process.env.PI_CWD ?? process.cwd();

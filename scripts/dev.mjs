@@ -1,8 +1,7 @@
 // Parallel dev runner: starts the Node backend and the Vite dev server.
-// Node 23 `util.styleText` is used for colored output.
 import { spawn } from 'node:child_process';
 
-const prefix = (name: string, color: string, data: Buffer | string): void => {
+const prefix = (name, color, data) => {
   const lines = String(data).replace(/\n$/, '').split('\n');
   for (const line of lines) {
     if (line.length > 0) {
@@ -12,10 +11,10 @@ const prefix = (name: string, color: string, data: Buffer | string): void => {
   }
 };
 
-const run = (name: string, color: string, cmd: string, args: string[]): void => {
+const run = (name, color, cmd, args) => {
   const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout?.on('data', (d: Buffer) => prefix(name, color, d));
-  child.stderr?.on('data', (d: Buffer) => prefix(name, color, d));
+  child.stdout?.on('data', (d) => prefix(name, color, d));
+  child.stderr?.on('data', (d) => prefix(name, color, d));
   child.on('exit', (code) => {
     // eslint-disable-next-line no-console
     console.log(`[${name}] exited with code ${String(code)}`);
