@@ -1,0 +1,123 @@
+/* pi-panel design tokens — Swiss International Style × IBM.
+ * 8px grid, square corners, strong typographic hierarchy, IBM Plex type,
+ * primary #005fb8 (user-specified). Light-first with dark variant.
+ */
+
+:root {
+  /* ---- IBM Plex type families ---- */
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  --font-serif: 'IBM Plex Serif', Georgia, serif;
+
+  /* ---- 8px grid spacing ---- */
+  --space-1: 0.25rem; /* 4px  */
+  --space-2: 0.5rem;  /* 8px  */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem;    /* 16px */
+  --space-5: 1.5rem;  /* 24px */
+  --space-6: 2rem;    /* 32px */
+  --space-7: 2.5rem;  /* 40px */
+  --space-8: 3rem;    /* 48px */
+  --space-9: 4rem;    /* 64px */
+
+  /* ---- type scale (IBM Plex, fluid-light) ---- */
+  --text-xs: 0.75rem;   /* 12px */
+  --text-sm: 0.875rem;  /* 14px */
+  --text-base: 1rem;    /* 16px */
+  --text-lg: 1.25rem;   /* 20px */
+  --text-xl: 1.5rem;    /* 24px */
+  --text-2xl: 2rem;     /* 32px */
+  --text-3xl: 3rem;     /* 48px */
+
+  /* ---- layout ---- */
+  --header-height: 3.5rem;  /* 56px */
+  --sidebar-width: 17rem;   /* 272px = 34 * 8px */
+  --border-thin: 1px;
+  --border-thick: 2px;
+
+  /* ---- radius: Swiss square corners ---- */
+  --radius-none: 0;
+
+  /* ---- motion ---- */
+  --duration-fast: 100ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0, 0.38, 0.9);
+
+  /* ---- IBM blue ramp (Carbon values; #005fb8 is the chosen primary) ---- */
+  --blue-10: #edf5ff;
+  --blue-20: #d0e2ff;
+  --blue-30: #a6c8ff;
+  --blue-40: #78a9ff;
+  --blue-50: #4589ff;
+  --blue-60: #0f62fe;
+  --blue-70: #0043ce;
+  --blue-80: #002d9c;
+  --primary: #005fb8;
+  --primary-hover: #0043ce;
+  --primary-active: #002d9c;
+  --primary-subtle: #edf5ff;
+
+  /* ---- Carbon gray ramp ---- */
+  --gray-10: #f4f4f4;
+  --gray-20: #e0e0e0;
+  --gray-30: #c6c6c6;
+  --gray-40: #a8a8a8;
+  --gray-50: #8d8d8d;
+  --gray-60: #6f6f6f;
+  --gray-70: #525252;
+  --gray-80: #393939;
+  --gray-90: #262626;
+  --gray-100: #161616;
+
+  /* ---- status colors ---- */
+  --green-60: #24a148;
+  --red-60: #da1e28;
+  --yellow-40: #f1c21b;
+
+  /* ---- light theme surface ---- */
+  --background: #ffffff;
+  --background-subtle: var(--gray-10);
+  --background-inverse: var(--gray-100);
+  --surface: #ffffff;
+  --surface-hover: var(--gray-10);
+  --surface-active: var(--gray-20);
+  --border-subtle: var(--gray-20);
+  --border-strong: var(--gray-50);
+  --border-inverse: var(--gray-100);
+  --text-primary: var(--gray-100);
+  --text-secondary: var(--gray-70);
+  --text-placeholder: var(--gray-40);
+  --text-on-color: #ffffff;
+  --text-inverse: var(--gray-10);
+  --link: var(--primary);
+  --link-hover: var(--primary-hover);
+  --focus: var(--primary);
+  --selection: var(--blue-20);
+  --code-background: var(--gray-10);
+  --chat-user-bubble: var(--gray-100);
+  --chat-user-text: #ffffff;
+}
+
+[data-theme='dark'] {
+  --background: var(--gray-100);
+  --background-subtle: var(--gray-90);
+  --background-inverse: var(--gray-10);
+  --surface: var(--gray-90);
+  --surface-hover: var(--gray-80);
+  --surface-active: var(--gray-70);
+  --border-subtle: var(--gray-80);
+  --border-strong: var(--gray-60);
+  --border-inverse: var(--gray-10);
+  --text-primary: var(--gray-10);
+  --text-secondary: var(--gray-30);
+  --text-placeholder: var(--gray-60);
+  --text-on-color: #ffffff;
+  --text-inverse: var(--gray-100);
+  --link: var(--blue-40);
+  --link-hover: #78a9ff;
+  --focus: #ffffff;
+  --selection: var(--blue-80);
+  --code-background: var(--gray-100);
+  --chat-user-bubble: var(--gray-70);
+  --chat-user-text: #ffffff;
+}

@@ -1,0 +1,14 @@
+/* Swiss grid shell: header spans full width; sidebar + main below. */
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--header-height) minmax(0, 1fr);
+  height: 100%;
+}
+
+.shell-main {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  background-color: var(--background);
+}

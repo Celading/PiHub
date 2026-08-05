@@ -1,0 +1,98 @@
+.header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface);
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.header-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background-color: var(--primary);
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.header-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.header-brand-name {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.header-brand-sub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.header-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.header-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: var(--gray-40);
+}
+
+.header-status[data-status='online'] .header-status-dot {
+  background-color: var(--green-60);
+}
+
+.header-status[data-status='offline'] .header-status-dot {
+  background-color: var(--red-60);
+}
+
+.header-theme-toggle {
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-thin) solid var(--border-strong);
+  border-radius: var(--radius-none);
+  background-color: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.header-theme-toggle:hover {
+  background-color: var(--surface-hover);
+}
