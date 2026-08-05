@@ -6,7 +6,7 @@ import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
 import { ContextMenu } from '../components/ContextMenu.js';
-import { archiveSession } from '../sessions/sessionActions.js';
+import { archiveSession, removeArchived } from '../sessions/sessionActions.js';
 import './Sidebar.css';
 
 const USER_ID_STORAGE_KEY = 'pi-panel:userId';
@@ -757,9 +757,37 @@ export function Sidebar({
             {
               label: t('sidebar.archive'),
               icon: 'hico-rectangle-stack',
-              danger: true,
               onSelect: () => {
                 handleArchive(contextMenu.session.id);
+              },
+            },
+            {
+              label: t('sessions.delete'),
+              icon: 'hico-trash',
+              danger: true,
+              onSelect: () => {
+                const confirmed = window.confirm(
+                  t('sessions.deleteConfirm', {
+                    name: contextMenu.session.name ?? contextMenu.session.fileName,
+                  }),
+                );
+                if (!confirmed) {
+                  return;
+                }
+                void (async () => {
+                  try {
+                    const response = await api.deleteSession(contextMenu.session.fileName);
+                    if (!response.success) {
+                      setError(response.error ?? 'delete failed');
+                      return;
+                    }
+                    removeArchived(contextMenu.session.fileName);
+                    onSessionChanged();
+                    onViewChange('chat');
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  }
+                })();
               },
             },
           ]}

@@ -46,7 +46,9 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'mainline' | 'no-tools' | 'user' | 'labeled'>(
+    'all',
+  );
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [statsOpen, setStatsOpen] = useState(false);
@@ -204,6 +206,30 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
     return ids;
   }, [detail]);
 
+  // Tree filters (phase-2 close-out): all / mainline / no-tools / user /
+  // labeled. "labeled" has no data source yet (JSONL label entries are not
+  // parsed) — the option stays visible but disabled.
+  const visible = useMemo(() => {
+    if (detail === null) {
+      return [];
+    }
+    switch (filter) {
+      case 'all':
+        return detail.entries;
+      case 'mainline':
+        return detail.entries.filter((entry) => mainlineIds.has(entry.id));
+      case 'no-tools':
+        return detail.entries.filter((entry) => {
+          const role = entry.message?.role;
+          return role !== 'toolResult' && role !== 'bashExecution';
+        });
+      case 'user':
+        return detail.entries.filter((entry) => entry.message?.role === 'user');
+      case 'labeled':
+        // No label entries parsed yet; falls back to empty.
+        return [];
+    }
+  }, [detail, filter, mainlineIds]);
   if (error !== null) {
     return (
       <section className="sessions-page">
@@ -226,8 +252,6 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
     );
   }
 
-  const visible = showAll ? detail.entries : detail.entries.filter((entry) => mainlineIds.has(entry.id));
-  const offBranchCount = detail.entries.length - mainlineIds.size;
 
   return (
     <section className="sessions-page">
@@ -306,19 +330,31 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
             />
             {t('session.autoCompact')}
           </label>
-          {offBranchCount > 0 ? (
-            <button
-              type="button"
-              className="sessions-toggle"
-              onClick={() => {
-                setShowAll(!showAll);
-              }}
-            >
-              {showAll
-                ? t('sessions.mainline')
-                : t('sessions.showAll', { count: String(offBranchCount) })}
-            </button>
-          ) : null}
+          <span className="session-filter-row mono">
+            {(
+              [
+                { value: 'all', label: t('sessions.filter.all') },
+                { value: 'mainline', label: t('sessions.filter.mainline') },
+                { value: 'no-tools', label: t('sessions.filter.noTools') },
+                { value: 'user', label: t('sessions.filter.user') },
+                { value: 'labeled', label: t('sessions.filter.labeled') },
+              ] as ReadonlyArray<{ value: 'all' | 'mainline' | 'no-tools' | 'user' | 'labeled'; label: string }>
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className="session-filter-btn"
+                data-active={filter === option.value}
+                disabled={option.value === 'labeled'}
+                title={option.value === 'labeled' ? t('sessions.filter.labeledHint') : undefined}
+                onClick={() => {
+                  setFilter(option.value);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </span>
         </div>
       </div>
 

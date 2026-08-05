@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -106,6 +106,38 @@ export function createRouter(
   router.get('/api/sessions', async (_req, res) => {
     const list = await sessions.list();
     res.json({ sessions: list });
+  });
+
+  // Session deletion (no pi RPC): only the file name inside the sessions
+  // root is accepted (path-traversal guard) and only .jsonl files.
+  router.post('/api/sessions/delete', async (req, res) => {
+    const body = req.body as Record<string, unknown> | null;
+    const fileName =
+      typeof body === 'object' && body !== null ? body['fileName'] : undefined;
+    if (typeof fileName !== 'string' || fileName.length === 0) {
+      res.status(400).json({ error: 'invalid session file' });
+      return;
+    }
+    const base = path.basename(fileName);
+    if (base !== fileName || !base.endsWith('.jsonl')) {
+      res.status(400).json({ error: 'invalid session file' });
+      return;
+    }
+    const target = path.join(
+      os.homedir(),
+      '.pi',
+      'agent',
+      'sessions',
+      base,
+    );
+    try {
+      await unlink(target);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   router.get('/api/sessions/:id', async (req, res) => {
@@ -250,6 +282,45 @@ export function createRouter(
   router.post('/api/rpc/clone', async (_req, res) => {
     try {
       const response = await bridge.send({ type: 'clone' });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/steering-mode', async (req, res) => {
+    const body = req.body as Record<string, unknown> | null;
+    const mode = typeof body === 'object' && body !== null ? body['mode'] : undefined;
+    if (typeof mode !== 'string' || mode.length === 0) {
+      res.status(400).json({ error: 'invalid steering mode' });
+      return;
+    }
+    try {
+      const response = await bridge.send({ type: 'set_steering_mode', mode });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/follow-up-mode', async (req, res) => {
+    const body = req.body as Record<string, unknown> | null;
+    const mode = typeof body === 'object' && body !== null ? body['mode'] : undefined;
+    if (typeof mode !== 'string' || mode.length === 0) {
+      res.status(400).json({ error: 'invalid follow-up mode' });
+      return;
+    }
+    try {
+      const response = await bridge.send({ type: 'set_follow_up_mode', mode });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/api/rpc/cycle-model', async (_req, res) => {
+    try {
+      const response = await bridge.send({ type: 'cycle_model' });
       res.json(response);
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });

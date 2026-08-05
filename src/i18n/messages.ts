@@ -78,6 +78,7 @@ export const zhMessages = {
   'chat.empty.hint': '与 pi agent 开始对话，消息通过 RPC 桥实时流入。',
   'chat.queued': '队列：{steer} 引导 · {followUp} 跟进',
   'chat.error.prefix': '',
+  'chat.retrying': '运行出错，自动重试中…',
 
   // thinking + workflow (phase-3)
   'thinking.active': '思考中…',
@@ -107,6 +108,14 @@ export const zhMessages = {
   'sessions.export.current': '当前会话',
   'sessions.export.action': '导出 HTML',
   'sessions.export.done': '已导出 HTML',
+  'sessions.filter.all': '全部',
+  'sessions.filter.mainline': '主线',
+  'sessions.filter.noTools': '无工具',
+  'sessions.filter.user': '仅用户',
+  'sessions.filter.labeled': '已标记',
+  'sessions.filter.labeledHint': '暂无标签数据',
+  'sessions.delete': '删除会话',
+  'sessions.deleteConfirm': '确定删除会话「{name}」？此操作不可撤销。',
 
   // session actions (phase-2)
   'session.rename': '重命名',
@@ -211,6 +220,10 @@ export const zhMessages = {
   'settings.personal.keysHint': '修饰键 + ↑ / ↓ 在会话间循环切换。',
 
   // settings modal nav (phase-3)
+  'settings.modes': '运行模式',
+  'settings.modes.hint': 'steering 与 follow-up 模式，选择即时生效（RPC）。',
+  'settings.modes.steering': 'steering 模式',
+  'settings.modes.followUp': 'follow-up 模式',
   'settings.nav.general': '通用设置',
   'settings.nav.personal': '个性化设置',
   'settings.nav.models': '模型渠道',
@@ -332,6 +345,7 @@ export const enMessages: Record<MessageKey, string> = {
   'chat.empty.hint': 'Start a conversation with the pi agent. Messages stream here in real time via the RPC bridge.',
   'chat.queued': 'queued: {steer} steer · {followUp} follow-up',
   'chat.error.prefix': '',
+  'chat.retrying': 'Run failed — auto retrying…',
 
   // thinking + workflow (phase-3)
   'thinking.active': 'Thinking…',
@@ -360,6 +374,14 @@ export const enMessages: Record<MessageKey, string> = {
   'sessions.export.current': 'Current session',
   'sessions.export.action': 'Export HTML',
   'sessions.export.done': 'Exported as HTML',
+  'sessions.filter.all': 'All',
+  'sessions.filter.mainline': 'Mainline',
+  'sessions.filter.noTools': 'No tools',
+  'sessions.filter.user': 'User only',
+  'sessions.filter.labeled': 'Labeled',
+  'sessions.filter.labeledHint': 'No label data yet',
+  'sessions.delete': 'Delete session',
+  'sessions.deleteConfirm': 'Delete session "{name}"? This cannot be undone.',
 
   'session.rename': 'Rename',
   'session.rename.placeholder': 'Session name…',
@@ -457,6 +479,10 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.personal.keysHint': 'Modifier + ↑ / ↓ cycles through sessions.',
 
   // settings modal nav (phase-3)
+  'settings.modes': 'Run Modes',
+  'settings.modes.hint': 'Steering and follow-up modes; selection takes effect immediately (RPC).',
+  'settings.modes.steering': 'Steering mode',
+  'settings.modes.followUp': 'Follow-up mode',
   'settings.nav.general': 'General',
   'settings.nav.personal': 'Personalization',
   'settings.nav.models': 'Models & Channels',

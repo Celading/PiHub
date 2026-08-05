@@ -1,0 +1,25 @@
+{
+  "name": "PiHub — pi agent console",
+  "short_name": "PiHub",
+  "description": "Local web panel for the pi coding agent",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#005fb8",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icons/pihub-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pihub-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

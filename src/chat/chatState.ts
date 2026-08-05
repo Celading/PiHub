@@ -28,6 +28,8 @@ interface ChatState {
   lastRun: RunSummary | null;
   /** Set when the user aborts the current run (cleared on settle). */
   runAbortedFlag: boolean;
+  /** True while pi is auto-retrying after a failure (banner). */
+  retrying: boolean;
 }
 
 type ChatAction =
@@ -40,7 +42,8 @@ type ChatAction =
   | { type: 'rpcState'; rpcState: RpcState }
   | { type: 'error'; error: string }
   | { type: 'runSettled'; at: number }
-  | { type: 'runAborted' };
+  | { type: 'runAborted' }
+  | { type: 'retrying'; retrying: boolean };
 
 let nextKey = 0;
 
@@ -61,6 +64,7 @@ function initialState(): ChatState {
     runStartedAt: null,
     lastRun: null,
     runAbortedFlag: false,
+    retrying: false,
   };
 }
 
@@ -145,6 +149,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, isAgentRunning: false };
     case 'runAborted':
       return { ...state, runAbortedFlag: true };
+    case 'retrying':
+      return { ...state, retrying: action.retrying };
     case 'queue':
       return { ...state, pendingSteer: action.steer, pendingFollowUp: action.followUp };
     case 'rpcState':
@@ -198,11 +204,10 @@ function eventToAction(event: RpcStreamEvent): ChatAction | null {
         followUp: Array.isArray(followUp) ? (followUp as string[]) : [],
       };
     }
-    case 'auto_retry_start': {
-      const message = event['errorMessage'];
-      const detail = typeof message === 'string' ? message : 'retrying';
-      return { type: 'error', error: detail };
-    }
+    case 'auto_retry_start':
+      return { type: 'retrying', retrying: true };
+    case 'auto_retry_end':
+      return { type: 'retrying', retrying: false };
     default:
       return null;
   }
@@ -215,6 +220,7 @@ export interface ChatSession {
   pendingFollowUp: string[];
   rpcState: RpcState | null;
   error: string | null;
+  retrying: boolean;
   /** Epoch ms when the current run started (null when idle). */
   runStartedAt: number | null;
   /** Duration + abort status of the most recent completed run. */
@@ -371,6 +377,7 @@ export function useChatSession(): ChatSession {
     pendingFollowUp: state.pendingFollowUp,
     rpcState: state.rpcState,
     error: state.error,
+    retrying: state.retrying,
     runStartedAt: state.runStartedAt,
     lastRun: state.lastRun,
     sendPrompt,

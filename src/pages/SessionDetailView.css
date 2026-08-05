@@ -193,3 +193,35 @@
   border: var(--border-thin) solid var(--border-subtle);
   background-color: var(--surface);
 }
+
+/* ---- phase-2 close-out: tree filters ---- */
+.session-filter-row {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.session-filter-btn {
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-thin) solid transparent;
+  border-radius: var(--radius-none);
+  background-color: transparent;
+  color: var(--text-placeholder);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.session-filter-btn:hover:not(:disabled) {
+  color: var(--primary);
+  background-color: var(--surface-hover);
+}
+
+.session-filter-btn[data-active='true'] {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.session-filter-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

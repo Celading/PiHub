@@ -31,6 +31,9 @@ export type RpcCommand =
   | { type: 'get_entries'; since?: string }
   | { type: 'get_tree' }
   | { type: 'get_available_models' }
+  | { type: 'cycle_model' }
+  | { type: 'set_steering_mode'; mode: string }
+  | { type: 'set_follow_up_mode'; mode: string }
   | { type: 'get_fork_messages' };
 
 interface PendingRequest {

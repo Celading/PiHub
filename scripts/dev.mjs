@@ -12,7 +12,13 @@ const prefix = (name, color, data) => {
 };
 
 const run = (name, color, cmd, args) => {
-  const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(cmd, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Polling-based file watching: reliable under sandboxed runtimes where
+    // native watchers (fsevents/inotify) are unavailable (vite uses its own
+    // config flag; tsx/chokidar honors this env var).
+    env: { ...process.env, CHOKIDAR_USEPOLLING: 'true' },
+  });
   child.stdout?.on('data', (d) => prefix(name, color, d));
   child.stderr?.on('data', (d) => prefix(name, color, d));
   child.on('exit', (code) => {

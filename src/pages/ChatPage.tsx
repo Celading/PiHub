@@ -75,6 +75,17 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     }
   }, [chat.messages.length, chat.isAgentRunning]);
 
+  // Refresh the model display when the model is cycled via Ctrl+Shift+L.
+  useEffect(() => {
+    const onCycled = (): void => {
+      void chat.refreshState();
+    };
+    window.addEventListener('pihub:model-cycled', onCycled);
+    return () => {
+      window.removeEventListener('pihub:model-cycled', onCycled);
+    };
+  }, [chat]);
+
   // Browser notification when the agent settles after a run (lab switch).
   useEffect(() => {
     if (!settledNotify) {
@@ -168,6 +179,12 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
       <div className="chatpage-scroll scroll-area" ref={scrollRef}>
         {chat.error !== null ? (
           <div className="chatpage-error mono">{chat.error}</div>
+        ) : null}
+        {chat.retrying ? (
+          <div className="chatpage-retry mono" role="status">
+            <span className="hico hico-exclamationmark" aria-hidden="true" />
+            {t('chat.retrying')}
+          </div>
         ) : null}
         {chat.pendingSteer.length > 0 || chat.pendingFollowUp.length > 0 ? (
           <div className="chatpage-queue mono">

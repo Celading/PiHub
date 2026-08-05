@@ -128,6 +128,31 @@ export const api = {
     return request<RpcResponse>('/api/rpc/clone', { method: 'POST' });
   },
 
+  cycleModel(): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/cycle-model', { method: 'POST' });
+  },
+
+  setSteeringMode(mode: string): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/steering-mode', {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    });
+  },
+
+  setFollowUpMode(mode: string): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/follow-up-mode', {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    });
+  },
+
+  deleteSession(fileName: string): Promise<{ success: boolean; error?: string }> {
+    return request<{ success: boolean; error?: string }>('/api/sessions/delete', {
+      method: 'POST',
+      body: JSON.stringify({ fileName }),
+    });
+  },
+
   renameSession(name: string): Promise<RpcResponse> {
     return request<RpcResponse>('/api/rpc/rename', {
       method: 'POST',

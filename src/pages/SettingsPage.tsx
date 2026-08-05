@@ -106,6 +106,40 @@ export function SettingsPage({
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [, forceRender] = useState(0);
   const prefs = getPrefs();
+  const [modes, setModes] = useState<{ steering: string; followUp: string }>(() => {
+    try {
+      const raw = localStorage.getItem('pi-panel:modes');
+      if (raw !== null) {
+        const parsed: unknown = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+          const record = parsed as Record<string, unknown>;
+          return {
+            steering:
+              typeof record['steering'] === 'string' ? record['steering'] : 'one-at-a-time',
+            followUp: typeof record['followUp'] === 'string' ? record['followUp'] : 'sequential',
+          };
+        }
+      }
+    } catch {
+      // fall through
+    }
+    return { steering: 'one-at-a-time', followUp: 'sequential' };
+  });
+
+  const setMode = (key: 'steering' | 'followUp', value: string): void => {
+    const next = { ...modes, [key]: value };
+    setModes(next);
+    try {
+      localStorage.setItem('pi-panel:modes', JSON.stringify(next));
+    } catch {
+      // storage unavailable
+    }
+    void (key === 'steering' ? api.setSteeringMode(value) : api.setFollowUpMode(value)).catch(
+      (err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+      },
+    );
+  };
 
   // Re-render when preferences change elsewhere (send mode / cmd key).
   useEffect(() => {
@@ -269,6 +303,39 @@ export function SettingsPage({
                 >
                   {t('theme.dark')}
                 </button>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.modes')}</h2>
+              <p className="settings-hint">{t('settings.modes.hint')}</p>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.modes.steering')}</span>
+                <select
+                  className="channel-input mono"
+                  value={modes.steering}
+                  onChange={(event) => {
+                    setMode('steering', event.target.value);
+                  }}
+                  aria-label={t('settings.modes.steering')}
+                >
+                  <option value="one-at-a-time">one-at-a-time</option>
+                  <option value="parallel">parallel</option>
+                </select>
+              </div>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.modes.followUp')}</span>
+                <select
+                  className="channel-input mono"
+                  value={modes.followUp}
+                  onChange={(event) => {
+                    setMode('followUp', event.target.value);
+                  }}
+                  aria-label={t('settings.modes.followUp')}
+                >
+                  <option value="sequential">sequential</option>
+                  <option value="parallel">parallel</option>
+                </select>
               </div>
             </section>
 

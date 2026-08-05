@@ -95,6 +95,17 @@ export function App(): React.JSX.Element {
         setCommandOpen(true);
         return;
       }
+      // Ctrl+Shift+L: cycle the model (pi RPC cycle_model); the chat page
+      // refreshes its model display via the custom event.
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        void api.cycleModel().then((response) => {
+          if (response.success) {
+            window.dispatchEvent(new Event('pihub:model-cycled'));
+          }
+        });
+        return;
+      }
       if (event.key === 'Escape' && !commandOpen) {
         void api.abort().catch(() => {
           // offline or idle; ignore

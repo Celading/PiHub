@@ -32,6 +32,14 @@ export function archiveSession(fileName: string): void {
 }
 
 /** Restores an archived session file; notifies other components. */
+
+/** Removes a session id from the archived list (used after deletion). */
+export function removeArchived(fileName: string): void {
+  const next = loadArchivedIds().filter((id) => id !== fileName);
+  persistArchivedIds(next);
+  window.dispatchEvent(new CustomEvent('pihub:archived-changed', { detail: next }));
+}
+
 export function restoreSession(fileName: string): void {
   const next = loadArchivedIds().filter((id) => id !== fileName);
   persistArchivedIds(next);

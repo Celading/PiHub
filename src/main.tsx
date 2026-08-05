@@ -8,6 +8,15 @@ import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/ibm-plex-serif/500.css';
 import '@fontsource/ibm-plex-serif/600.css';
 import './styles/fonts.css';
+
+// Production-only service worker (never registered in dev so HMR stays clean).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // SW unavailable — panel keeps working without it
+    });
+  });
+}
 import './styles/tokens.css';
 import './styles/base.css';
 import { App } from './App';
