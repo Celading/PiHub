@@ -204,6 +204,10 @@ export function createRouter(
     }
   });
 
+  router.get('/api/rpc/commands', async (_req, res) => {
+    await withBridge(res, () => bridge.send({ type: 'get_commands' }));
+  });
+
   router.get('/api/events', (req, res) => {
     hub.addClient(res);
     req.on('close', () => {

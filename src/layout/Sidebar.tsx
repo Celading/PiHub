@@ -12,6 +12,7 @@ interface SidebarProps {
   view: View;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
+  onOpenCommands: () => void;
 }
 
 function formatTime(iso: string, intlTag: string): string {
@@ -35,7 +36,12 @@ function shortCwd(cwd: string): string {
   return `${parts[0] ?? ''}/…/${parts[parts.length - 1] ?? ''}`;
 }
 
-export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps): React.JSX.Element {
+export function Sidebar({
+  view,
+  onViewChange,
+  onSessionChanged,
+  onOpenCommands,
+}: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [query, setQuery] = useState('');
@@ -143,13 +149,12 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
           type="button"
           className="sidebar-feature"
           title={t('sidebar.features')}
-          aria-disabled="true"
+          onClick={onOpenCommands}
         >
           <span className="hico hico-bolt" aria-hidden="true" />
           <span className="hico hico-wand-stars" aria-hidden="true" />
           <span className="hico hico-rectangle-stack" aria-hidden="true" />
           <span>{t('sidebar.features')}</span>
-          <span className="sidebar-feature-tag mono">{t('sidebar.features.phase2')}</span>
         </button>
         {error !== null ? <div className="sidebar-error mono">{error}</div> : null}
       </div>

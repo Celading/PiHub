@@ -6,6 +6,8 @@ import { ChatPage } from './pages/ChatPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { CommandPalette } from './components/CommandPalette';
+import { api } from './api/client.js';
 
 export function App(): React.JSX.Element {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -14,6 +16,7 @@ export function App(): React.JSX.Element {
   });
   const [view, setView] = useState<View>('chat');
   const [chatSessionKey, setChatSessionKey] = useState(0);
+  const [commandOpen, setCommandOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -49,11 +52,32 @@ export function App(): React.JSX.Element {
       onSessionChanged={() => {
         setChatSessionKey(chatSessionKey + 1);
       }}
+      onOpenCommands={() => {
+        setCommandOpen(true);
+      }}
       onThemeToggle={() => {
         setTheme(theme === 'light' ? 'dark' : 'light');
       }}
     >
       {renderPage()}
+      <CommandPalette
+        open={commandOpen}
+        onClose={() => {
+          setCommandOpen(false);
+        }}
+        onRun={(commandName) => {
+          setCommandOpen(false);
+          void (async () => {
+            try {
+              await api.prompt(`/${commandName}`);
+              setChatSessionKey(chatSessionKey + 1);
+              setView('chat');
+            } catch {
+              // The chat page surfaces backend errors through its own state.
+            }
+          })();
+        }}
+      />
     </AppShell>
   );
 }

@@ -1,5 +1,6 @@
 import type {
   ModelInfo,
+  PiCommand,
   RpcResponse,
   RpcState,
   SessionDetail,
@@ -102,5 +103,9 @@ export const api = {
 
   newSession(): Promise<RpcResponse> {
     return request<RpcResponse>('/api/rpc/new_session', { method: 'POST' });
+  },
+
+  commands(): Promise<PiCommand[]> {
+    return request<{ commands: PiCommand[] }>('/api/rpc/commands').then((response) => response.commands);
   },
 };

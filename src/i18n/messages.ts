@@ -90,6 +90,17 @@ export const zhMessages = {
   'settings.empty': '未找到设置文件。',
   'settings.emptyModels': '未找到模型。',
   'settings.back': '返回主界面',
+
+  // command palette
+  'palette.title': '自动化 / 技能 / 工程流',
+  'palette.search': '搜索命令…',
+  'palette.commands': '个命令',
+  'palette.empty': '暂无可用命令。',
+  'palette.hint': '点击命令即向 agent 发送 /name 指令',
+  'palette.close': '关闭 (Esc)',
+  'palette.source.extension': '扩展命令',
+  'palette.source.prompt': '提示词模板',
+  'palette.source.skill': '技能',
 } as const;
 
 export type MessageKey = keyof typeof zhMessages;
@@ -170,6 +181,16 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.empty': 'No settings file found.',
   'settings.emptyModels': 'No models found.',
   'settings.back': 'Back to home',
+
+  'palette.title': 'Automation / Skills / Workflows',
+  'palette.search': 'Search commands…',
+  'palette.commands': 'commands',
+  'palette.empty': 'No commands available.',
+  'palette.hint': 'Click a command to send /name to the agent',
+  'palette.close': 'Close (Esc)',
+  'palette.source.extension': 'extensions',
+  'palette.source.prompt': 'prompt templates',
+  'palette.source.skill': 'skills',
 };
 
 export const LOCALES = ['zh', 'en'] as const;

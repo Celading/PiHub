@@ -156,3 +156,13 @@ export interface RpcStreamEvent {
   type: string;
   [key: string]: unknown;
 }
+
+export type PiCommandSource = 'extension' | 'prompt' | 'skill';
+
+export interface PiCommand {
+  name: string;
+  description?: string;
+  source: PiCommandSource;
+  location?: string;
+  path?: string;
+}
