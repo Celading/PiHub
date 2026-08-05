@@ -53,6 +53,7 @@ export function SessionsPage(): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +73,7 @@ export function SessionsPage(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const grouped = useMemo(() => {
     if (sessions === null) {
@@ -106,9 +107,20 @@ export function SessionsPage(): React.JSX.Element {
     <section className="sessions-page">
       <div className="sessions-head">
         <h1 className="panel-title">Sessions</h1>
-        <p className="sessions-head-hint mono">
-          {sessions === null ? 'loading…' : `${String(sessions.length)} sessions`}
-        </p>
+        <div className="sessions-head-actions">
+          <p className="sessions-head-hint mono">
+            {sessions === null ? 'loading…' : `${String(sessions.length)} sessions`}
+          </p>
+          <button
+            type="button"
+            className="sessions-refresh"
+            onClick={() => {
+              setReloadKey(reloadKey + 1);
+            }}
+          >
+            refresh
+          </button>
+        </div>
       </div>
 
       {error !== null ? <div className="sessions-error mono">{error}</div> : null}

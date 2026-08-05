@@ -1,12 +1,11 @@
 import express from 'express';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { RpcBridge } from './rpc-bridge.js';
 import { createRouter } from './routes.js';
 import { createSessionStore } from './sessions.js';
 import { SseHub } from './sse.js';
 
-const PORT = Number(process.env.PORT ?? 18384);
+const PORT = Number(process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
 const PI_BINARY = process.env.PI_BINARY ?? 'pi';
 const AGENT_CWD = process.env.PI_CWD ?? process.cwd();
@@ -30,15 +29,22 @@ bridge.start();
 app.use(createRouter(bridge, sessions, hub));
 
 // Production: serve the built SPA with an index.html fallback for client routes.
-const serverDir = path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.resolve(serverDir, '..', '..', 'dist');
+// When dist is absent (dev mode), return a JSON hint instead of a 500.
+const distDir = path.resolve(process.cwd(), 'dist');
+const indexFile = path.join(distDir, 'index.html');
 app.use(express.static(distDir));
 app.use((req, res, next) => {
   if (req.method !== 'GET' || req.path.startsWith('/api/')) {
     next();
     return;
   }
-  res.sendFile(path.join(distDir, 'index.html'));
+  res.sendFile(indexFile, (err) => {
+    if (err !== undefined) {
+      res.status(404).json({
+        error: 'frontend build not found — run `npm run build` or use the Vite dev server on port 18384',
+      });
+    }
+  });
 });
 
 // Express 5 forwards rejected async handlers here.

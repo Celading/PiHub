@@ -5,6 +5,7 @@ import express from 'express';
 import { z } from 'zod';
 import { modelStoreFileSchema, settingsFileSchema } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
+import type { RpcResponse } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
 
@@ -28,12 +29,33 @@ const thinkingBodySchema = z.object({
   level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
 });
 
+const switchSessionBodySchema = z.object({
+  sessionPath: z.string().min(1).max(4096),
+});
+
 async function readJson(fileName: string): Promise<unknown> {
   try {
     const content = await readFile(fileName, 'utf8');
     return JSON.parse(content) as unknown;
   } catch {
     return undefined;
+  }
+}
+
+/** Runs an RPC command and maps success/failure/exception to clean HTTP codes. */
+async function withBridge(
+  res: express.Response,
+  command: () => Promise<RpcResponse>,
+): Promise<void> {
+  try {
+    const response = await command();
+    if (!response.success) {
+      res.status(502).json({ error: response.error ?? 'pi command failed' });
+      return;
+    }
+    res.json(response.data);
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -98,14 +120,15 @@ export function createRouter(
       res.status(400).json({ error: 'invalid prompt body' });
       return;
     }
-    const response = await bridge.send({
-      type: 'prompt',
-      message: body.data.message,
-      ...(body.data.streamingBehavior !== undefined
-        ? { streamingBehavior: body.data.streamingBehavior }
-        : {}),
-    });
-    res.json(response);
+    await withBridge(res, () =>
+      bridge.send({
+        type: 'prompt',
+        message: body.data.message,
+        ...(body.data.streamingBehavior !== undefined
+          ? { streamingBehavior: body.data.streamingBehavior }
+          : {}),
+      }),
+    );
   });
 
   router.post('/api/rpc/steer', async (req, res) => {
@@ -114,16 +137,11 @@ export function createRouter(
       res.status(400).json({ error: 'invalid steer body' });
       return;
     }
-    const response = await bridge.send({
-      type: 'steer',
-      message: body.data.message,
-    });
-    res.json(response);
+    await withBridge(res, () => bridge.send({ type: 'steer', message: body.data.message }));
   });
 
   router.post('/api/rpc/abort', async (_req, res) => {
-    const response = await bridge.send({ type: 'abort' });
-    res.json(response);
+    await withBridge(res, () => bridge.send({ type: 'abort' }));
   });
 
   router.post('/api/rpc/model', async (req, res) => {
@@ -132,12 +150,13 @@ export function createRouter(
       res.status(400).json({ error: 'invalid model body' });
       return;
     }
-    const response = await bridge.send({
-      type: 'set_model',
-      provider: body.data.provider,
-      modelId: body.data.modelId,
-    });
-    res.json(response);
+    await withBridge(res, () =>
+      bridge.send({
+        type: 'set_model',
+        provider: body.data.provider,
+        modelId: body.data.modelId,
+      }),
+    );
   });
 
   router.post('/api/rpc/thinking', async (req, res) => {
@@ -146,29 +165,28 @@ export function createRouter(
       res.status(400).json({ error: 'invalid thinking level' });
       return;
     }
-    const response = await bridge.send({
-      type: 'set_thinking_level',
-      level: body.data.level,
-    });
-    res.json(response);
+    await withBridge(res, () =>
+      bridge.send({ type: 'set_thinking_level', level: body.data.level }),
+    );
   });
 
   router.get('/api/rpc/state', async (_req, res) => {
-    const response = await bridge.send({ type: 'get_state' });
-    if (!response.success) {
-      res.status(502).json({ error: 'pi state unavailable' });
-      return;
-    }
-    res.json(response.data);
+    await withBridge(res, () => bridge.send({ type: 'get_state' }));
   });
 
   router.get('/api/rpc/messages', async (_req, res) => {
-    const response = await bridge.send({ type: 'get_messages' });
-    if (!response.success) {
-      res.status(502).json({ error: 'pi messages unavailable' });
+    await withBridge(res, () => bridge.send({ type: 'get_messages' }));
+  });
+
+  router.post('/api/rpc/switch_session', async (req, res) => {
+    const body = switchSessionBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid session path' });
       return;
     }
-    res.json(response.data);
+    await withBridge(res, () =>
+      bridge.send({ type: 'switch_session', sessionPath: body.data.sessionPath }),
+    );
   });
 
   router.get('/api/events', (req, res) => {

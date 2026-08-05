@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SessionDetail } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { useSessionComposer } from '../chat/sessionComposer.js';
+import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
 import './SessionDetailView.css';
 
@@ -43,6 +45,15 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
+  const reload = useCallback(async (): Promise<void> => {
+    try {
+      const result = await api.sessionDetail(id);
+      setDetail(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [id]);
+
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {
@@ -62,6 +73,13 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
       cancelled = true;
     };
   }, [id]);
+
+  const composer = useSessionComposer(
+    detail?.fileName ?? '',
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
 
   const mainlineIds = useMemo(() => {
     if (detail === null) {
@@ -146,6 +164,24 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
             </div>
           ),
         )}
+      </div>
+
+      {composer.error !== null ? (
+        <div className="sessions-error mono">{composer.error}</div>
+      ) : null}
+      <div className="session-composer">
+        <Composer
+          isAgentRunning={composer.isRunning}
+          onSendPrompt={(text) => {
+            void composer.sendPrompt(text);
+          }}
+          onSendSteer={(text) => {
+            void composer.sendSteer(text);
+          }}
+          onAbort={() => {
+            void composer.abort();
+          }}
+        />
       </div>
     </section>
   );

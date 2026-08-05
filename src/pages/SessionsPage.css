@@ -16,6 +16,29 @@
   padding-bottom: var(--space-4);
 }
 
+.sessions-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sessions-refresh {
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-thin) solid var(--border-strong);
+  border-radius: var(--radius-none);
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sessions-refresh:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 .sessions-head-hint {
   font-size: var(--text-xs);
   color: var(--text-secondary);

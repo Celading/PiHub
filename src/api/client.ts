@@ -92,4 +92,11 @@ export const api = {
       body: JSON.stringify({ level }),
     });
   },
+
+  switchSession(sessionPath: string): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/switch_session', {
+      method: 'POST',
+      body: JSON.stringify({ sessionPath }),
+    });
+  },
 };
