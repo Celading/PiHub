@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SessionStats } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './StatsPage.css';
 
 function formatCost(cost: number): string {
@@ -64,6 +65,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: TableRow[] }): 
 }
 
 export function StatsPage(): React.JSX.Element {
+  const { t } = useI18n();
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +92,7 @@ export function StatsPage(): React.JSX.Element {
   if (error !== null) {
     return (
       <section className="stats-page">
-        <h1 className="panel-title">Stats</h1>
+        <h1 className="panel-title">{t('stats.title')}</h1>
         <div className="stats-error mono">{error}</div>
       </section>
     );
@@ -99,8 +101,8 @@ export function StatsPage(): React.JSX.Element {
   if (stats === null) {
     return (
       <section className="stats-page">
-        <h1 className="panel-title">Stats</h1>
-        <p className="stats-hint">loading…</p>
+        <h1 className="panel-title">{t('stats.title')}</h1>
+        <p className="stats-hint">{t('sessions.hint.loading')}</p>
       </section>
     );
   }
@@ -108,21 +110,29 @@ export function StatsPage(): React.JSX.Element {
   return (
     <section className="stats-page">
       <div className="stats-head">
-        <h1 className="panel-title">Stats</h1>
+        <h1 className="panel-title">{t('stats.title')}</h1>
         <p className="stats-head-hint mono">~/.pi/agent/sessions</p>
       </div>
 
       <div className="kpi-grid">
-        <KpiCard label="sessions" value={String(stats.totalSessions)} />
-        <KpiCard label="messages" value={String(stats.totalUserMessages + stats.totalAssistantMessages)} sub={`${String(stats.totalUserMessages)} user · ${String(stats.totalAssistantMessages)} assistant`} />
-        <KpiCard label="tool calls" value={String(stats.totalToolCalls)} />
-        <KpiCard label="total cost" value={formatCost(stats.totalCost)} sub={`${formatTokens(stats.totals.total)} tokens`} />
+        <KpiCard label={t('stats.sessions')} value={String(stats.totalSessions)} />
+        <KpiCard
+          label={t('stats.messages')}
+          value={String(stats.totalUserMessages + stats.totalAssistantMessages)}
+          sub={`${String(stats.totalUserMessages)} ${t('stats.user')} · ${String(stats.totalAssistantMessages)} ${t('stats.assistant')}`}
+        />
+        <KpiCard label={t('stats.toolCalls')} value={String(stats.totalToolCalls)} />
+        <KpiCard
+          label={t('stats.totalCost')}
+          value={formatCost(stats.totalCost)}
+          sub={`${formatTokens(stats.totals.total)} ${t('sessions.tokens')}`}
+        />
       </div>
 
       <section className="stats-section">
-        <h2 className="stats-section-title mono">by model</h2>
+        <h2 className="stats-section-title mono">{t('stats.byModel')}</h2>
         <DataTable
-          headers={['model', 'provider', 'sessions', 'messages', 'tokens', 'cost']}
+          headers={['model', 'provider', t('stats.sessions'), t('stats.messages'), t('sessions.tokens'), 'cost']}
           rows={stats.byModel.map((row) => ({
             cells: [
               row.model,
@@ -137,9 +147,9 @@ export function StatsPage(): React.JSX.Element {
       </section>
 
       <section className="stats-section">
-        <h2 className="stats-section-title mono">by provider</h2>
+        <h2 className="stats-section-title mono">{t('stats.byProvider')}</h2>
         <DataTable
-          headers={['provider', 'sessions', 'messages', 'tokens', 'cost']}
+          headers={['provider', t('stats.sessions'), t('stats.messages'), t('sessions.tokens'), 'cost']}
           rows={stats.byProvider.map((row) => ({
             cells: [
               row.provider,
@@ -153,9 +163,9 @@ export function StatsPage(): React.JSX.Element {
       </section>
 
       <section className="stats-section">
-        <h2 className="stats-section-title mono">by directory</h2>
+        <h2 className="stats-section-title mono">{t('stats.byDirectory')}</h2>
         <DataTable
-          headers={['directory', 'sessions', 'messages', 'cost']}
+          headers={['directory', t('stats.sessions'), t('stats.messages'), 'cost']}
           rows={stats.byDirectory.map((row) => ({
             cells: [row.cwd, String(row.sessions), String(row.messages), formatCost(row.cost)],
           }))}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RpcState } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './ModelBar.css';
 
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -18,6 +19,7 @@ interface ModelOption {
 }
 
 export function ModelBar({ rpcState, onSetModel, onSetThinking }: ModelBarProps): React.JSX.Element {
+  const { t } = useI18n();
   const [options, setOptions] = useState<ModelOption[]>([]);
 
   useEffect(() => {
@@ -70,14 +72,14 @@ export function ModelBar({ rpcState, onSetModel, onSetThinking }: ModelBarProps)
   return (
     <div className="modelbar">
       <label className="modelbar-field">
-        <span className="modelbar-label mono">model</span>
+        <span className="modelbar-label mono">{t('modelbar.model')}</span>
         <select
           className="modelbar-select"
           value={`${currentModel?.provider ?? ''}/${currentModel?.id ?? ''}`}
           onChange={(event) => {
             handleModelChange(event.target.value);
           }}
-          aria-label="Model"
+          aria-label={t('modelbar.model')}
         >
           <option value="/" disabled>
             {currentLabel}
@@ -90,14 +92,14 @@ export function ModelBar({ rpcState, onSetModel, onSetThinking }: ModelBarProps)
         </select>
       </label>
       <label className="modelbar-field">
-        <span className="modelbar-label mono">thinking</span>
+        <span className="modelbar-label mono">{t('modelbar.thinking')}</span>
         <select
           className="modelbar-select"
           value={rpcState?.thinkingLevel ?? 'off'}
           onChange={(event) => {
             handleThinkingChange(event.target.value);
           }}
-          aria-label="Thinking level"
+          aria-label={t('modelbar.thinking')}
         >
           {THINKING_LEVELS.map((level) => (
             <option key={level} value={level}>

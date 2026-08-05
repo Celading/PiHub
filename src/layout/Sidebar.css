@@ -9,12 +9,43 @@
   min-height: 0;
 }
 
+/* ---- brand ---- */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+}
+
+.sidebar-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background-color: var(--primary);
+  color: #ffffff;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.sidebar-brand-name {
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
 /* ---- top: new / search / features ---- */
 .sidebar-top {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding-bottom: var(--space-3);
+  padding: var(--space-3) 0;
 }
 
 .sidebar-new {
@@ -240,4 +271,12 @@
   background-color: var(--surface);
   color: var(--text-primary);
   font-size: var(--text-xs);
+}
+
+.sidebar-slogan {
+  padding: var(--space-2) var(--space-2) 0;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--text-placeholder);
+  text-align: center;
 }

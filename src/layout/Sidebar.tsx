@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SessionSummary } from '../../shared/types.js';
 import type { View } from '../types/app.js';
 import { api } from '../api/client.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './Sidebar.css';
 
 const USER_ID_STORAGE_KEY = 'pi-panel:userId';
@@ -13,12 +14,12 @@ interface SidebarProps {
   onSessionChanged: () => void;
 }
 
-function formatTime(iso: string): string {
+function formatTime(iso: string, intlTag: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return '';
   }
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(intlTag, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -35,6 +36,7 @@ function shortCwd(cwd: string): string {
 }
 
 export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps): React.JSX.Element {
+  const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [query, setQuery] = useState('');
   const [userId, setUserId] = useState<string>(() => {
@@ -97,7 +99,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
       try {
         const response = await api.switchSession(session.fileName);
         if (!response.success) {
-          setError(response.error ?? 'failed to open session');
+          setError(response.error ?? t('sessions.openSessionError'));
           return;
         }
         onSessionChanged();
@@ -106,7 +108,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [onSessionChanged, onViewChange],
+    [onSessionChanged, onViewChange, t],
   );
 
   const saveUserId = (value: string): void => {
@@ -119,32 +121,39 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
 
   return (
     <nav className="sidebar" aria-label="Primary">
+      <div className="sidebar-brand">
+        <span className="sidebar-brand-mark" aria-hidden="true">
+          π
+        </span>
+        <span className="sidebar-brand-name">{t('brand.name')}</span>
+      </div>
+
       <div className="sidebar-top">
         <button type="button" className="sidebar-new" onClick={() => { void handleNewSession(); }}>
           <span aria-hidden="true">＋</span>
-          <span>新建会话/任务</span>
+          <span>{t('sidebar.new')}</span>
         </button>
         <input
           className="sidebar-search"
           type="search"
-          placeholder="搜索会话/内容"
+          placeholder={t('sidebar.search')}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
           }}
-          aria-label="搜索会话/内容"
+          aria-label={t('sidebar.search')}
         />
         <button
           type="button"
           className="sidebar-feature"
-          title="自动化 / 技能 / 工程流（二期）"
+          title={t('sidebar.features')}
           aria-disabled="true"
         >
           <span className="sidebar-feature-icon" aria-hidden="true">
             ⚙
           </span>
-          <span>自动化 / 技能 / 工程流</span>
-          <span className="sidebar-feature-tag mono">phase 2</span>
+          <span>{t('sidebar.features')}</span>
+          <span className="sidebar-feature-tag mono">{t('sidebar.features.phase2')}</span>
         </button>
         {error !== null ? <div className="sidebar-error mono">{error}</div> : null}
       </div>
@@ -152,10 +161,10 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
       <hr className="swiss-rule" />
 
       <div className="sidebar-sessions scroll-area">
-        <div className="sidebar-section-label swiss-section-label">sessions</div>
+        <div className="sidebar-section-label swiss-section-label">{t('sidebar.sessions')}</div>
         {filtered.length === 0 ? (
           <p className="sidebar-empty mono">
-            {query.length > 0 ? 'no match' : 'no sessions yet'}
+            {query.length > 0 ? t('sidebar.empty.search') : t('sidebar.empty')}
           </p>
         ) : (
           <ul className="sidebar-session-list">
@@ -169,7 +178,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
                 >
                   <span className="sidebar-session-cwd mono">{shortCwd(session.cwd)}</span>
                   <span className="sidebar-session-meta mono">
-                    {String(session.messageCount)} msgs · {formatTime(session.lastActivityAt)}
+                    {String(session.messageCount)} {t('sidebar.msgs')} · {formatTime(session.lastActivityAt, intlTag)}
                   </span>
                 </button>
               </li>
@@ -183,10 +192,10 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
           <button
             type="button"
             className="sidebar-footer-link mono"
-            title="帮助（二期）"
+            title={t('sidebar.help')}
             aria-disabled="true"
           >
-            帮助
+            {t('sidebar.help')}
           </button>
           <button
             type="button"
@@ -194,7 +203,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
             data-active={view === 'sessions'}
             onClick={() => { onViewChange('sessions'); }}
           >
-            历史
+            {t('sidebar.history')}
           </button>
           <button
             type="button"
@@ -202,7 +211,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
             data-active={view === 'stats'}
             onClick={() => { onViewChange('stats'); }}
           >
-            统计
+            {t('sidebar.stats')}
           </button>
         </div>
         <div className="sidebar-user">
@@ -211,7 +220,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
               className="sidebar-user-input mono"
               defaultValue={userId}
               autoFocus
-              aria-label="自定义用户 ID"
+              aria-label={t('sidebar.user.id')}
               onBlur={(event) => {
                 saveUserId(event.target.value);
               }}
@@ -226,7 +235,7 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
               type="button"
               className="sidebar-user-id mono"
               onClick={() => { setEditingUser(true); }}
-              title="点击自定义用户 ID"
+              title={t('sidebar.user.id')}
             >
               <span className="sidebar-user-avatar" aria-hidden="true">
                 {userId.slice(0, 1).toUpperCase()}
@@ -240,9 +249,10 @@ export function Sidebar({ view, onViewChange, onSessionChanged }: SidebarProps):
             data-active={view === 'settings'}
             onClick={() => { onViewChange('settings'); }}
           >
-            设置
+            {t('sidebar.settings')}
           </button>
         </div>
+        <div className="sidebar-slogan">{t('brand.slogan')}</div>
       </div>
     </nav>
   );

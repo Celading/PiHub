@@ -4,14 +4,15 @@ import { api } from '../api/client.js';
 import { useSessionComposer } from '../chat/sessionComposer.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './SessionDetailView.css';
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, intlTag: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(intlTag, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -41,6 +42,7 @@ interface SessionDetailViewProps {
 }
 
 export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React.JSX.Element {
+  const { t, intlTag } = useI18n();
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -99,7 +101,7 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
     return (
       <section className="sessions-page">
         <button type="button" className="sessions-back" onClick={onBack}>
-          ← sessions
+          {t('sessions.back')}
         </button>
         <div className="sessions-error mono">{error}</div>
       </section>
@@ -110,9 +112,9 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
     return (
       <section className="sessions-page">
         <button type="button" className="sessions-back" onClick={onBack}>
-          ← sessions
+          {t('sessions.back')}
         </button>
-        <p className="sessions-hint">loading…</p>
+        <p className="sessions-hint">{t('sessions.loading')}</p>
       </section>
     );
   }
@@ -123,15 +125,18 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
   return (
     <section className="sessions-page">
       <button type="button" className="sessions-back" onClick={onBack}>
-        ← sessions
+        {t('sessions.back')}
       </button>
 
       <div className="session-header">
         <div>
           <h2 className="panel-title">{detail.cwd}</h2>
           <p className="session-meta mono">
-            {formatDate(detail.startedAt)} · {String(detail.entries.length)} entries
-            {detail.entries.length > 0 ? ` · ${formatTokens(detail.totals.total)} tokens` : ''}
+            {formatDate(detail.startedAt, intlTag)} · {String(detail.entries.length)}{' '}
+            {t('sessions.entries')}
+            {detail.entries.length > 0
+              ? ` · ${formatTokens(detail.totals.total)} ${t('sessions.tokens')}`
+              : ''}
             {detail.totalCost > 0 ? ` · ${formatCost(detail.totalCost)}` : ''}
           </p>
         </div>
@@ -143,7 +148,9 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
               setShowAll(!showAll);
             }}
           >
-            {showAll ? 'mainline only' : `show all (${String(offBranchCount)} off-branch)`}
+            {showAll
+              ? t('sessions.mainline')
+              : t('sessions.showAll', { count: String(offBranchCount) })}
           </button>
         ) : null}
       </div>

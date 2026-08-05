@@ -3,10 +3,12 @@ import { useChatSession } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
 import { ModelBar } from '../components/ModelBar.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './ChatPage.css';
 
 export function ChatPage(): React.JSX.Element {
   const chat = useChatSession();
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,16 +35,16 @@ export function ChatPage(): React.JSX.Element {
         ) : null}
         {chat.pendingSteer.length > 0 || chat.pendingFollowUp.length > 0 ? (
           <div className="chatpage-queue mono">
-            queued: {String(chat.pendingSteer.length)} steer · {String(chat.pendingFollowUp.length)} follow-up
+            {t('chat.queued', {
+              steer: String(chat.pendingSteer.length),
+              followUp: String(chat.pendingFollowUp.length),
+            })}
           </div>
         ) : null}
         {chat.messages.length === 0 ? (
           <div className="chatpage-empty">
-            <h2 className="panel-title">pi</h2>
-            <p className="chatpage-empty-hint">
-              Start a conversation with the pi agent. Messages stream here in
-              real time via the RPC bridge.
-            </p>
+            <h2 className="panel-title">{t('chat.empty.title')}</h2>
+            <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
           </div>
         ) : (
           <div className="chatpage-stream">

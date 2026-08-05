@@ -23,11 +23,10 @@
   height: 2rem;
   background-color: var(--primary);
   color: #ffffff;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-family: var(--font-serif);
+  font-size: var(--text-base);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  line-height: 1;
 }
 
 .header-brand-text {

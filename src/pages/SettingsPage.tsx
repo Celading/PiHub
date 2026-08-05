@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ModelInfo } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import './SettingsPage.css';
 
 function SettingRow({ label, value }: { label: string; value: string }): React.JSX.Element {
@@ -37,7 +38,13 @@ function ModelCard({ model }: { model: ModelInfo }): React.JSX.Element {
   );
 }
 
+const LOCALE_OPTIONS: ReadonlyArray<{ value: Locale; label: string }> = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+];
+
 export function SettingsPage(): React.JSX.Element {
+  const { t, locale, setLocale } = useI18n();
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [providers, setProviders] = useState<Array<{ provider: string; models: ModelInfo[] }>>([]);
   const [error, setError] = useState<string | null>(null);
@@ -66,19 +73,38 @@ export function SettingsPage(): React.JSX.Element {
   return (
     <section className="settings-page">
       <div className="settings-head">
-        <h1 className="panel-title">Settings</h1>
-        <p className="settings-head-hint mono">read-only · ~/.pi/agent</p>
+        <h1 className="panel-title">{t('settings.title')}</h1>
+        <p className="settings-head-hint mono">{t('settings.readonly')}</p>
       </div>
 
       {error !== null ? <div className="settings-error mono">{error}</div> : null}
 
       <section className="settings-section">
-        <h2 className="settings-section-title mono">agent settings</h2>
+        <h2 className="settings-section-title mono">{t('settings.language')}</h2>
+        <div className="settings-language">
+          {LOCALE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="settings-language-btn"
+              data-active={locale === option.value}
+              onClick={() => {
+                setLocale(option.value);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title mono">{t('settings.agent')}</h2>
         <div className="settings-list">
           {settings === null ? (
-            <p className="settings-hint">loading…</p>
+            <p className="settings-hint">{t('settings.loading')}</p>
           ) : Object.entries(settings).length === 0 ? (
-            <p className="settings-hint">No settings file found.</p>
+            <p className="settings-hint">{t('settings.empty')}</p>
           ) : (
             Object.entries(settings).map(([key, value]) => (
               <SettingRow key={key} label={key} value={JSON.stringify(value)} />
@@ -88,9 +114,9 @@ export function SettingsPage(): React.JSX.Element {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title mono">model store</h2>
+        <h2 className="settings-section-title mono">{t('settings.modelStore')}</h2>
         {providers.length === 0 ? (
-          <p className="settings-hint">No models found.</p>
+          <p className="settings-hint">{t('settings.emptyModels')}</p>
         ) : (
           providers.map((entry) => (
             <div key={entry.provider} className="settings-provider">

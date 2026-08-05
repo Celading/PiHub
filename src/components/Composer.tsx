@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from 'react';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './Composer.css';
 
 interface ComposerProps {
@@ -14,6 +15,7 @@ export function Composer({
   onSendSteer,
   onAbort,
 }: ComposerProps): React.JSX.Element {
+  const { t } = useI18n();
   const [text, setText] = useState('');
 
   const submit = (): void => {
@@ -41,21 +43,21 @@ export function Composer({
       <textarea
         className="composer-input"
         value={text}
-        placeholder={isAgentRunning ? 'Steer the running agent…' : 'Message pi…'}
+        placeholder={isAgentRunning ? t('composer.placeholder.steer') : t('composer.placeholder')}
         onChange={(event) => {
           setText(event.target.value);
         }}
         onKeyDown={handleKeyDown}
         rows={3}
-        aria-label="Message input"
+        aria-label={t('composer.placeholder')}
       />
       <div className="composer-actions">
         <span className="composer-hint mono">
-          {isAgentRunning ? 'steer mode · running' : 'enter to send · shift+enter for newline'}
+          {isAgentRunning ? t('composer.hint.steer') : t('composer.hint')}
         </span>
         {isAgentRunning ? (
           <button type="button" className="composer-abort" onClick={onAbort}>
-            abort
+            {t('composer.abort')}
           </button>
         ) : null}
         <button
@@ -64,7 +66,7 @@ export function Composer({
           onClick={submit}
           disabled={text.trim().length === 0}
         >
-          {isAgentRunning ? 'steer' : 'send'}
+          {isAgentRunning ? t('composer.steer') : t('composer.send')}
         </button>
       </div>
     </div>

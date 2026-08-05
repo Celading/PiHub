@@ -1,5 +1,6 @@
 import type { Theme } from '../types/app';
 import { useServerHealth } from '../hooks/useServerHealth';
+import { useI18n } from '../i18n/I18nProvider.js';
 import './Header.css';
 
 interface HeaderProps {
@@ -7,39 +8,37 @@ interface HeaderProps {
   onThemeToggle: () => void;
 }
 
-const STATUS_LABEL: Record<'checking' | 'online' | 'offline', string> = {
-  checking: 'connecting',
-  online: 'server online',
-  offline: 'server offline',
-};
-
 export function Header({ theme, onThemeToggle }: HeaderProps): React.JSX.Element {
   const serverStatus = useServerHealth();
+  const { t } = useI18n();
+
+  const statusKey =
+    serverStatus === 'online' ? 'header.status.online' : serverStatus === 'offline' ? 'header.status.offline' : 'header.status.checking';
 
   return (
     <header className="header">
       <div className="header-brand">
         <span className="header-brand-mark" aria-hidden="true">
-          pi
+          π
         </span>
         <div className="header-brand-text">
-          <span className="header-brand-name">pi panel</span>
-          <span className="header-brand-sub mono">pi.dev agent console</span>
+          <span className="header-brand-name">{t('brand.name')}</span>
+          <span className="header-brand-sub mono">{t('brand.tagline')}</span>
         </div>
       </div>
 
       <div className="header-actions">
         <span className="header-status mono" data-status={serverStatus}>
           <span className="header-status-dot" aria-hidden="true" />
-          {STATUS_LABEL[serverStatus]}
+          {t(statusKey)}
         </span>
         <button
           type="button"
           className="header-theme-toggle"
           onClick={onThemeToggle}
-          aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+          aria-label={t('header.theme.toggle')}
         >
-          {theme === 'light' ? 'dark' : 'light'}
+          {theme === 'light' ? t('header.theme.dark') : t('header.theme.light')}
         </button>
       </div>
     </header>
