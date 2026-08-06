@@ -26,7 +26,6 @@ interface SidebarProps {
   sessionStatus: SessionStatus;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
-  onOpenCommands: () => void;
 }
 
 /** Settings modal tree: shown in the global sidebar while the settings
@@ -178,7 +177,6 @@ export function Sidebar({
   sessionStatus,
   onViewChange,
   onSessionChanged,
-  onOpenCommands,
 }: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -557,7 +555,10 @@ export function Sidebar({
           type="button"
           className="sidebar-feature"
           title={t('sidebar.features')}
-          onClick={onOpenCommands}
+          data-active={view === 'automation'}
+          onClick={() => {
+            onViewChange('automation');
+          }}
         >
           <span className="hico hico-bolt" aria-hidden="true" />
           <span className="hico hico-wand-stars" aria-hidden="true" />

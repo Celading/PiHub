@@ -1,4 +1,4 @@
-export type View = 'chat' | 'sessions' | 'stats' | 'settings';
+export type View = 'chat' | 'sessions' | 'stats' | 'settings' | 'automation';
 
 export type Theme = 'light' | 'dark';
 
@@ -18,6 +18,7 @@ export const VIEW_LABELS: Record<View, string> = {
   sessions: 'Sessions',
   stats: 'Stats',
   settings: 'Settings',
+  automation: 'Automation',
 };
 
 export const THEME_STORAGE_KEY = 'pi-panel:theme';

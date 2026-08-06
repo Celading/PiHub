@@ -6,6 +6,7 @@ import { ChatPage } from './pages/ChatPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AutomationPage } from './pages/AutomationPage';
 import { CommandPalette } from './components/CommandPalette';
 import { ExtensionUiHost } from './components/ExtensionUiHost';
 import { useExtensionUi } from './extui/useExtensionUi.js';
@@ -60,6 +61,18 @@ export function App(): React.JSX.Element {
     }
   }, []);
 
+  // Run a slash command from the automation center: send it to the RPC
+  // session and jump back to the chat view.
+  const handleRunCommand = useCallback(async (commandName: string): Promise<void> => {
+    try {
+      await api.prompt(`/${commandName}`);
+      setChatSessionKey((prev) => prev + 1);
+      setView('chat');
+    } catch {
+      // The chat page surfaces backend errors through its own state.
+    }
+  }, []);
+
   // Command (optionally Ctrl) + ArrowUp/Down cycles the session list.
   const switchSessionByOffset = useCallback(async (offset: number): Promise<void> => {
     try {
@@ -91,13 +104,13 @@ export function App(): React.JSX.Element {
   }, [theme]);
 
   // Global shortcuts: Esc=abort (when no modal is open), Ctrl+Shift+M=
-  // command palette, Alt+1..4=view switch.
+  // command palette, Alt+1..5=view switch.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
         const viewNumber = Number(event.key);
-        if (viewNumber >= 1 && viewNumber <= 4) {
-          const views: View[] = ['chat', 'sessions', 'stats', 'settings'];
+        if (viewNumber >= 1 && viewNumber <= 5) {
+          const views: View[] = ['chat', 'sessions', 'stats', 'settings', 'automation'];
           const target = views[viewNumber - 1];
           if (target !== undefined) {
             event.preventDefault();
@@ -187,6 +200,14 @@ export function App(): React.JSX.Element {
             }}
           />
         );
+      case 'automation':
+        return (
+          <AutomationPage
+            onRunCommand={(name) => {
+              void handleRunCommand(name);
+            }}
+          />
+        );
     }
   };
 
@@ -205,9 +226,6 @@ export function App(): React.JSX.Element {
       onViewChange={setView}
       onSessionChanged={() => {
         setChatSessionKey(chatSessionKey + 1);
-      }}
-      onOpenCommands={() => {
-        setCommandOpen(true);
       }}
       onThemeToggle={() => {
         setTheme(theme === 'light' ? 'dark' : 'light');

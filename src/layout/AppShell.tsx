@@ -22,7 +22,6 @@ interface AppShellProps {
   sessionStatus: SessionStatus;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
-  onOpenCommands: () => void;
   onThemeToggle: () => void;
   children: ReactNode;
 }
@@ -53,7 +52,6 @@ export function AppShell({
   sessionStatus,
   onViewChange,
   onSessionChanged,
-  onOpenCommands,
   onThemeToggle,
   children,
 }: AppShellProps): React.JSX.Element {
@@ -150,7 +148,6 @@ export function AppShell({
           sessionStatus={sessionStatus}
           onViewChange={onViewChange}
           onSessionChanged={onSessionChanged}
-          onOpenCommands={onOpenCommands}
         />
       </div>
       <div
