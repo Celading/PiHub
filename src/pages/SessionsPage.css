@@ -50,6 +50,10 @@
   color: var(--text-secondary);
 }
 
+.sessions-empty-cta {
+  margin-top: var(--space-3);
+}
+
 .sessions-error {
   padding: var(--space-3);
   border-left: var(--border-thick) solid var(--red-60);

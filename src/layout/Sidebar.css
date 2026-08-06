@@ -523,6 +523,8 @@
 
 .session-status-dot[data-status='aborted'] {
   background-color: var(--status-error);
+  /* subtle slow pulse, distinct from the running cyan pulse */
+  animation: status-aborted-pulse 2.4s ease-in-out infinite;
 }
 
 .session-status-dot[data-status='pending'] {
@@ -542,6 +544,17 @@
   }
   50% {
     opacity: 0.35;
+  }
+}
+
+/* aborted red: gentle dim, lower contrast swing than the cyan pulse */
+@keyframes status-aborted-pulse {
+  0%,
+  100% {
+    opacity: 0.95;
+  }
+  50% {
+    opacity: 0.55;
   }
 }
 

@@ -61,7 +61,11 @@ function SessionRow({
   );
 }
 
-export function SessionsPage(): React.JSX.Element {
+export function SessionsPage({
+  onNewSession,
+}: {
+  onNewSession?: () => void;
+}): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +151,14 @@ export function SessionsPage(): React.JSX.Element {
           <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
         </p>
       ) : grouped.length === 0 ? (
-        <p className="sessions-hint">{t('sessions.hint.empty')}</p>
+        <p className="sessions-hint">
+          {t('sessions.hint.empty')}
+          {onNewSession !== undefined ? (
+            <button type="button" className="btn-primary sessions-empty-cta" onClick={onNewSession}>
+              {t('sessions.hint.cta')}
+            </button>
+          ) : null}
+        </p>
       ) : (
         <div className="sessions-groups">
           {grouped.map(([dir, list]) => (

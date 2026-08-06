@@ -44,6 +44,19 @@ export function App(): React.JSX.Element {
     }
   }, [sidebarCollapsed]);
 
+  // New session from the sessions empty-state CTA (L008 C-3).
+  const handleNewSession = useCallback(async (): Promise<void> => {
+    try {
+      const response = await api.newSession();
+      if (response.success) {
+        setChatSessionKey((prev) => prev + 1);
+        setView('chat');
+      }
+    } catch {
+      // offline or idle; ignore
+    }
+  }, []);
+
   // Command (optionally Ctrl) + ArrowUp/Down cycles the session list.
   const switchSessionByOffset = useCallback(async (offset: number): Promise<void> => {
     try {
@@ -144,7 +157,13 @@ export function App(): React.JSX.Element {
           />
         );
       case 'sessions':
-        return <SessionsPage />;
+        return (
+          <SessionsPage
+            onNewSession={() => {
+              void handleNewSession();
+            }}
+          />
+        );
       case 'stats':
         return <StatsPage />;
       case 'settings':
