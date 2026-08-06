@@ -322,6 +322,50 @@ export function Composer({
                 ? t('composer.hint.ctrlEnter')
                 : t('composer.hint')}
         </span>
+        {/* Model / thinking shown as quiet inline text on the action row
+            (owner: static display, small font, 0.7 opacity; selection takes
+            effect immediately — no save button). */}
+        {rpcState !== undefined && rpcState !== null && onSetModel !== undefined && onSetThinking !== undefined ? (
+          <span className="composer-model-fields">
+            <label className="modelbar-field">
+              <span className="modelbar-label mono">{t('modelbar.model')}</span>
+              <select
+                className="modelbar-select"
+                value={`${rpcState.model?.provider ?? ''}/${rpcState.model?.id ?? ''}`}
+                onChange={(event) => {
+                  modelChanged(event.target.value);
+                }}
+                aria-label={t('modelbar.model')}
+              >
+                <option value="/" disabled>
+                  {rpcState.model?.name ?? 'model'}
+                </option>
+                {modelOptions.map((option) => (
+                  <option key={`${option.provider}/${option.modelId}`} value={`${option.provider}/${option.modelId}`}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="modelbar-field">
+              <span className="modelbar-label mono">{t('modelbar.thinking')}</span>
+              <select
+                className="modelbar-select"
+                value={rpcState.thinkingLevel}
+                onChange={(event) => {
+                  onSetThinking(event.target.value);
+                }}
+                aria-label={t('modelbar.thinking')}
+              >
+                {THINKING_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </span>
+        ) : null}
         <button
           type="button"
           className="composer-favorite"
@@ -355,51 +399,6 @@ export function Composer({
           {isAgentRunning ? t('composer.steer') : t('composer.send')}
         </button>
       </div>
-      {/* Model / thinking selectors sit at the very bottom, next to the
-          send button area (owner: "这俩按钮放底下"). Selection takes effect
-          immediately; no save button. */}
-      {rpcState !== undefined && rpcState !== null && onSetModel !== undefined && onSetThinking !== undefined ? (
-        <div className="composer-model-row">
-          <label className="modelbar-field">
-            <span className="modelbar-label mono">{t('modelbar.model')}</span>
-            <select
-              className="modelbar-select"
-              value={`${rpcState.model?.provider ?? ''}/${rpcState.model?.id ?? ''}`}
-              onChange={(event) => {
-                modelChanged(event.target.value);
-              }}
-              aria-label={t('modelbar.model')}
-            >
-              <option value="/" disabled>
-                {rpcState.model?.name ?? 'model'}
-              </option>
-              {modelOptions.map((option) => (
-                <option key={`${option.provider}/${option.modelId}`} value={`${option.provider}/${option.modelId}`}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="modelbar-field">
-            <span className="modelbar-label mono">{t('modelbar.thinking')}</span>
-            <select
-              className="modelbar-select"
-              value={rpcState.thinkingLevel}
-              onChange={(event) => {
-                onSetThinking(event.target.value);
-              }}
-              aria-label={t('modelbar.thinking')}
-            >
-              {THINKING_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="composer-model-note mono">{t('composer.modelNote')}</span>
-        </div>
-      ) : null}
     </div>
   );
 }

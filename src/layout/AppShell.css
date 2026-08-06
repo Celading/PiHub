@@ -39,6 +39,13 @@
     grid-template-columns: 1fr;
   }
 
+  /* Explicit desktop grid-column indexes (3) no longer apply: pin main to
+     the single implicit column so it fills the viewport. */
+  .shell-main {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
   .shell-sidebar {
     position: fixed;
     top: var(--header-height);

@@ -116,7 +116,11 @@ export function AppShell({
   return (
     <div
       className="shell"
-      style={{ gridTemplateColumns: `${sidebarCol} ${String(RESIZER_WIDTH)}px minmax(0, 1fr)` }}
+      style={
+        isMobile
+          ? undefined
+          : { gridTemplateColumns: `${sidebarCol} ${String(RESIZER_WIDTH)}px minmax(0, 1fr)` }
+      }
     >
       <Header
         theme={theme}

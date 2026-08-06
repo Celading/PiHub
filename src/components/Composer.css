@@ -203,43 +203,52 @@
   background-color: var(--primary-subtle);
 }
 
-/* ---- phase-3 batch 2: model/thinking selectors at composer bottom ---- */
-.composer-model-row {
-  display: flex;
+/* ---- model/thinking as quiet inline text on the action row ---- */
+.composer-model-fields {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-2) var(--space-4);
-  border-top: var(--border-thin) solid var(--border-subtle);
-  background-color: transparent;
+  gap: var(--space-3);
 }
 
 .modelbar-field {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  opacity: 0.7;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.modelbar-field:hover,
+.modelbar-field:focus-within {
+  opacity: 1;
 }
 
 .modelbar-label {
-  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-secondary);
 }
 
 .modelbar-select {
-  padding: var(--space-1) var(--space-2);
-  border: var(--border-thin) solid var(--border-subtle);
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-none);
-  background-color: var(--surface);
+  background-color: transparent;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.modelbar-select:hover {
+  text-decoration: underline;
 }
 
 .composer-model-note {
-  margin-left: auto;
-  font-size: var(--text-xs);
-  color: var(--text-placeholder);
+  display: none;
 }
 
 /* ---- L008-C6: narrow-viewport composer ---- */
@@ -248,10 +257,14 @@
     padding: var(--space-2) var(--space-3);
   }
 
-  .composer-model-row {
+  .composer-actions {
     flex-wrap: wrap;
     gap: var(--space-2);
-    padding: var(--space-1) 0;
+  }
+
+  .composer-model-fields {
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   .modelbar-select {
