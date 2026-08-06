@@ -3,6 +3,8 @@ import type {
   ExtensionUiResponse,
   ModelInfo,
   PiCommand,
+  Pipeline,
+  PipelineRunRecord,
   RpcResponse,
   RpcState,
   SessionDetail,
@@ -224,5 +226,51 @@ export const api = {
 
   commands(): Promise<PiCommand[]> {
     return request<{ commands: PiCommand[] }>('/api/rpc/commands').then((response) => response.commands);
+  },
+
+  /* ---- pipelines (P1-02-C) ---- */
+
+  pipelines(): Promise<{ pipelines: Pipeline[] }> {
+    return request<{ pipelines: Pipeline[] }>('/api/pipelines');
+  },
+
+  savePipeline(pipeline: Pipeline): Promise<{ pipeline: Pipeline }> {
+    return request<{ pipeline: Pipeline }>('/api/pipelines', {
+      method: 'POST',
+      body: JSON.stringify({ pipeline }),
+    });
+  },
+
+  deletePipeline(id: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/pipelines/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  pipelineRuns(): Promise<{ runs: PipelineRunRecord[] }> {
+    return request<{ runs: PipelineRunRecord[] }>('/api/pipelines/runs');
+  },
+
+  runPipeline(pipelineId: string, input?: string): Promise<{ run: PipelineRunRecord }> {
+    return request<{ run: PipelineRunRecord }>('/api/pipelines/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        pipelineId,
+        ...(input === undefined || input.length === 0 ? {} : { input }),
+      }),
+    });
+  },
+
+  abortPipelineRun(runId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/abort`, {
+      method: 'POST',
+    });
+  },
+
+  approvePipelineRun(runId: string, approve: boolean): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ approve }),
+    });
   },
 };

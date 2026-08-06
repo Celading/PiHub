@@ -3,6 +3,7 @@ import type { PiCommand } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { LoadingHint } from '../components/LoadingHint.js';
+import { PipelinesTab } from '../pipelines/PipelinesTab.js';
 import './AutomationPage.css';
 
 type AutomationTab = 'skills' | 'automation' | 'pipelines';
@@ -173,7 +174,7 @@ export function AutomationPage({ onRunCommand }: { onRunCommand: (name: string) 
 
       {tab === 'pipelines' ? (
         <div className="automation-section">
-          <p className="automation-hint">{t('automation.pipelines.note')}</p>
+          <PipelinesTab />
         </div>
       ) : null}
     </section>

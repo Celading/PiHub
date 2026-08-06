@@ -17,44 +17,14 @@ import type { Pipeline, PipelineStep } from '../../shared/types.js';
 import type { PipelineStore } from './store.js';
 import type { RpcCommand } from '../rpc-bridge.js';
 import type { RpcResponse, RpcStreamEvent } from '../../shared/types.js';
+import type {
+  PipelineRunRecord,
+  PipelineRunStatus,
+  PipelineStepRecord,
+  PipelineStepStatus,
+} from '../../shared/types.js';
 
-export type PipelineStepStatus =
-  | 'pending'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'skipped'
-  | 'awaiting-approval';
-
-export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'aborted' | 'failed';
-
-export interface PipelineStepRecord {
-  stepId: string;
-  name: string;
-  type: PipelineStep['type'];
-  status: PipelineStepStatus;
-  startedAt?: number;
-  finishedAt?: number;
-  /** Expanded template text sent to the session (prompt/steer steps). */
-  input?: string;
-  /** Last assistant text produced by this step (for match and vars). */
-  output?: string;
-  /** Last tool output text produced while this step was running. */
-  toolOutput?: string;
-  error?: string;
-  attempts?: number;
-}
-
-export interface PipelineRunRecord {
-  runId: string;
-  pipelineId: string;
-  pipelineName: string;
-  status: PipelineRunStatus;
-  input: string;
-  startedAt: number;
-  finishedAt?: number;
-  steps: PipelineStepRecord[];
-}
+export type { PipelineRunRecord, PipelineRunStatus, PipelineStepRecord, PipelineStepStatus };
 
 export interface PipelineRunContext {
   sessionName?: string | undefined;

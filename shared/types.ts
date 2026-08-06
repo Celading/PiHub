@@ -204,3 +204,42 @@ export interface ExtensionUiResponse {
 
 export type PipelineStep = z.infer<typeof pipelineStepSchema>;
 export type Pipeline = z.infer<typeof pipelineSchema>;
+
+/** Engine run/step state machine (server-owned; shared for the run view). */
+export type PipelineStepStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped'
+  | 'awaiting-approval';
+
+export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'aborted' | 'failed';
+
+export interface PipelineStepRecord {
+  stepId: string;
+  name: string;
+  type: PipelineStep['type'];
+  status: PipelineStepStatus;
+  startedAt?: number;
+  finishedAt?: number;
+  /** Expanded template text sent to the session (prompt/steer steps). */
+  input?: string;
+  /** Last assistant text produced by this step (for match and vars). */
+  output?: string;
+  /** Last tool output text produced while this step was running. */
+  toolOutput?: string;
+  error?: string;
+  attempts?: number;
+}
+
+export interface PipelineRunRecord {
+  runId: string;
+  pipelineId: string;
+  pipelineName: string;
+  status: PipelineRunStatus;
+  input: string;
+  startedAt: number;
+  finishedAt?: number;
+  steps: PipelineStepRecord[];
+}
