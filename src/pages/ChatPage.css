@@ -18,6 +18,21 @@
   margin: 0 auto;
 }
 
+/* ---- L008-C6: narrow-viewport chat ---- */
+@media (max-width: 760px) {
+  .chatpage-scroll {
+    padding: var(--space-4) var(--space-3) var(--space-6);
+  }
+
+  .chatpage-toolbar {
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .chat-unit-summary {
+    flex-wrap: wrap;
+  }
+}
+
 .chatpage-empty {
   max-width: 52rem;
   margin: 0 auto;

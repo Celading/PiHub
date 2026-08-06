@@ -17,6 +17,7 @@ export const zhMessages = {
   'header.theme.dark': '深色',
   'header.theme.light': '浅色',
   'header.theme.toggle': '切换主题',
+  'header.menu': '菜单',
 
   // settings: language
   'settings.language': '语言',
@@ -295,6 +296,7 @@ export const enMessages: Record<MessageKey, string> = {
   'header.theme.dark': 'dark',
   'header.theme.light': 'light',
   'header.theme.toggle': 'Toggle theme',
+  'header.menu': 'Menu',
 
   'settings.language': 'Language',
 

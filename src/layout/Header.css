@@ -56,6 +56,27 @@
   gap: var(--space-4);
 }
 
+/* L008-C6: hamburger is mobile-only (hidden on desktop) */
+.header-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+@media (max-width: 760px) {
+  .header-menu-toggle {
+    display: inline-flex;
+  }
+}
+
 .header-status {
   display: inline-flex;
   align-items: center;

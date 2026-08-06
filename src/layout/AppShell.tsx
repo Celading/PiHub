@@ -58,6 +58,29 @@ export function AppShell({
   children,
 }: AppShellProps): React.JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)');
+    const onChange = (event: MediaQueryListEvent): void => {
+      setIsMobile(event.matches);
+      if (!event.matches) {
+        setMobileOpen(false);
+      }
+    };
+    media.addEventListener('change', onChange);
+    return () => {
+      media.removeEventListener('change', onChange);
+    };
+  }, []);
+
+  // Close the mobile drawer when the view or the active session changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [view, sessionFile]);
 
   useEffect(() => {
     try {
@@ -95,20 +118,37 @@ export function AppShell({
       className="shell"
       style={{ gridTemplateColumns: `${sidebarCol} ${String(RESIZER_WIDTH)}px minmax(0, 1fr)` }}
     >
-      <Header theme={theme} onThemeToggle={onThemeToggle} />
-      <Sidebar
-        view={view}
-        mode={view === 'settings' ? 'settings' : 'primary'}
-        settingsSection={settingsSection}
-        onSettingsSectionChange={onSettingsSectionChange}
-        collapsed={sidebarCollapsed}
-        onToggleCollapsed={onToggleCollapsed}
-        sessionFile={sessionFile}
-        sessionStatus={sessionStatus}
-        onViewChange={onViewChange}
-        onSessionChanged={onSessionChanged}
-        onOpenCommands={onOpenCommands}
+      <Header
+        theme={theme}
+        onThemeToggle={onThemeToggle}
+        onMenuClick={() => {
+          setMobileOpen(true);
+        }}
       />
+      {isMobile && mobileOpen ? (
+        <div
+          className="shell-mobile-overlay"
+          role="presentation"
+          onClick={() => {
+            setMobileOpen(false);
+          }}
+        />
+      ) : null}
+      <div className="shell-sidebar" data-mobile-open={isMobile && mobileOpen}>
+        <Sidebar
+          view={view}
+          mode={view === 'settings' ? 'settings' : 'primary'}
+          settingsSection={settingsSection}
+          onSettingsSectionChange={onSettingsSectionChange}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={onToggleCollapsed}
+          sessionFile={sessionFile}
+          sessionStatus={sessionStatus}
+          onViewChange={onViewChange}
+          onSessionChanged={onSessionChanged}
+          onOpenCommands={onOpenCommands}
+        />
+      </div>
       <div
         className="shell-resizer"
         role="separator"
@@ -116,6 +156,7 @@ export function AppShell({
         aria-label="Resize sidebar"
         onMouseDown={startResize}
         data-collapsed={sidebarCollapsed}
+        data-mobile={isMobile}
       />
       <main className="shell-main scroll-area">{children}</main>
     </div>

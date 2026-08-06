@@ -32,3 +32,37 @@
   min-width: 0;
   background-color: var(--background);
 }
+
+/* ---- L008-C6: mobile layout — sidebar becomes a fixed drawer ---- */
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .shell-sidebar {
+    position: fixed;
+    top: var(--header-height);
+    bottom: 0;
+    left: 0;
+    z-index: 90;
+    width: min(80vw, 320px);
+    transform: translateX(-100%);
+    transition: transform var(--duration-base) var(--ease-out);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .shell-sidebar[data-mobile-open='true'] {
+    transform: translateX(0);
+  }
+
+  .shell-mobile-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    background-color: rgba(22, 22, 22, 0.45);
+  }
+
+  .shell-resizer[data-mobile='true'] {
+    display: none;
+  }
+}

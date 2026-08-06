@@ -6,9 +6,10 @@ import './Header.css';
 interface HeaderProps {
   theme: Theme;
   onThemeToggle: () => void;
+  onMenuClick: () => void;
 }
 
-export function Header({ theme, onThemeToggle }: HeaderProps): React.JSX.Element {
+export function Header({ theme, onThemeToggle, onMenuClick }: HeaderProps): React.JSX.Element {
   const serverStatus = useServerHealth();
   const { t } = useI18n();
 
@@ -18,6 +19,14 @@ export function Header({ theme, onThemeToggle }: HeaderProps): React.JSX.Element
   return (
     <header className="header">
       <div className="header-brand">
+        <button
+          type="button"
+          className="header-menu-toggle"
+          aria-label={t('header.menu')}
+          onClick={onMenuClick}
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
         <span className="header-brand-mark" aria-hidden="true">
           π
         </span>
