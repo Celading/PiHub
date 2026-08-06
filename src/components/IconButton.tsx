@@ -32,6 +32,7 @@ export function IconButton({
   dataActive = false,
 }: IconButtonProps): React.JSX.Element {
   const [tooltip, setTooltip] = useState(false);
+  const [pressing, setPressing] = useState(false);
   const pressTimer = useRef<number | undefined>(undefined);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -42,12 +43,14 @@ export function IconButton({
       pressTimer.current = undefined;
     }
     setTooltip(false);
+    setPressing(false);
   };
 
   const handlePointerDown = (): void => {
     if (disabled) {
       return;
     }
+    setPressing(true);
     pressTimer.current = window.setTimeout(() => {
       setTooltip(true);
     }, LONG_PRESS_MS);
@@ -106,6 +109,7 @@ export function IconButton({
         disabled={disabled}
         aria-label={label}
         data-active={dataActive}
+        data-pressing={pressing}
         onClick={onClick}
         onPointerDown={handlePointerDown}
         onPointerUp={hideTooltip}

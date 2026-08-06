@@ -1,4 +1,5 @@
 .icon-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -29,6 +30,32 @@
 
 .icon-button .hico {
   font-size: var(--text-sm);
+}
+
+/* Long-press progress ring: a 3/4-circle sweep completes in the same 450ms
+ * window the tooltip uses. Pure CSS arc via partial borders; no SVG needed. */
+.icon-button::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--primary);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transform: rotate(0deg);
+}
+
+.icon-button[data-pressing='true']::after {
+  opacity: 1;
+  animation: icon-button-progress var(--duration-base) linear forwards;
+}
+
+@keyframes icon-button-progress {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Fixed-position tooltip: never expands the parent layout, clamps to the

@@ -507,6 +507,9 @@
   border-radius: 50%;
   flex-shrink: 0;
   background-color: var(--ok, #198038);
+  transition:
+    background-color var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
 }
 
 .session-status-dot[data-status='running'] {
@@ -522,6 +525,12 @@
   background-color: var(--warning, #f1c21b);
 }
 
+/* brief scale flash on status change (broadcast: data-status attribute
+ * mutation triggers a single iteration, then returns to default). */
+.session-status-dot[data-flash='true'] {
+  animation: status-flash 320ms var(--ease-out) 1;
+}
+
 @keyframes status-pulse {
   0%,
   100% {
@@ -529,6 +538,18 @@
   }
   50% {
     opacity: 0.35;
+  }
+}
+
+@keyframes status-flash {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.4);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 

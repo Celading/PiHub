@@ -7,6 +7,8 @@
   background-color: var(--surface);
   border: var(--border-thin) solid var(--border-subtle);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transform-origin: top left;
+  animation: appear-scale var(--duration-fast) var(--ease-out) 1;
 }
 
 .context-menu-item {

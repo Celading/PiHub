@@ -2,6 +2,7 @@
 .message {
   display: flex;
   flex-direction: column;
+  animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
 .message-user {
@@ -156,6 +157,7 @@
 .toolcall {
   border: var(--border-thin) solid var(--border-strong);
   background-color: var(--surface);
+  animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
 .toolcall-header {
@@ -189,6 +191,7 @@
 .toolresult {
   border: var(--border-thin) solid var(--border-subtle);
   background-color: var(--surface);
+  animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
 .toolresult-header {

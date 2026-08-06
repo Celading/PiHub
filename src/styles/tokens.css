@@ -43,10 +43,17 @@
   /* ---- radius: Swiss square corners ---- */
   --radius-none: 0;
 
-  /* ---- motion ---- */
+  /* ---- motion ----
+   * IBM-style motion: short, deterministic, ease-out dominant.
+   * `instant` is reserved for status-color updates that must not animate. */
+  --duration-instant: 0ms;
   --duration-fast: 100ms;
   --duration-base: 200ms;
-  --ease-out: cubic-bezier(0.2, 0, 0.38, 0.9);
+  --duration-slow: 320ms;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.38, 0.9);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- IBM blue ramp (Carbon values; #005fb8 is the chosen primary) ---- */
   --blue-10: #edf5ff;

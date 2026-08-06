@@ -7,6 +7,7 @@
   justify-content: center;
   padding-top: 12vh;
   background-color: rgba(22, 22, 22, 0.45);
+  animation: palette-overlay-in var(--duration-base) var(--ease-out) 1;
 }
 
 .palette {
@@ -17,6 +18,17 @@
   background-color: var(--surface);
   border-top: var(--border-thick) solid var(--primary);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  transform-origin: top center;
+  animation: appear-scale var(--duration-base) var(--ease-out) 1;
+}
+
+@keyframes palette-overlay-in {
+  from {
+    background-color: rgba(22, 22, 22, 0);
+  }
+  to {
+    background-color: rgba(22, 22, 22, 0.45);
+  }
 }
 
 .palette-head {
