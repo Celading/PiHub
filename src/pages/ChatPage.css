@@ -207,37 +207,22 @@
   animation: thinking-pulse 1.2s ease-in-out infinite;
 }
 
-/* Reply footer (P1-10 B): branch + copy at the bottom of each agent reply. */
+/* Reply footer (P1-11 B): hidden until the reply area is hovered; pure
+ * icons with IconButton hover-tooltip labels. */
 
 .chat-unit-footer {
   display: flex;
   justify-content: flex-start;
-  gap: 4px;
-  padding: 2px 0 6px;
-}
-
-.chat-unit-footer-btn {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  opacity: 0.55;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 3px;
-  cursor: pointer;
+  gap: 2px;
+  padding: 2px 0 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.chat-unit-footer-btn:hover:not(:disabled) {
+.chat-unit:hover .chat-unit-footer,
+.chat-unit-footer:focus-within {
   opacity: 1;
-  background: var(--bg-subtle);
-}
-
-.chat-unit-footer-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
 }
 
 /* Tool-cluster collapse (P1-10 C3). */
