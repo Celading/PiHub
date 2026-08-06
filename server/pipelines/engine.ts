@@ -320,11 +320,14 @@ export class PipelineEngine extends EventEmitter {
               step.streamingBehavior === 'steer' || step.streamingBehavior === 'followUp'
                 ? step.streamingBehavior
                 : undefined;
-            await this.bridge.send({
+            const sent = await this.bridge.send({
               type: 'prompt',
               message,
               ...(behavior !== undefined ? { streamingBehavior: behavior } : {}),
             });
+            if (!sent.success) {
+              throw new Error(sent.error ?? 'prompt 被 pi 拒绝');
+            }
             const settled = await this.waitForSettle(run, record, vars);
             if (settled === 'aborted') {
               return 'stop';
@@ -335,7 +338,10 @@ export class PipelineEngine extends EventEmitter {
             const message = expandTemplate(step.prompt ?? '', vars);
             record.input = message;
             this.emitChange(run);
-            await this.bridge.send({ type: 'steer', message });
+            const sent = await this.bridge.send({ type: 'steer', message });
+            if (!sent.success) {
+              throw new Error(sent.error ?? 'steer 被 pi 拒绝');
+            }
             const settled = await this.waitForSettle(run, record, vars);
             if (settled === 'aborted') {
               return 'stop';

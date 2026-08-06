@@ -3,6 +3,7 @@ import {
   agentMessageSchema,
   extensionUiRequestSchema,
   messageEventSchema,
+  rpcStreamEventSchema,
   sessionEventSchema,
   sessionHeaderEventSchema,
 } from './schemas.js';
@@ -217,5 +218,27 @@ describe('extension UI request schema (P1-01)', () => {
   it('rejects unknown methods', () => {
     const bad = { type: 'extension_ui_request', id: 'x', method: 'explode' };
     expect(extensionUiRequestSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe('rpc stream event schema', () => {
+  it('validates type and preserves protocol fields (passthrough)', () => {
+    const frame = {
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+      assistantMessageEvent: { id: 'm1', parentId: null },
+    };
+    const result = rpcStreamEventSchema.safeParse(frame);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const data = result.data as Record<string, unknown>;
+      expect(data['message']).toEqual(frame.message);
+      expect(data['assistantMessageEvent']).toEqual(frame.assistantMessageEvent);
+    }
+  });
+
+  it('rejects non-object lines without a string type', () => {
+    expect(rpcStreamEventSchema.safeParse('garbage').success).toBe(false);
+    expect(rpcStreamEventSchema.safeParse({ type: 42 }).success).toBe(false);
   });
 });

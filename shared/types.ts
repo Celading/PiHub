@@ -173,6 +173,8 @@ export interface PiCommand {
   source: PiCommandSource;
   location?: string;
   path?: string;
+  /** Raw get_commands entry (sourceInfo etc.); skill conversion reads path. */
+  sourceInfo?: { path?: string; source?: string; scope?: string };
 }
 
 /* ---- extension UI protocol (phase-3 P1-01) ---- */

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   modelStoreFileSchema,
   pipelineApproveBodySchema,
+  pipelineConvertBodySchema,
   pipelineRunBodySchema,
   pipelineUpsertBodySchema,
   settingsFileSchema,
@@ -14,11 +15,12 @@ import {
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
-import type { RpcResponse } from '../shared/types.js';
+import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { PipelineStore } from './pipelines/store.js';
+import { hardConvert, softConvert } from './pipelines/convert.js';
 
 const AGENT_DIR = path.join(os.homedir(), '.pi', 'agent');
 
@@ -741,6 +743,64 @@ export function createRouter(
       return;
     }
     res.json({ success: pipelineEngine.approve(req.params.id, body.data.approve) });
+  });
+
+  /* ---- skill → pipeline conversion (P1-10 A; HaomoKit generalized
+   * capability). Hard = algorithm, zero tokens. Soft = agent-assisted,
+   * token cost — the frontend must confirm with the operator first. ---- */
+
+  const resolveSkillCommand = async (commandName: string): Promise<PiCommand | null> => {
+    try {
+      const response = await bridge.send({ type: 'get_commands' });
+      const data = response.data as { commands?: PiCommand[] } | null | undefined;
+      const commands = Array.isArray(data?.commands) ? data.commands : [];
+      return commands.find((c) => c.source === 'skill' && c.name === commandName) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  router.post('/api/pipelines/convert/hard', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = pipelineConvertBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid convert body' });
+      return;
+    }
+    const command = await resolveSkillCommand(body.data.commandName);
+    if (command === null) {
+      res.status(404).json({ error: 'skill command not found' });
+      return;
+    }
+    res.json({ pipeline: hardConvert(command) });
+  });
+
+  router.post('/api/pipelines/convert/soft', async (req, res) => {
+    if (pipelineEngine === null) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = pipelineConvertBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid convert body' });
+      return;
+    }
+    const command = await resolveSkillCommand(body.data.commandName);
+    if (command === null) {
+      res.status(404).json({ error: 'skill command not found' });
+      return;
+    }
+    try {
+      const pipeline = await softConvert(pipelineEngine, command);
+      res.json({ pipeline });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   return router;

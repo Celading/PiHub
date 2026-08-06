@@ -217,12 +217,17 @@ export const rpcResponseSchema = z
   })
   
 
-/** Any streamed RPC event line: must parse as JSON with a string `type`. */
+/**
+ * Any streamed RPC event line: must parse as JSON with a string `type`.
+ * `.loose()` keeps protocol fields (message, assistantMessageEvent, …)
+ * intact — the frame is forwarded verbatim to consumers; only the `type`
+ * shape is validated. Stripping would silently drop streaming content.
+ */
 export const rpcStreamEventSchema = z
   .object({
     type: z.string(),
   })
-  
+  .loose()
 
 /** Extension UI request frame (pi v0.83.0 rpc-types: extension_ui_request). */
 export const extensionUiRequestSchema = z
@@ -397,4 +402,9 @@ export const pipelineRunBodySchema = z.object({
 
 export const pipelineApproveBodySchema = z.object({
   approve: z.boolean(),
+});
+
+/** POST /api/pipelines/convert/* body (skill → pipeline, P1-10 A). */
+export const pipelineConvertBodySchema = z.object({
+  commandName: z.string().min(1).max(256),
 });

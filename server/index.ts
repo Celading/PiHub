@@ -47,7 +47,11 @@ if (mode === 'debug') {
     console.log(`[kMode:debug] rpc response id=${response.id ?? '-'} success=${String(response.success)}`);
   });
   bridge.on('event', (event) => {
-    console.log(`[kMode:debug] event type=${event.type}`);
+    if (event.type === 'message_update') {
+      console.log(`[kMode:debug] message_update frame=${JSON.stringify(event).slice(0, 500)}`);
+    } else {
+      console.log(`[kMode:debug] event type=${event.type}`);
+    }
   });
 }
 if (mode !== 'demo') {
