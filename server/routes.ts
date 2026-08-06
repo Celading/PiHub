@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { modelStoreFileSchema, settingsFileSchema, uiRespondBodySchema } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
+import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
@@ -298,6 +299,18 @@ export function createRouter(
   });
 
   router.get('/api/rpc/state', async (_req, res) => {
+    if (mode === 'demo') {
+      // kMode: demo never spawns real pi; synthesize the state the frontend
+      // sessionWatch expects, driven by the demo machine phase.
+      const phase = demoMachine?.getPhase() ?? 'idle';
+      res.json({
+        model: { provider: 'demo-provider', id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+        sessionFile: DEMO_RUNNING_ID,
+        isAgentRunning: phase === 'thinking' || phase === 'tool' || phase === 'streaming',
+        isCompacting: false,
+      });
+      return;
+    }
     await withBridge(res, () => bridge.send({ type: 'get_state' }));
   });
 
