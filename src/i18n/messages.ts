@@ -123,6 +123,13 @@ export const zhMessages = {
   'common.confirm': '确认',
   'common.cancel': '取消',
 
+  // extension UI protocol (phase-3 P1-01)
+  'extui.timeoutHint': '超时后自动按默认值继续',
+  'extui.selectPlaceholder': '搜索选项…',
+  'extui.selectEmpty': '无匹配选项',
+  'extui.inputPlaceholder': '输入…',
+  'extui.editorPlaceholder': '输入内容…',
+
   // session actions (phase-2)
   'session.rename': '重命名',
   'session.rename.placeholder': '输入会话名称…',
@@ -394,6 +401,13 @@ export const enMessages: Record<MessageKey, string> = {
   // common dialogs (L008: window.confirm replacement)
   'common.confirm': 'Confirm',
   'common.cancel': 'Cancel',
+
+  // extension UI protocol (phase-3 P1-01)
+  'extui.timeoutHint': 'auto-answers with the default on timeout',
+  'extui.selectPlaceholder': 'Search options…',
+  'extui.selectEmpty': 'No matching options',
+  'extui.inputPlaceholder': 'Type…',
+  'extui.editorPlaceholder': 'Type content…',
 
   'session.rename': 'Rename',
   'session.rename.placeholder': 'Session name…',

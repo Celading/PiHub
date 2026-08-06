@@ -9,6 +9,7 @@ import type { z } from 'zod';
 import type {
   agentMessageSchema,
   contentBlockSchema,
+  extensionUiRequestSchema,
   modelInfoSchema,
   rpcResponseSchema,
   sessionEventSchema,
@@ -170,4 +171,29 @@ export interface PiCommand {
   source: PiCommandSource;
   location?: string;
   path?: string;
+}
+
+/* ---- extension UI protocol (phase-3 P1-01) ---- */
+
+/** Extension UI interaction methods (server-normalized from pi frames). */
+export type ExtensionUiMethod =
+  | 'select'
+  | 'confirm'
+  | 'input'
+  | 'editor'
+  | 'notify'
+  | 'setStatus'
+  | 'setWidget'
+  | 'setTitle'
+  | 'set_editor_text';
+
+/** Extension UI request (schema-derived, exactOptionalPropertyTypes-safe). */
+export type ExtensionUiRequest = z.infer<typeof extensionUiRequestSchema>;
+
+/** Response sent back to pi on stdin (extension_ui_response frame). */
+export interface ExtensionUiResponse {
+  id: string;
+  value?: string | undefined;
+  confirmed?: boolean | undefined;
+  cancelled?: boolean | undefined;
 }

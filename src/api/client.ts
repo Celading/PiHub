@@ -1,4 +1,6 @@
 import type {
+  ExtensionUiRequest,
+  ExtensionUiResponse,
   ModelInfo,
   PiCommand,
   RpcResponse,
@@ -64,6 +66,18 @@ export const api = {
 
   rpcMessages(): Promise<MessagesResponse> {
     return request<MessagesResponse>('/api/rpc/messages');
+  },
+
+  // Extension UI protocol (P1-01)
+  uiRequests(): Promise<{ requests: ExtensionUiRequest[] }> {
+    return request<{ requests: ExtensionUiRequest[] }>('/api/rpc/ui-requests');
+  },
+
+  respondUi(response: ExtensionUiResponse): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/rpc/ui-respond', {
+      method: 'POST',
+      body: JSON.stringify(response),
+    });
   },
 
   prompt(

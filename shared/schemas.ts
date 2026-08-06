@@ -224,6 +224,76 @@ export const rpcStreamEventSchema = z
   })
   
 
+/** Extension UI request frame (pi v0.83.0 rpc-types: extension_ui_request). */
+export const extensionUiRequestSchema = z
+  .discriminatedUnion('method', [
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('select'),
+      title: z.string(),
+      options: z.array(z.string()),
+      timeout: z.number().optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('confirm'),
+      title: z.string(),
+      message: z.string(),
+      timeout: z.number().optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('input'),
+      title: z.string(),
+      placeholder: z.string().optional(),
+      timeout: z.number().optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('editor'),
+      title: z.string(),
+      prefill: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('notify'),
+      message: z.string(),
+      notifyType: z.enum(['info', 'warning', 'error']).optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('setStatus'),
+      statusKey: z.string(),
+      statusText: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('setWidget'),
+      widgetKey: z.string(),
+      widgetLines: z.array(z.string()).optional(),
+      widgetPlacement: z.enum(['aboveEditor', 'belowEditor']).optional(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('setTitle'),
+      title: z.string(),
+    }),
+    z.object({
+      type: z.literal('extension_ui_request'),
+      id: z.string(),
+      method: z.literal('set_editor_text'),
+      text: z.string(),
+    }),
+  ])
+
 export const settingsFileSchema = z
   .object({
     theme: z.string().optional(),
@@ -263,3 +333,13 @@ export const modelStoreFileSchema = z.record(
     etag: z.string().optional(),
   }),
 );
+
+/** POST /api/rpc/ui-respond body (answer to an extension UI dialog). */
+export const uiRespondBodySchema = z
+  .object({
+    id: z.string(),
+    value: z.string().optional(),
+    confirmed: z.boolean().optional(),
+    cancelled: z.boolean().optional(),
+  })
+  

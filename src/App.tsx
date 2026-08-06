@@ -7,6 +7,8 @@ import { SessionsPage } from './pages/SessionsPage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CommandPalette } from './components/CommandPalette';
+import { ExtensionUiHost } from './components/ExtensionUiHost';
+import { useExtensionUi } from './extui/useExtensionUi.js';
 import { api } from './api/client.js';
 import { useSessionWatch } from './chat/sessionWatch.js';
 import { usePref } from './prefs/preferences.js';
@@ -35,6 +37,7 @@ export function App(): React.JSX.Element {
   );
   const sessionWatch = useSessionWatch();
   const cmdKey = usePref('cmdKey');
+  const extensionUi = useExtensionUi();
 
   useEffect(() => {
     try {
@@ -211,6 +214,7 @@ export function App(): React.JSX.Element {
       }}
     >
       {renderPage()}
+      <ExtensionUiHost ui={extensionUi} />
       <CommandPalette
         open={commandOpen}
         onClose={() => {

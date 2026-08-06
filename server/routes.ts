@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
 import { z } from 'zod';
-import { modelStoreFileSchema, settingsFileSchema } from '../shared/schemas.js';
+import { modelStoreFileSchema, settingsFileSchema, uiRespondBodySchema } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { RpcResponse } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
@@ -399,6 +399,21 @@ export function createRouter(
 
   router.get('/api/rpc/session-stats', async (_req, res) => {
     await withBridge(res, () => bridge.send({ type: 'get_session_stats' }));
+  });
+
+  // Extension UI protocol (P1-01): pending dialog requests + answering.
+  router.get('/api/rpc/ui-requests', (_req, res) => {
+    res.json({ requests: bridge.getPendingUiRequests() });
+  });
+
+  router.post('/api/rpc/ui-respond', (req, res) => {
+    const body = uiRespondBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid ui-respond body' });
+      return;
+    }
+    const ok = bridge.sendUiResponse(body.data);
+    res.json({ success: ok });
   });
 
   router.post('/api/rpc/export-html', async (_req, res) => {

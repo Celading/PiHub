@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentMessageSchema,
+  extensionUiRequestSchema,
   messageEventSchema,
   sessionEventSchema,
   sessionHeaderEventSchema,
@@ -172,5 +173,49 @@ describe('session event schema', () => {
     if (result.success && result.data.type === 'session_info') {
       expect(result.data.name).toBe('PiHub Smoke Session');
     }
+  });
+});
+
+describe('extension UI request schema (P1-01)', () => {
+  it('parses a select dialog request', () => {
+    const frame = {
+      type: 'extension_ui_request',
+      id: 'sel-1',
+      method: 'select',
+      title: 'Pick a model',
+      options: ['a', 'b', 'c'],
+      timeout: 10000,
+    };
+    const result = extensionUiRequestSchema.safeParse(frame);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.method).toBe('select');
+      if (result.data.method === 'select') {
+        expect(result.data.options).toHaveLength(3);
+        expect('timeout' in result.data ? result.data.timeout : undefined).toBe(10000);
+      }
+    }
+  });
+
+  it('parses confirm / input / editor / notify / status / widget / title frames', () => {
+    const frames = [
+      { type: 'extension_ui_request', id: 'c1', method: 'confirm', title: 'OK?', message: 'really?' },
+      { type: 'extension_ui_request', id: 'i1', method: 'input', title: 'Name', placeholder: 'x' },
+      { type: 'extension_ui_request', id: 'e1', method: 'editor', title: 'Edit', prefill: 'hello' },
+      { type: 'extension_ui_request', id: 'n1', method: 'notify', message: 'done', notifyType: 'warning' },
+      { type: 'extension_ui_request', id: 's1', method: 'setStatus', statusKey: 'run', statusText: 'busy' },
+      { type: 'extension_ui_request', id: 'w1', method: 'setWidget', widgetKey: 'stats', widgetLines: ['1', '2'] },
+      { type: 'extension_ui_request', id: 't1', method: 'setTitle', title: 'PiHub' },
+      { type: 'extension_ui_request', id: 'x1', method: 'set_editor_text', text: 'content' },
+    ];
+    for (const frame of frames) {
+      const result = extensionUiRequestSchema.safeParse(frame);
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects unknown methods', () => {
+    const bad = { type: 'extension_ui_request', id: 'x', method: 'explode' };
+    expect(extensionUiRequestSchema.safeParse(bad).success).toBe(false);
   });
 });

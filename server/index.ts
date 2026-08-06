@@ -21,6 +21,9 @@ const hub = new SseHub();
 bridge.on('event', (event) => {
   hub.broadcast(event);
 });
+bridge.on('ui-request', (request) => {
+  hub.broadcast(request);
+});
 bridge.on('error', (error) => {
   console.error(`[rpc] ${error.message}`);
 });
