@@ -342,4 +342,59 @@ export const uiRespondBodySchema = z
     confirmed: z.boolean().optional(),
     cancelled: z.boolean().optional(),
   })
-  
+
+/* ---- pipelines (phase-3 P1-02-C, PiHub-exclusive orchestration) ----
+ * The pi agent has no multi-step orchestration surface; a pipeline is a
+ * PiHub-owned sequence of steps executed against one pi session. All step
+ * types map to existing RPC primitives (prompt/steer/model/thinking) plus a
+ * PiHub-only human-approval step. */
+
+export const pipelineStepSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(['prompt', 'steer', 'approval', 'setModel', 'setThinking']),
+  /** Template text for prompt/steer steps; supports {{var}} interpolation. */
+  prompt: z.string().optional(),
+  model: z
+    .object({
+      provider: z.string().min(1),
+      id: z.string().min(1),
+    })
+    .optional(),
+  thinkingLevel: z.string().optional(),
+  streamingBehavior: z.enum(['normal', 'steer', 'followUp']).optional(),
+  /** Ask the operator before executing this step (approval/confirmation). */
+  requiresApproval: z.boolean().optional(),
+  /** Output match (substring/regex tested against the last assistant text). */
+  match: z.string().optional(),
+  /** Step id to run next when match hits (branching). */
+  nextOnMatch: z.string().optional(),
+  /** Step id to run next when match misses. */
+  nextOnMiss: z.string().optional(),
+  /** Retry count for onError=retry. */
+  maxRetries: z.number().int().min(0).optional(),
+});
+
+export const pipelineSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  steps: z.array(pipelineStepSchema).min(1),
+  /** Error strategy for the whole run: stop (default), skip, or retry. */
+  onError: z.enum(['stop', 'skip', 'retry']).default('stop'),
+});
+
+export const pipelineUpsertBodySchema = z.object({
+  pipeline: pipelineSchema,
+});
+
+export const pipelineRunBodySchema = z.object({
+  pipelineId: z.string().min(1),
+  input: z.string().optional(),
+});
+
+export const pipelineApproveBodySchema = z.object({
+  approve: z.boolean(),
+});

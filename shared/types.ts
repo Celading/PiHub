@@ -11,6 +11,8 @@ import type {
   contentBlockSchema,
   extensionUiRequestSchema,
   modelInfoSchema,
+  pipelineSchema,
+  pipelineStepSchema,
   rpcResponseSchema,
   sessionEventSchema,
   sessionHeaderEventSchema,
@@ -197,3 +199,8 @@ export interface ExtensionUiResponse {
   confirmed?: boolean | undefined;
   cancelled?: boolean | undefined;
 }
+
+/* ---- pipelines (phase-3 P1-02-C) ---- */
+
+export type PipelineStep = z.infer<typeof pipelineStepSchema>;
+export type Pipeline = z.infer<typeof pipelineSchema>;
