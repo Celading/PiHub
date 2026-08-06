@@ -57,6 +57,68 @@ function extractAssistantMarkdown(message: AgentMessage): string {
     .trim();
 }
 
+/** Tool-related chat item (toolResult, bashExecution, or a toolCall block). */
+function isToolMessage(item: ChatMessage): boolean {
+  if (item.message.role === 'toolResult' || item.message.role === 'bashExecution') {
+    return true;
+  }
+  if (item.message.role === 'assistant') {
+    return item.message.content.some((block) => block.type === 'toolCall');
+  }
+  return false;
+}
+
+/** Tool-cluster collapse (P1-10 C3): all tool blocks of one prompt run fold
+ *  into a single set with a tool-name list header. */
+function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const names = [
+    ...new Set(
+      items
+        .map((item) => {
+          if (item.message.role === 'toolResult') {
+            return item.message.toolName;
+          }
+          if (item.message.role === 'bashExecution') {
+            return 'bash';
+          }
+          if (item.message.role === 'assistant') {
+            const call = item.message.content.find((block) => block.type === 'toolCall');
+            return call?.type === 'toolCall' ? call.name : '';
+          }
+          return '';
+        })
+        .filter((name) => name.length > 0),
+    ),
+  ];
+  return (
+    <div className="tool-cluster" data-expanded={expanded}>
+      <button
+        type="button"
+        className="tool-cluster-header mono"
+        onClick={() => {
+          setExpanded(!expanded);
+        }}
+        aria-expanded={expanded}
+      >
+        <span className="hico hico-rectangle-stack" aria-hidden="true" />
+        <span>{t('workflow.tools', { names: names.join(' / ') })}</span>
+        <span className="tool-cluster-chevron" aria-hidden="true">
+          {expanded ? '−' : '+'}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="tool-cluster-body">
+          {items.map((item) => (
+            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 interface ChatPageProps {
   onSessionChanged: () => void;
 }
@@ -174,6 +236,24 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   };
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // Live elapsed timer for the running unit (1s tick; renders only while a
+  // run is active so idle pages never pay the interval cost).
+  const [, setNowTick] = useState(0);
+
+  useEffect(() => {
+    if (!chat.isAgentRunning) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setNowTick((prev) => prev + 1);
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [chat.isAgentRunning]);
+
+  const runningElapsed =
+    chat.isAgentRunning && chat.runStartedAt !== null ? Date.now() - chat.runStartedAt : 0;
 
   const copyReplyAsMarkdown = async (item: ChatMessage): Promise<void> => {
     try {
@@ -243,16 +323,27 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                           isStreaming={false}
                         />
                       ) : null}
-                      {unit.rest.map((item) => (
-                        <MessageItem
-                          key={item.key}
-                          message={item.message}
-                          isStreaming={item.isStreaming}
-                          thinkingStatus={
-                            unitIndex === units.length - 1 ? thinkingStatus : 'done'
-                          }
-                        />
-                      ))}
+                      {(() => {
+                        // Tool blocks of this run collapse into one set
+                        // (P1-10 C3); thinking/text messages render inline.
+                        const toolItems = unit.rest.filter(isToolMessage);
+                        const nonToolItems = unit.rest.filter((item) => !isToolMessage(item));
+                        return (
+                          <>
+                            {nonToolItems.map((item) => (
+                              <MessageItem
+                                key={item.key}
+                                message={item.message}
+                                isStreaming={item.isStreaming}
+                                thinkingStatus={
+                                  unitIndex === units.length - 1 ? thinkingStatus : 'done'
+                                }
+                              />
+                            ))}
+                            {toolItems.length > 0 ? <ToolCluster items={toolItems} /> : null}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : null}
                   {(() => {
@@ -314,7 +405,11 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                         {isRunningUnit ? (
                           <>
                             <span className="hico hico-waveform chat-unit-running" aria-hidden="true" />
-                            <span>{t('workflow.running')}</span>
+                            <span>
+                              {t('workflow.elapsed', {
+                                time: formatDuration(runningElapsed, locale),
+                              })}
+                            </span>
                           </>
                         ) : runSummary !== null && runSummary.aborted ? (
                           <>
@@ -335,7 +430,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                           {collapsed ? '>' : '>'}
                         </span>
                       </button>
-                      {isSettledUnit ? (
+                      {isSettledUnit || isRunningUnit ? (
                         <>
                           {/* Full-width divider line closing the workflow */}
                           <div className="chat-unit-divider" aria-hidden="true" />

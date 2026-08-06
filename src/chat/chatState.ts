@@ -260,21 +260,21 @@ export function useChatSession(): ChatSession {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const [messagesRes, entriesRes, stateRes] = await Promise.all([
-          api.rpcMessages(),
-          api.rpcEntries(),
-          api.rpcState(),
-        ]);
+        const [messagesRes, stateRes] = await Promise.all([api.rpcMessages(), api.rpcState()]);
         if (cancelled) {
           return;
         }
+        // Entry ids are best-effort: a transient failure must not blank the
+        // whole chat — messages and state still load, branch buttons just
+        // stay disabled until the next run provides ids.
+        const entriesRes = await api.rpcEntries().catch(() => null);
         const rawMessages = Array.isArray(messagesRes.messages) ? messagesRes.messages : [];
         const chatMessages: ChatMessage[] = rawMessages
           .filter(isAgentMessage)
           .map((message) => ({ key: makeKey(), message, isStreaming: false }));
         // Align the session-tree entry ids (get_entries) with the message
         // list by order — both sequences follow conversation order.
-        if (Array.isArray(entriesRes.entries)) {
+        if (entriesRes !== null && Array.isArray(entriesRes.entries)) {
           const messageEntryIds = entriesRes.entries
             .filter((entry) => entry.message !== undefined)
             .map((entry) => entry.id);

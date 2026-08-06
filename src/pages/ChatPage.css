@@ -239,3 +239,43 @@
   opacity: 0.3;
   cursor: default;
 }
+
+/* Tool-cluster collapse (P1-10 C3). */
+
+.tool-cluster {
+  margin: 6px 0;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.tool-cluster-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+  opacity: 0.8;
+}
+
+.tool-cluster-header:hover {
+  opacity: 1;
+}
+
+.tool-cluster-chevron {
+  margin-left: auto;
+}
+
+.tool-cluster-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 10px 10px;
+  border-top: 1px dashed var(--border);
+}
