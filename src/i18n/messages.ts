@@ -75,6 +75,14 @@ export const zhMessages = {
   'pipelines.runInput.title': '运行 {name}',
   'pipelines.runInput.placeholder': '流程入参（{{input}} 变量）…',
   'pipelines.runInput.start': '开始运行',
+  'pipelines.convert.title': '技能导入',
+  'pipelines.convert.note': '工程流为 PiHub 独家编排能力，隶属于 HaomoKit 泛化能力。',
+  'pipelines.convert.select': '选择技能…',
+  'pipelines.convert.hard': '硬转换（算法生成）',
+  'pipelines.convert.soft': '软转换（agent 生成）',
+  'pipelines.convert.softConfirm': '软转换将由 pi agent 读取技能并生成工程流定义，会消耗 token。确定继续？',
+  'pipelines.convert.running': '软转换进行中，agent 正在生成（可能需 1-3 分钟）…',
+  'pipelines.convert.failed': '转换失败：{error}',
 
   // settings: language
   'settings.language': '语言',
@@ -418,6 +426,14 @@ export const enMessages: Record<MessageKey, string> = {
   'pipelines.runInput.title': 'Run {name}',
   'pipelines.runInput.placeholder': 'Pipeline input ({{input}} var)…',
   'pipelines.runInput.start': 'Start',
+  'pipelines.convert.title': 'Skill import',
+  'pipelines.convert.note': 'Pipelines is PiHub-exclusive orchestration, part of the HaomoKit generalized capability set.',
+  'pipelines.convert.select': 'Select a skill…',
+  'pipelines.convert.hard': 'Hard convert (algorithm)',
+  'pipelines.convert.soft': 'Soft convert (agent)',
+  'pipelines.convert.softConfirm': 'Soft convert lets the pi agent read the skill and generate the pipeline — this consumes tokens. Continue?',
+  'pipelines.convert.running': 'Soft converting — the agent is working (may take 1-3 min)…',
+  'pipelines.convert.failed': 'Convert failed: {error}',
 
   'settings.language': 'Language',
 

@@ -273,4 +273,20 @@ export const api = {
       body: JSON.stringify({ approve }),
     });
   },
+
+  /* ---- skill → pipeline conversion (P1-10 A) ---- */
+
+  convertPipelineHard(commandName: string): Promise<{ pipeline: Pipeline }> {
+    return request<{ pipeline: Pipeline }>('/api/pipelines/convert/hard', {
+      method: 'POST',
+      body: JSON.stringify({ commandName }),
+    });
+  },
+
+  convertPipelineSoft(commandName: string): Promise<{ pipeline: Pipeline }> {
+    return request<{ pipeline: Pipeline }>('/api/pipelines/convert/soft', {
+      method: 'POST',
+      body: JSON.stringify({ commandName }),
+    });
+  },
 };

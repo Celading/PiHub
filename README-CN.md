@@ -63,6 +63,15 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 通用设置 · 个性化设置 · 模型渠道 · 会话管理 · 权限管理 ·
 提示词收藏夹 · 实验室能力
 
+### 自动化 · 技能 · 工程流
+- 命令中心：`get_commands` 全量目录（技能 / 提示词模板 / 扩展命令），搜索与一键运行
+- 自动化概览：常用开关状态（自动压缩 / 自动重试 / 模式）
+- **工程流（Pipelines）**：PiHub 独家多步编排——prompt / steer / approval /
+  setModel / setThinking 步骤序列在同一 pi 会话上执行，支持匹配分支、
+  错误策略、人工确认闸门与实时运行时间线。隶属于 HaomoKit 泛化能力。
+- 技能导入：将任意技能转换为工程流——算法转换（零 token）或 agent 辅助转换
+  （消耗 token，操作前确认）
+
 ## 快速开始
 
 需要 [pi](https://pi.dev)（`pi --version` ≥ 0.83）与 Node.js ≥ 20。

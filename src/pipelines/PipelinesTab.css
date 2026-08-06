@@ -433,3 +433,57 @@
   border-radius: 4px;
   color: var(--text);
 }
+
+/* skill import (P1-10 A) */
+
+.pipelines-convert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.pipelines-convert-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pipelines-convert-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.pipelines-convert-note {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.pipelines-convert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pipelines-convert-select {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.pipelines-convert-running {
+  font-size: 11px;
+  opacity: 0.8;
+  animation: status-pulse 1.6s ease-in-out infinite;
+}

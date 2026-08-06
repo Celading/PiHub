@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import type { Pipeline } from '../../shared/types.js';
+import { useEffect, useMemo, useState } from 'react';
+import type { PiCommand, Pipeline } from '../../shared/types.js';
+import { api } from '../api/client.js';
 import { usePipelines, selectVisibleRuns } from './usePipelines.js';
 import { RunTimeline } from './RunTimeline.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
@@ -49,6 +50,49 @@ export function PipelinesTab(): React.JSX.Element {
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
   const [runTarget, setRunTarget] = useState<Pipeline | null>(null);
   const [runInput, setRunInput] = useState('');
+  const [skills, setSkills] = useState<PiCommand[]>([]);
+  const [selectedSkill, setSelectedSkill] = useState('');
+  const [softConfirm, setSoftConfirm] = useState<string | null>(null);
+  const [converting, setConverting] = useState(false);
+
+  // Skill directory for the import surface (P1-10 A).
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const commands = await api.commands();
+        if (!cancelled) {
+          setSkills(commands.filter((c) => c.source === 'skill'));
+        }
+      } catch {
+        // skills unavailable; the import surface stays empty
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const convertSkill = async (mode: 'hard' | 'soft'): Promise<void> => {
+    if (selectedSkill.length === 0) {
+      return;
+    }
+    setConverting(true);
+    setEditorError(null);
+    try {
+      const { pipeline } =
+        mode === 'hard'
+          ? await api.convertPipelineHard(selectedSkill)
+          : await api.convertPipelineSoft(selectedSkill);
+      setEditorText(JSON.stringify(pipeline, null, 2));
+      setEditorOpen(true);
+    } catch (err) {
+      setEditorError(t('pipelines.convert.failed', { error: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setConverting(false);
+    }
+  };
 
   const visibleRuns = useMemo(() => selectVisibleRuns(runs), [runs]);
 
@@ -116,6 +160,57 @@ export function PipelinesTab(): React.JSX.Element {
           + {t('pipelines.new')}
         </button>
       </div>
+
+      {skills.length > 0 ? (
+        <div className="pipelines-convert">
+          <div className="pipelines-convert-head">
+            <span className="pipelines-convert-title mono">{t('pipelines.convert.title')}</span>
+            <span className="pipelines-convert-note mono">{t('pipelines.convert.note')}</span>
+          </div>
+          <div className="pipelines-convert-row">
+            <select
+              className="pipelines-convert-select mono"
+              value={selectedSkill}
+              onChange={(event) => {
+                setSelectedSkill(event.target.value);
+              }}
+              aria-label={t('pipelines.convert.select')}
+            >
+              <option value="">{t('pipelines.convert.select')}</option>
+              {skills.map((skill) => (
+                <option key={skill.name} value={skill.name}>
+                  {skill.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn-secondary pipeline-action mono"
+              disabled={selectedSkill.length === 0 || converting}
+              onClick={() => {
+                void convertSkill('hard');
+              }}
+            >
+              {t('pipelines.convert.hard')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary pipeline-action mono"
+              disabled={selectedSkill.length === 0 || converting}
+              onClick={() => {
+                setSoftConfirm(selectedSkill);
+              }}
+            >
+              {t('pipelines.convert.soft')}
+            </button>
+          </div>
+          {converting ? (
+            <p className="pipelines-convert-running mono" role="status">
+              {t('pipelines.convert.running')}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {error !== null ? (
         <div className="automation-error mono" role="alert">
@@ -260,6 +355,22 @@ export function PipelinesTab(): React.JSX.Element {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {softConfirm !== null ? (
+        <ConfirmDialog
+          title={t('pipelines.convert.soft')}
+          message={t('pipelines.convert.softConfirm')}
+          danger={false}
+          confirmLabel={t('pipelines.runInput.start')}
+          onConfirm={() => {
+            void convertSkill('soft');
+            setSoftConfirm(null);
+          }}
+          onCancel={() => {
+            setSoftConfirm(null);
+          }}
+        />
       ) : null}
 
       {runTarget !== null ? (

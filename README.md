@@ -64,6 +64,17 @@ no external UI source is reused.
 General · Personalization · Models &amp; Channels · Session Management ·
 Permissions · Prompt Favorites · Lab
 
+### Automation · Skills · Pipelines
+- Command center: the full `get_commands` directory (skills / prompt
+  templates / extensions) with search and one-click run
+- Automation overview of live switches (auto-compaction, auto-retry, modes)
+- **Pipelines**: PiHub-exclusive multi-step orchestration — a sequence of
+  prompt / steer / approval / model / thinking steps executed on one pi
+  session, with match branching, error strategies, human approval gates and
+  a live run timeline. Part of the HaomoKit generalized capability set.
+- Skill import: convert any skill into a pipeline — algorithmic conversion
+  (zero tokens) or agent-assisted conversion (token-gated, confirmed first)
+
 ## Quick Start
 
 Requires [pi](https://pi.dev) (`pi --version` ≥ 0.83) and Node.js ≥ 20.
