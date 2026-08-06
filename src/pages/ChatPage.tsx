@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
+import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
@@ -347,8 +348,9 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                     </div>
                   ) : null}
                   {(() => {
-                    // Reply footer (P1-10 B): branch at this reply's tree
-                    // node + copy the reply as markdown. Left-aligned.
+                    // Reply footer (P1-10 B / P1-11 B): branch at this reply's
+                    // tree node + copy as markdown. Hidden until hover; pure
+                    // icons with IconButton's hover tooltip labels.
                     const lastAssistant = [...unit.rest].reverse().find(
                       (item) => item.message.role === 'assistant',
                     );
@@ -358,36 +360,29 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                     }
                     return (
                       <div className="chat-unit-footer">
-                        <button
-                          type="button"
-                          className="chat-unit-footer-btn mono"
+                        <IconButton
+                          icon="hico-arrow-triangle-divide"
+                          label={t('sidebar.newBranch')}
+                          placement="top"
                           disabled={branchEntryId === undefined}
-                          title={
-                            branchEntryId === undefined
-                              ? t('sidebar.newBranch')
-                              : t('sidebar.newBranch')
-                          }
                           onClick={() => {
                             if (branchEntryId !== undefined) {
                               void forkAtReply(branchEntryId);
                             }
                           }}
-                        >
-                          <span className="hico hico-square-grid" aria-hidden="true" />
-                          {t('sidebar.newBranch')}
-                        </button>
-                        <button
-                          type="button"
-                          className="chat-unit-footer-btn mono"
+                        />
+                        <IconButton
+                          icon="hico-square-on-square-fill"
+                          label={
+                            copiedKey === lastAssistant.key
+                              ? t('chat.copied')
+                              : t('chat.copyResult')
+                          }
+                          placement="top"
                           onClick={() => {
                             void copyReplyAsMarkdown(lastAssistant);
                           }}
-                        >
-                          <span className="hico hico-rectangle-stack" aria-hidden="true" />
-                          {copiedKey === lastAssistant.key
-                            ? t('chat.copied')
-                            : t('chat.copyResult')}
-                        </button>
+                        />
                       </div>
                     );
                   })()}

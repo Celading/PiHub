@@ -36,7 +36,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: 'general', icon: 'hico-gearshape' },
   { id: 'personal', icon: 'hico-sliders' },
-  { id: 'models', icon: 'hico-square-grid' },
+  { id: 'models', icon: 'hico-cross-store' },
   { id: 'sessions', icon: 'hico-rectangle-stack' },
   { id: 'permissions', icon: 'hico-lock' },
   { id: 'favorites', icon: 'hico-bookmark' },
@@ -535,7 +535,7 @@ export function Sidebar({
     <nav className="sidebar" aria-label="Primary">
       <div className="sidebar-top">
         <button type="button" className="sidebar-new" onClick={() => { void handleNewSession(); }}>
-          <span className="hico hico-plus" aria-hidden="true" />
+          <span className="hico hico-plus-square-fill" aria-hidden="true" />
           <span>{t('sidebar.new')}</span>
         </button>
         <div className="sidebar-search-wrap">
@@ -560,9 +560,7 @@ export function Sidebar({
             onViewChange('automation');
           }}
         >
-          <span className="hico hico-bolt" aria-hidden="true" />
-          <span className="hico hico-wand-stars" aria-hidden="true" />
-          <span className="hico hico-rectangle-stack" aria-hidden="true" />
+          <span className="hico hico-mind-map" aria-hidden="true" />
           <span>{t('sidebar.features')}</span>
         </button>
         {error !== null ? (
@@ -578,7 +576,7 @@ export function Sidebar({
         <div className="sidebar-section-row">
           <span className="sidebar-section-label swiss-section-label">{t('sidebar.sessions')}</span>
           <IconButton
-            icon="hico-plus"
+            icon="hico-folder-badge-plus"
             label={t('sidebar.addCollection')}
             placement="bottom"
             onClick={addCollection}
@@ -701,7 +699,7 @@ export function Sidebar({
             disabled
           />
           <IconButton
-            icon="hico-clock"
+            icon="hico-arrow-counterclockwise-clock"
             label={t('sidebar.history')}
             placement="bottom"
             dataActive={view === 'sessions'}
@@ -710,7 +708,7 @@ export function Sidebar({
             }}
           />
           <IconButton
-            icon="hico-square-grid"
+            icon="hico-yuansign-coupon-fill"
             label={t('sidebar.stats')}
             placement="bottom"
             dataActive={view === 'stats'}
