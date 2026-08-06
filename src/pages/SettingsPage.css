@@ -322,7 +322,7 @@
 }
 
 .favorites-remove:hover {
-  color: var(--error, #c62828);
+  color: var(--status-error);
   background-color: var(--surface-hover);
 }
 

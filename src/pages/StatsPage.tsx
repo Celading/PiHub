@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SessionStats } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import { LoadingHint } from '../components/LoadingHint.js';
 import './StatsPage.css';
 
 function formatCost(cost: number): string {
@@ -102,7 +103,9 @@ export function StatsPage(): React.JSX.Element {
     return (
       <section className="stats-page">
         <h1 className="panel-title">{t('stats.title')}</h1>
-        <p className="stats-hint">{t('sessions.hint.loading')}</p>
+        <p className="stats-hint">
+          <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
+        </p>
       </section>
     );
   }

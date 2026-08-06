@@ -4,6 +4,7 @@ import type { SettingsSectionId, Theme } from '../types/app.js';
 import { api } from '../api/client.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { restoreSession as restoreArchived } from '../sessions/sessionActions.js';
+import { LoadingHint } from '../components/LoadingHint.js';
 import {
   getPrefs,
   PREF_CHANGED_EVENT,
@@ -343,7 +344,9 @@ export function SettingsPage({
               <h2 className="settings-section-title mono">{t('settings.agent')}</h2>
               <div className="settings-list">
                 {settings === null ? (
-                  <p className="settings-hint">{t('settings.loading')}</p>
+                  <p className="settings-hint">
+                    <LoadingHint>{t('settings.loading')}</LoadingHint>
+                  </p>
                 ) : Object.entries(settings).length === 0 ? (
                   <p className="settings-hint">{t('settings.empty')}</p>
                 ) : (

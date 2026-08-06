@@ -86,6 +86,12 @@
   --red-60: #da1e28;
   --yellow-40: #f1c21b;
 
+  /* ---- status semantic tokens (L008: tokenize session status lights) ---- */
+  --status-ok: #198038;
+  --status-info: #0072c3;
+  --status-error: #da1e28;
+  --status-warning: #f1c21b;
+
   /* ---- light theme surface ---- */
   --background: #ffffff;
   --background-subtle: var(--gray-10);
@@ -132,6 +138,12 @@
   --code-background: var(--gray-100);
   --chat-user-bubble: var(--gray-70);
   --chat-user-text: #ffffff;
+
+  /* ---- status semantic tokens (dark variant, carbon dark status) ---- */
+  --status-ok: #42be65;
+  --status-info: #33b1ff;
+  --status-error: #ff8389;
+  --status-warning: #f1c21b;
 }
 
 /* ---- unified primary button (phase-3 batch 2) ---- */

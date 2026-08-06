@@ -58,7 +58,7 @@
 }
 
 .thinking[data-status='interrupted'] {
-  border-left-color: var(--error, #c62828);
+  border-left-color: var(--status-error);
 }
 
 .thinking-toggle {
@@ -85,7 +85,7 @@
 }
 
 .thinking[data-status='interrupted'] .thinking-icon {
-  color: var(--error, #c62828);
+  color: var(--status-error);
 }
 
 .thinking-chevron {

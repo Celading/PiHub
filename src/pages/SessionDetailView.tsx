@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 import { useSessionComposer } from '../chat/sessionComposer.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
+import { LoadingHint } from '../components/LoadingHint.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import './SessionDetailView.css';
 
@@ -247,7 +248,9 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
         <button type="button" className="sessions-back" onClick={onBack}>
           {t('sessions.back')}
         </button>
-        <p className="sessions-hint">{t('sessions.loading')}</p>
+        <p className="sessions-hint">
+          <LoadingHint>{t('sessions.loading')}</LoadingHint>
+        </p>
       </section>
     );
   }
@@ -471,7 +474,9 @@ function SessionStatsModal({ data, onClose, t }: SessionStatsModalProps): React.
         </div>
         <div className="palette-body">
           {rows.length === 0 ? (
-            <p className="palette-hint">{t('settings.loading')}</p>
+            <p className="palette-hint">
+              <LoadingHint>{t('settings.loading')}</LoadingHint>
+            </p>
           ) : (
             <div className="stats-modal-rows">
               {rows.map((row) => (

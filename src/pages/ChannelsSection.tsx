@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import { LoadingHint } from '../components/LoadingHint.js';
 import './ChannelsSection.css';
 
 interface ModelForm {
@@ -204,7 +205,9 @@ export function ChannelsSection(): React.JSX.Element {
       {error !== null ? <div className="settings-error mono">{error}</div> : null}
 
       {!loaded ? (
-        <p className="settings-hint">{t('settings.loading')}</p>
+        <p className="settings-hint">
+          <LoadingHint>{t('settings.loading')}</LoadingHint>
+        </p>
       ) : providers.length === 0 ? (
         <p className="settings-hint">{t('channels.empty')}</p>
       ) : (

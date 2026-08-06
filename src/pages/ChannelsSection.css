@@ -193,5 +193,5 @@
 
 .channels-saved {
   font-size: var(--text-sm);
-  color: var(--ok, #198038);
+  color: var(--status-ok);
 }

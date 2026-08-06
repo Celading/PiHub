@@ -112,7 +112,7 @@
 }
 
 .chat-unit-aborted {
-  color: var(--error, #c62828);
+  color: var(--status-error);
 }
 
 .chat-unit-running {
@@ -182,12 +182,12 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   background-color: var(--background-subtle);
-  border-left: var(--border-thick) solid var(--warning, #f1c21b);
+  border-left: var(--border-thick) solid var(--status-warning);
   color: var(--text-secondary);
   font-size: var(--text-xs);
 }
 
 .chatpage-retry .hico {
-  color: var(--warning, #f1c21b);
+  color: var(--status-warning);
   animation: thinking-pulse 1.2s ease-in-out infinite;
 }

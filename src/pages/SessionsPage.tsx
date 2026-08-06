@@ -3,6 +3,7 @@ import type { SessionSummary } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { SessionDetailView } from './SessionDetailView.js';
+import { LoadingHint } from '../components/LoadingHint.js';
 import './SessionsPage.css';
 
 function formatDate(iso: string, intlTag: string): string {
@@ -121,7 +122,11 @@ export function SessionsPage(): React.JSX.Element {
         <h1 className="panel-title">{t('sessions.title')}</h1>
         <div className="sessions-head-actions">
           <p className="sessions-head-hint mono">
-            {sessions === null ? t('sessions.hint.loading') : String(sessions.length)}
+            {sessions === null ? (
+              <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
+            ) : (
+              String(sessions.length)
+            )}
           </p>
           <button
             type="button"
@@ -138,7 +143,9 @@ export function SessionsPage(): React.JSX.Element {
       {error !== null ? <div className="sessions-error mono">{error}</div> : null}
 
       {grouped === null ? (
-        <p className="sessions-hint">{t('sessions.hint.loading')}</p>
+        <p className="sessions-hint">
+          <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
+        </p>
       ) : grouped.length === 0 ? (
         <p className="sessions-hint">{t('sessions.hint.empty')}</p>
       ) : (

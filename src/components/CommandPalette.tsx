@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { PiCommand } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
+import { LoadingHint } from './LoadingHint.js';
 import './CommandPalette.css';
 
 interface CommandPaletteProps {
@@ -101,7 +102,11 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps): R
         <div className="palette-head">
           <span className="palette-title">{t('palette.title')}</span>
           <span className="palette-count mono">
-            {commands === null ? t('settings.loading') : `${String(total)} ${t('palette.commands')}`}
+            {commands === null ? (
+              <LoadingHint>{t('settings.loading')}</LoadingHint>
+            ) : (
+              `${String(total)} ${t('palette.commands')}`
+            )}
           </span>
         </div>
         <input
@@ -117,7 +122,9 @@ export function CommandPalette({ open, onClose, onRun }: CommandPaletteProps): R
         />
         <div className="palette-body scroll-area">
           {grouped === null ? (
-            <p className="palette-hint">{t('settings.loading')}</p>
+            <p className="palette-hint">
+              <LoadingHint>{t('settings.loading')}</LoadingHint>
+            </p>
           ) : total === 0 ? (
             <p className="palette-hint">{t('palette.empty')}</p>
           ) : (

@@ -31,12 +31,12 @@
 }
 
 .context-menu-item[data-danger='true'] {
-  color: var(--error, #c62828);
+  color: var(--status-error);
 }
 
 .context-menu-item[data-danger='true']:hover {
   background-color: var(--surface-hover);
-  color: var(--error, #c62828);
+  color: var(--status-error);
 }
 
 .context-menu-item .hico {
