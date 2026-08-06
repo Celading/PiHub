@@ -86,9 +86,9 @@
 .composer-input {
   width: 100%;
   padding: var(--space-3);
-  border: var(--border-thin) solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius-none);
-  background-color: var(--surface);
+  background-color: transparent;
   color: var(--text-primary);
   font-family: inherit;
   font-size: var(--text-base);
@@ -210,7 +210,7 @@
   gap: var(--space-4);
   padding: var(--space-2) var(--space-4);
   border-top: var(--border-thin) solid var(--border-subtle);
-  background-color: var(--background-subtle);
+  background-color: transparent;
 }
 
 .modelbar-field {

@@ -51,13 +51,19 @@
   }
 }
 
-/* thinking block */
+/* thinking block. Collapsed state is an inline header row (no background /
+ * border, visually de-weighted); expanded state gets the subtle block. */
 .thinking {
+  border-left: 0;
+  background-color: transparent;
+}
+
+.thinking[data-expanded='true'] {
   border-left: var(--border-thick) solid var(--gray-40);
   background-color: var(--background-subtle);
 }
 
-.thinking[data-status='interrupted'] {
+.thinking[data-expanded='true'][data-status='interrupted'] {
   border-left-color: var(--status-error);
 }
 
@@ -66,12 +72,16 @@
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) 0;
   border: 0;
   background-color: transparent;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   text-align: left;
+}
+
+.thinking[data-expanded='true'] .thinking-toggle {
+  padding: var(--space-2) var(--space-3);
 }
 
 .thinking-label {
@@ -153,22 +163,23 @@
   font-family: var(--font-sans);
 }
 
-/* tool call card */
+/* tool call — inline row, not a full-width card (visual audit M-6/L-1:
+ * a card + inner code block competes with the assistant answer). */
 .toolcall {
-  border: var(--border-thin) solid var(--border-strong);
-  background-color: var(--surface);
+  border: 0;
+  background-color: transparent;
   animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
 .toolcall-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) 0;
   border: 0;
-  border-bottom: var(--border-thin) solid var(--border-subtle);
-  background-color: var(--background-subtle);
+  background-color: transparent;
   color: var(--text-primary);
   text-align: left;
 }
@@ -178,19 +189,25 @@
   color: var(--primary);
 }
 
+.toolcall-chevron {
+  font-size: 0.75rem;
+  color: var(--text-placeholder);
+}
+
 .toolcall-args {
   margin: 0;
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-xs);
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  background-color: var(--code-background);
 }
 
-/* tool result card */
+/* tool result — inline row, output block only when expanded */
 .toolresult {
-  border: var(--border-thin) solid var(--border-subtle);
-  background-color: var(--surface);
+  border: 0;
+  background-color: transparent;
   animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
@@ -199,7 +216,7 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) 0;
   border: 0;
   background-color: transparent;
   color: var(--text-primary);
@@ -208,7 +225,8 @@
 }
 
 .toolresult[data-error='true'] .toolresult-header {
-  border-left: var(--border-thick) solid var(--red-60);
+  border-left: var(--border-thick) solid var(--status-error);
+  padding-left: var(--space-2);
 }
 
 .toolresult-name {
@@ -219,17 +237,17 @@
 .toolresult-status {
   margin-left: auto;
   font-size: var(--text-xs);
-  color: var(--green-60);
+  color: var(--status-ok);
 }
 
 .toolresult[data-error='true'] .toolresult-status {
-  color: var(--red-60);
+  color: var(--status-error);
 }
 
 .toolresult-output {
   margin: 0;
-  padding: var(--space-3);
-  border-top: var(--border-thin) solid var(--border-subtle);
+  padding: var(--space-2) var(--space-3);
+  border-top: 0;
   font-size: var(--text-xs);
   white-space: pre-wrap;
   word-break: break-word;
