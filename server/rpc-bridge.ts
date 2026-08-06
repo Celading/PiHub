@@ -150,6 +150,11 @@ export class RpcBridge extends EventEmitter {
     return this.child !== null;
   }
 
+  /** Number of in-flight RPC requests awaiting a response (debug channel). */
+  pendingRequestCount(): number {
+    return this.pending.size;
+  }
+
   /** Fire-and-forget command with response correlation. */
   send(command: RpcCommand): Promise<RpcResponse> {
     const id = `pi-panel-${String(this.nextId)}`;

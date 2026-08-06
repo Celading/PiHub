@@ -5,6 +5,7 @@ import express from 'express';
 import { z } from 'zod';
 import { modelStoreFileSchema, settingsFileSchema, uiRespondBodySchema } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
+import type { DemoStateMachine } from './demo/state-machine.js';
 import type { RpcResponse } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
@@ -87,12 +88,59 @@ async function withBridge(
   }
 }
 
+/** kMode router options (KMODE-001 K2/K4/K6). */
+export interface RouterModeOptions {
+  mode: 'production' | 'debug' | 'demo';
+  demoMachine?: DemoStateMachine | null;
+  debugState?: () => Record<string, unknown>;
+}
+
 export function createRouter(
   bridge: RpcBridge,
   sessions: SessionStore,
   hub: SseHub,
+  options?: RouterModeOptions,
 ): express.Router {
   const router = express.Router();
+  const mode = options?.mode ?? 'production';
+  const demoMachine = options?.demoMachine ?? null;
+
+  // Demo mode is a read-only showcase: guard every RPC write path.
+  const writeDenied = (res: express.Response): boolean => {
+    if (mode !== 'demo') {
+      return false;
+    }
+    res.status(503).json({ error: 'demo mode: read-only showcase, RPC writes disabled' });
+    return true;
+  };
+
+  router.get('/api/mode', (_req, res) => {
+    res.json({ mode });
+  });
+
+  if (demoMachine !== null) {
+    router.get('/api/demo/state', (_req, res) => {
+      res.json({ phase: demoMachine.getPhase() });
+    });
+    router.post('/api/demo/start', (_req, res) => {
+      res.json({ phase: demoMachine.start() });
+    });
+    router.post('/api/demo/step', (_req, res) => {
+      res.json({ phase: demoMachine.step() });
+    });
+    router.post('/api/demo/abort', (_req, res) => {
+      res.json({ phase: demoMachine.abort() });
+    });
+    router.post('/api/demo/reset', (_req, res) => {
+      res.json({ phase: demoMachine.reset() });
+    });
+  }
+
+  if (mode === 'debug') {
+    router.get('/api/debug/state', (_req, res) => {
+      res.json(options?.debugState?.() ?? {});
+    });
+  }
 
   router.get('/api/health', (_req, res) => {
     res.json({
@@ -111,6 +159,9 @@ export function createRouter(
   // Session deletion (no pi RPC): only the file name inside the sessions
   // root is accepted (path-traversal guard) and only .jsonl files.
   router.post('/api/sessions/delete', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = req.body as Record<string, unknown> | null;
     const fileName =
       typeof body === 'object' && body !== null ? body['fileName'] : undefined;
@@ -175,6 +226,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/prompt', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = promptBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid prompt body' });
@@ -193,6 +247,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/steer', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = steerBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid steer body' });
@@ -202,10 +259,16 @@ export function createRouter(
   });
 
   router.post('/api/rpc/abort', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     await withBridge(res, () => bridge.send({ type: 'abort' }));
   });
 
   router.post('/api/rpc/model', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = modelBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid model body' });
@@ -221,6 +284,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/thinking', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = thinkingBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid thinking level' });
@@ -240,6 +306,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/switch_session', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = switchSessionBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid session path' });
@@ -257,6 +326,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/new_session', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     try {
       const response = await bridge.send({ type: 'new_session' });
       res.json(response);
@@ -266,6 +338,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/fork', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = forkBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid entry id' });
@@ -280,6 +355,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/clone', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     try {
       const response = await bridge.send({ type: 'clone' });
       res.json(response);
@@ -289,6 +367,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/steering-mode', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = req.body as Record<string, unknown> | null;
     const mode = typeof body === 'object' && body !== null ? body['mode'] : undefined;
     if (typeof mode !== 'string' || mode.length === 0) {
@@ -304,6 +385,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/follow-up-mode', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = req.body as Record<string, unknown> | null;
     const mode = typeof body === 'object' && body !== null ? body['mode'] : undefined;
     if (typeof mode !== 'string' || mode.length === 0) {
@@ -319,6 +403,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/cycle-model', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     try {
       const response = await bridge.send({ type: 'cycle_model' });
       res.json(response);
@@ -328,6 +415,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/rename', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = renameBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid session name' });
@@ -349,6 +439,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/bash', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = bashBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid bash command' });
@@ -363,6 +456,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/abort-bash', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     try {
       const response = await bridge.send({ type: 'abort_bash' });
       res.json(response);
@@ -372,6 +468,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/compact', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     try {
       const response = await bridge.send({ type: 'compact' });
       res.json(response);
@@ -381,6 +480,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/auto-compaction', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = autoCompactionBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid auto-compaction body' });
@@ -417,6 +519,9 @@ export function createRouter(
   });
 
   router.post('/api/rpc/export-html', async (_req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     try {
       const response = await bridge.send({ type: 'export_html' });
       res.json(response);
@@ -426,6 +531,9 @@ export function createRouter(
   });
 
   router.post('/api/settings/model', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
     const body = saveModelBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid model body' });
