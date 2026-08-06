@@ -6,6 +6,10 @@ import { createFileSessionProvider } from './providers/file-session-provider.js'
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
 import { SseHub } from './sse.js';
+import { PipelineEngine } from './pipelines/engine.js';
+import { createPipelineStore } from './pipelines/store.js';
+import { mkdtempSync } from 'node:fs';
+import os from 'node:os';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
@@ -51,10 +55,23 @@ if (mode !== 'demo') {
 
 const demoMachine = mode === 'demo' ? new DemoStateMachine(hub, sessions) : null;
 
+// Pipelines (P1-02-C): demo mode uses a throwaway temp store so the showcase
+// never writes PiHub-owned state on this machine.
+const pipelineStore = createPipelineStore(
+  mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : undefined,
+);
+const pipelineEngine = mode === 'demo' ? null : new PipelineEngine(bridge, pipelineStore);
+if (pipelineEngine !== null) {
+  pipelineEngine.on('run-change', (run) => {
+    hub.broadcast({ type: 'pipeline_step', run });
+  });
+}
+
 app.use(
   createRouter(bridge, sessions, hub, {
     mode,
     demoMachine,
+    pipelines: { store: pipelineStore, engine: pipelineEngine },
     ...(mode === 'debug'
       ? {
           debugState: (): Record<string, unknown> => ({

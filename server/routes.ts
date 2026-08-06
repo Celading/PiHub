@@ -3,13 +3,22 @@ import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
 import { z } from 'zod';
-import { modelStoreFileSchema, settingsFileSchema, uiRespondBodySchema } from '../shared/schemas.js';
+import {
+  modelStoreFileSchema,
+  pipelineApproveBodySchema,
+  pipelineRunBodySchema,
+  pipelineUpsertBodySchema,
+  settingsFileSchema,
+  uiRespondBodySchema,
+} from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
+import type { PipelineEngine } from './pipelines/engine.js';
+import type { PipelineStore } from './pipelines/store.js';
 
 const AGENT_DIR = path.join(os.homedir(), '.pi', 'agent');
 
@@ -94,6 +103,11 @@ export interface RouterModeOptions {
   mode: 'production' | 'debug' | 'demo';
   demoMachine?: DemoStateMachine | null;
   debugState?: () => Record<string, unknown>;
+  /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
+  pipelines?: {
+    store: PipelineStore;
+    engine: PipelineEngine | null;
+  };
 }
 
 export function createRouter(
@@ -599,6 +613,134 @@ export function createRouter(
     req.on('close', () => {
       // Client disconnect is handled inside the hub via res 'close'.
     });
+  });
+
+  /* ---- pipelines (P1-02-C, PiHub-exclusive orchestration) ---- */
+
+  const pipelineStore = options?.pipelines?.store;
+  const pipelineEngine = options?.pipelines?.engine ?? null;
+
+  router.get('/api/pipelines', (_req, res) => {
+    if (pipelineStore === undefined) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    res.json({ pipelines: pipelineStore.list() });
+  });
+
+  router.post('/api/pipelines', (req, res) => {
+    if (pipelineStore === undefined) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = pipelineUpsertBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid pipeline definition' });
+      return;
+    }
+    try {
+      const saved = pipelineStore.save(body.data.pipeline);
+      res.json({ pipeline: saved });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.delete('/api/pipelines/:id', (req, res) => {
+    if (pipelineStore === undefined) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    if (writeDenied(res)) {
+      return;
+    }
+    res.json({ success: pipelineStore.remove(req.params.id) });
+  });
+
+  router.get('/api/pipelines/runs', (_req, res) => {
+    if (pipelineEngine === null) {
+      res.json({ runs: [] });
+      return;
+    }
+    res.json({ runs: pipelineEngine.listRuns() });
+  });
+
+  router.get('/api/pipelines/:id/runs', (req, res) => {
+    if (pipelineStore === undefined) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    res.json({ runs: pipelineStore.readRunLog(req.params.id) });
+  });
+
+  router.post('/api/pipelines/run', async (req, res) => {
+    if (pipelineStore === undefined || pipelineEngine === null) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = pipelineRunBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid run body' });
+      return;
+    }
+    const pipeline = pipelineStore.get(body.data.pipelineId);
+    if (pipeline === undefined) {
+      res.status(404).json({ error: 'pipeline not found' });
+      return;
+    }
+    // Best-effort session context for {{sessionName}}/{{cwd}} template vars.
+    let context: { sessionName?: string; cwd?: string } = {};
+    try {
+      const state = await bridge.send({ type: 'get_state' });
+      const data = state.data as Record<string, unknown> | null | undefined;
+      if (typeof data === 'object' && data !== null) {
+        const name = data['name'];
+        const cwd = data['cwd'];
+        if (typeof name === 'string') {
+          context = { ...context, sessionName: name };
+        }
+        if (typeof cwd === 'string') {
+          context = { ...context, cwd };
+        }
+      }
+    } catch {
+      // session context unavailable; empty vars stay untouched in templates
+    }
+    const run = pipelineEngine.start(pipeline, body.data.input ?? '', context);
+    res.json({ run });
+  });
+
+  router.post('/api/pipelines/runs/:id/abort', (req, res) => {
+    if (pipelineEngine === null) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    if (writeDenied(res)) {
+      return;
+    }
+    res.json({ success: pipelineEngine.abort(req.params.id) });
+  });
+
+  router.post('/api/pipelines/runs/:id/approve', (req, res) => {
+    if (pipelineEngine === null) {
+      res.status(503).json({ error: 'pipelines unavailable' });
+      return;
+    }
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = pipelineApproveBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid approve body' });
+      return;
+    }
+    res.json({ success: pipelineEngine.approve(req.params.id, body.data.approve) });
   });
 
   return router;
