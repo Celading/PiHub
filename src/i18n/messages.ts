@@ -117,6 +117,10 @@ export const zhMessages = {
   'sessions.delete': '删除会话',
   'sessions.deleteConfirm': '确定删除会话「{name}」？此操作不可撤销。',
 
+  // common dialogs (L008: window.confirm replacement)
+  'common.confirm': '确认',
+  'common.cancel': '取消',
+
   // session actions (phase-2)
   'session.rename': '重命名',
   'session.rename.placeholder': '输入会话名称…',
@@ -382,6 +386,10 @@ export const enMessages: Record<MessageKey, string> = {
   'sessions.filter.labeledHint': 'No label data yet',
   'sessions.delete': 'Delete session',
   'sessions.deleteConfirm': 'Delete session "{name}"? This cannot be undone.',
+
+  // common dialogs (L008: window.confirm replacement)
+  'common.confirm': 'Confirm',
+  'common.cancel': 'Cancel',
 
   'session.rename': 'Rename',
   'session.rename.placeholder': 'Session name…',

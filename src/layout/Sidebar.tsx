@@ -6,6 +6,7 @@ import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
 import { ContextMenu } from '../components/ContextMenu.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { archiveSession, removeArchived } from '../sessions/sessionActions.js';
 import './Sidebar.css';
 
@@ -192,6 +193,7 @@ export function Sidebar({
     y: number;
     session: SessionSummary;
   } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SessionSummary | null>(null);
   const [collections, setCollections] = useState<Record<string, string[]>>(() => {
     try {
       return JSON.parse(loadJson(COLLECTIONS_STORAGE_KEY, '{}')) as Record<string, string[]>;
@@ -329,6 +331,28 @@ export function Sidebar({
     });
     archiveSession(sessionId);
   }, []);
+
+  // L008: guarded session deletion behind the in-app ConfirmDialog
+  // (replaces window.confirm, which blocked automated flows).
+  const deleteSessionTarget = useCallback(
+    (session: SessionSummary): void => {
+      void (async () => {
+        try {
+          const response = await api.deleteSession(session.fileName);
+          if (!response.success) {
+            setError(response.error ?? 'delete failed');
+            return;
+          }
+          removeArchived(session.fileName);
+          onSessionChanged();
+          onViewChange('chat');
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      })();
+    },
+    [onSessionChanged, onViewChange],
+  );
 
   // Re-read the archived list when the settings page restores a session
   // (the settings page stays open while this sidebar stays mounted).
@@ -540,7 +564,11 @@ export function Sidebar({
           <span className="hico hico-rectangle-stack" aria-hidden="true" />
           <span>{t('sidebar.features')}</span>
         </button>
-        {error !== null ? <div className="sidebar-error mono">{error}</div> : null}
+        {error !== null ? (
+          <div className="sidebar-error mono" role="alert">
+            {error}
+          </div>
+        ) : null}
       </div>
 
       <hr className="swiss-rule" />
@@ -766,31 +794,26 @@ export function Sidebar({
               icon: 'hico-trash',
               danger: true,
               onSelect: () => {
-                const confirmed = window.confirm(
-                  t('sessions.deleteConfirm', {
-                    name: contextMenu.session.name ?? contextMenu.session.fileName,
-                  }),
-                );
-                if (!confirmed) {
-                  return;
-                }
-                void (async () => {
-                  try {
-                    const response = await api.deleteSession(contextMenu.session.fileName);
-                    if (!response.success) {
-                      setError(response.error ?? 'delete failed');
-                      return;
-                    }
-                    removeArchived(contextMenu.session.fileName);
-                    onSessionChanged();
-                    onViewChange('chat');
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : String(err));
-                  }
-                })();
+                setPendingDelete(contextMenu.session);
               },
             },
           ]}
+        />
+      ) : null}
+      {pendingDelete !== null ? (
+        <ConfirmDialog
+          title={t('sessions.delete')}
+          message={t('sessions.deleteConfirm', {
+            name: pendingDelete.name ?? pendingDelete.fileName,
+          })}
+          onConfirm={() => {
+            const target = pendingDelete;
+            setPendingDelete(null);
+            deleteSessionTarget(target);
+          }}
+          onCancel={() => {
+            setPendingDelete(null);
+          }}
         />
       ) : null}
     </nav>

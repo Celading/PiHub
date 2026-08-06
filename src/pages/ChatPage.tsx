@@ -178,7 +178,9 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
       </div>
       <div className="chatpage-scroll scroll-area" ref={scrollRef}>
         {chat.error !== null ? (
-          <div className="chatpage-error mono">{chat.error}</div>
+          <div className="chatpage-error mono" role="alert">
+            {chat.error}
+          </div>
         ) : null}
         {chat.retrying ? (
           <div className="chatpage-retry mono" role="status">
