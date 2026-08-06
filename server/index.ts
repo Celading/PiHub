@@ -36,6 +36,15 @@ bridge.on('ui-request', (request) => {
 bridge.on('error', (error) => {
   console.error(`[rpc] ${error.message}`);
 });
+if (mode === 'debug') {
+  // kMode K6: frame-level diagnostics in debug mode.
+  bridge.on('response', (response) => {
+    console.log(`[kMode:debug] rpc response id=${response.id ?? '-'} success=${String(response.success)}`);
+  });
+  bridge.on('event', (event) => {
+    console.log(`[kMode:debug] event type=${event.type}`);
+  });
+}
 if (mode !== 'demo') {
   bridge.start();
 }
