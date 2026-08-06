@@ -11,7 +11,19 @@
   <strong>pi coding agent 的本地 Web 面板。</strong><br/>
   <sub>流式对话 · 会话树 · 模型与成本 · 扩展与技能 — 全在本机浏览器里</sub>
 </p>
+<p align="center">
+  <a href="README.md">English</a> · <strong><a href="README-CN.md">中文</a></strong> · <a href="docs/README.ru-RU.md">Русский</a>
+</p>
 </div>
+
+## 代码仓库
+
+PiHub 在以下两个同步镜像中开放开发：
+
+- **GitHub**：<https://github.com/HapPub/PiHub>
+- **AtomGit**：<https://atomgit.com/HapPub/PiHub>
+
+欢迎在两个镜像上提交 issue 与 PR；两仓保持同步。
 
 ## PiHub 是什么
 
@@ -112,6 +124,6 @@ Apache License 2.0 — 见 [LICENSE](LICENSE)。
 
 ## 文档
 
-- [Manual（英文）](../MANUAL.md)
-- [README（English）](../README.md)
-- [README на русском](README.ru-RU.md)
+- [Manual（中文）](MANUAL.zh-CN.md) · [Manual（English）](MANUAL.md)
+- [README（English）](README.md)
+- [README на русском](docs/README.ru-RU.md)

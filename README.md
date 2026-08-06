@@ -11,7 +11,19 @@
   <strong>A local web panel for the <a href="https://pi.dev">pi coding agent</a>.</strong><br/>
   <sub>streaming chat · session trees · models &amp; costs · extensions &amp; skills — in your browser, on your machine</sub>
 </p>
+<p align="center">
+  <strong><a href="README.md">English</a></strong> · <a href="README-CN.md">中文</a> · <a href="docs/README.ru-RU.md">Русский</a>
+</p>
 </div>
+
+## Repository
+
+PiHub is developed in the open under two synchronized mirrors:
+
+- **GitHub**: <https://github.com/HapPub/PiHub>
+- **AtomGit**: <https://atomgit.com/HapPub/PiHub>
+
+Issues and pull requests are welcome on either mirror; both stay in sync.
 
 ## What is PiHub
 
@@ -117,5 +129,5 @@ Third-party assets:
 ## Documentation
 
 - [Manual (English)](MANUAL.md)
-- [README 中文](docs/README.zh-CN.md)
+- [README 中文](README-CN.md)
 - [README на русском](docs/README.ru-RU.md)
