@@ -1,4 +1,5 @@
 import type {
+  EntriesResponse,
   ExtensionUiRequest,
   ExtensionUiResponse,
   ModelInfo,
@@ -68,6 +69,10 @@ export const api = {
 
   rpcMessages(): Promise<MessagesResponse> {
     return request<MessagesResponse>('/api/rpc/messages');
+  },
+
+  rpcEntries(): Promise<EntriesResponse> {
+    return request<EntriesResponse>('/api/rpc/entries');
   },
 
   // Extension UI protocol (P1-01)

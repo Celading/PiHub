@@ -1,4 +1,4 @@
-import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -81,6 +81,32 @@ async function readJson(fileName: string): Promise<unknown> {
   } catch {
     return undefined;
   }
+}
+
+/** Bounded recursive search for a session file by bare name (sessions are
+ *  grouped under cwd-named subdirectories). Depth cap keeps the traversal
+ *  local to the sessions tree. */
+async function findSessionFile(
+  root: string,
+  bareName: string,
+  depth = 0,
+): Promise<string | null> {
+  if (depth > 2) {
+    return null;
+  }
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const found = await findSessionFile(full, bareName, depth + 1);
+      if (found !== null) {
+        return found;
+      }
+    } else if (entry.name === bareName) {
+      return full;
+    }
+  }
+  return null;
 }
 
 /** Runs an RPC command and maps success/failure/exception to clean HTTP codes. */
@@ -173,8 +199,9 @@ export function createRouter(
     res.json({ sessions: list });
   });
 
-  // Session deletion (no pi RPC): only the file name inside the sessions
-  // root is accepted (path-traversal guard) and only .jsonl files.
+  // Session deletion (no pi RPC): only a bare .jsonl file name is accepted
+  // (path-traversal guard). Sessions live under cwd-named subdirectories, so
+  // the file is located by a bounded recursive search.
   router.post('/api/sessions/delete', async (req, res) => {
     if (writeDenied(res)) {
       return;
@@ -191,13 +218,12 @@ export function createRouter(
       res.status(400).json({ error: 'invalid session file' });
       return;
     }
-    const target = path.join(
-      os.homedir(),
-      '.pi',
-      'agent',
-      'sessions',
-      base,
-    );
+    const sessionsRoot = path.join(os.homedir(), '.pi', 'agent', 'sessions');
+    const target = await findSessionFile(sessionsRoot, base);
+    if (target === null) {
+      res.status(404).json({ error: 'session file not found' });
+      return;
+    }
     try {
       await unlink(target);
       res.json({ success: true });
@@ -332,6 +358,11 @@ export function createRouter(
 
   router.get('/api/rpc/messages', async (_req, res) => {
     await withBridge(res, () => bridge.send({ type: 'get_messages' }));
+  });
+
+  // Entry tree of the current RPC session (used to resolve branch points).
+  router.get('/api/rpc/entries', async (_req, res) => {
+    await withBridge(res, () => bridge.send({ type: 'get_entries' }));
   });
 
   router.post('/api/rpc/switch_session', async (req, res) => {

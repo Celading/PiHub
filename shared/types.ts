@@ -167,6 +167,20 @@ export interface RpcStreamEvent {
 
 export type PiCommandSource = 'extension' | 'prompt' | 'skill';
 
+/** One node of the current RPC session entry tree (get_entries). */
+export interface EntryItem {
+  id: string;
+  parentId: string | null;
+  type: string;
+  timestamp?: string;
+  message?: AgentMessage;
+}
+
+export interface EntriesResponse {
+  entries: EntryItem[];
+  leafId?: string;
+}
+
 export interface PiCommand {
   name: string;
   description?: string;

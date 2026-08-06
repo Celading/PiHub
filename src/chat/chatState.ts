@@ -6,6 +6,9 @@ export interface ChatMessage {
   key: string;
   message: AgentMessage;
   isStreaming: boolean;
+  /** pi session-tree node id (get_entries / runtime events); used to fork
+   *  a branch at this message. Absent for history reloads without a tree. */
+  entryId?: string;
 }
 
 export interface RunSummary {
@@ -35,7 +38,7 @@ interface ChatState {
 type ChatAction =
   | { type: 'reset'; messages: ChatMessage[]; rpcState: RpcState | null }
   | { type: 'push'; message: AgentMessage }
-  | { type: 'updateLast'; message: AgentMessage }
+  | { type: 'updateLast'; message: AgentMessage; entryId?: string }
   | { type: 'markStreaming'; streaming: boolean }
   | { type: 'agentRunning'; running: boolean }
   | { type: 'queue'; steer: string[]; followUp: string[] }
@@ -99,7 +102,12 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         return {
           ...state,
           messages: [
-            { key: makeKey(), message: action.message, isStreaming: state.isAgentRunning },
+            {
+              key: makeKey(),
+              message: action.message,
+              isStreaming: state.isAgentRunning,
+              ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
+            },
           ],
         };
       }
@@ -110,9 +118,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           key: makeKey(),
           message: action.message,
           isStreaming: state.isAgentRunning,
+          ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
         });
       } else {
-        messages[messages.length - 1] = { ...last, message: action.message };
+        messages[messages.length - 1] = {
+          ...last,
+          message: action.message,
+          ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
+        };
       }
       return { ...state, messages };
     }
@@ -187,12 +200,19 @@ function eventToAction(event: RpcStreamEvent): ChatAction | null {
       return null;
     case 'message_update':
       if (isAgentMessage(event['message'])) {
-        return { type: 'updateLast', message: event['message'] };
+        const assistantEvent = event['assistantMessageEvent'] as { id?: unknown } | undefined;
+        const entryId = typeof assistantEvent?.id === 'string' ? assistantEvent.id : undefined;
+        return { type: 'updateLast', message: event['message'], ...(entryId === undefined ? {} : { entryId }) };
       }
       return null;
     case 'message_end':
       if (isAgentMessage(event['message'])) {
-        return { type: 'updateLast', message: event['message'] };
+        const endId = event['id'];
+        return {
+          type: 'updateLast',
+          message: event['message'],
+          ...(typeof endId === 'string' ? { entryId: endId } : {}),
+        };
       }
       return null;
     case 'queue_update': {
@@ -240,7 +260,11 @@ export function useChatSession(): ChatSession {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const [messagesRes, stateRes] = await Promise.all([api.rpcMessages(), api.rpcState()]);
+        const [messagesRes, entriesRes, stateRes] = await Promise.all([
+          api.rpcMessages(),
+          api.rpcEntries(),
+          api.rpcState(),
+        ]);
         if (cancelled) {
           return;
         }
@@ -248,6 +272,19 @@ export function useChatSession(): ChatSession {
         const chatMessages: ChatMessage[] = rawMessages
           .filter(isAgentMessage)
           .map((message) => ({ key: makeKey(), message, isStreaming: false }));
+        // Align the session-tree entry ids (get_entries) with the message
+        // list by order — both sequences follow conversation order.
+        if (Array.isArray(entriesRes.entries)) {
+          const messageEntryIds = entriesRes.entries
+            .filter((entry) => entry.message !== undefined)
+            .map((entry) => entry.id);
+          chatMessages.forEach((chatMessage, index) => {
+            const entryId = messageEntryIds[index];
+            if (entryId !== undefined) {
+              chatMessage.entryId = entryId;
+            }
+          });
+        }
         dispatch({ type: 'reset', messages: chatMessages, rpcState: stateRes });
       } catch (error) {
         if (!cancelled) {

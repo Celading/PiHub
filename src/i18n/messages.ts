@@ -145,6 +145,8 @@ export const zhMessages = {
   'chat.queued': '队列：{steer} 引导 · {followUp} 跟进',
   'chat.error.prefix': '',
   'chat.retrying': '运行出错，自动重试中…',
+  'chat.copyResult': '复制结果',
+  'chat.copied': '已复制',
 
   // thinking + workflow (phase-3)
   'thinking.active': '思考中…',
@@ -490,6 +492,8 @@ export const enMessages: Record<MessageKey, string> = {
   'chat.queued': 'queued: {steer} steer · {followUp} follow-up',
   'chat.error.prefix': '',
   'chat.retrying': 'Run failed — auto retrying…',
+  'chat.copyResult': 'Copy result',
+  'chat.copied': 'Copied',
 
   // thinking + workflow (phase-3)
   'thinking.active': 'Thinking…',

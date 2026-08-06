@@ -3,7 +3,8 @@ import type { ModelInfo, SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, Theme } from '../types/app.js';
 import { api } from '../api/client.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
-import { restoreSession as restoreArchived } from '../sessions/sessionActions.js';
+import { removeArchived, restoreSession as restoreArchived } from '../sessions/sessionActions.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { LoadingHint } from '../components/LoadingHint.js';
 import {
   getPrefs,
@@ -106,6 +107,8 @@ export function SettingsPage({
   const [editingUser, setEditingUser] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [, forceRender] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const prefs = getPrefs();
   const [modes, setModes] = useState<{ steering: string; followUp: string }>(() => {
     try {
@@ -196,6 +199,25 @@ export function SettingsPage({
 
   const restoreSession = (id: string): void => {
     restoreArchived(id);
+  };
+
+  // Permanently delete an archived session: drops the archived marker and
+  // removes the session file (server accepts a bare file name only and
+  // guards path traversal itself).
+  const deleteArchivedSession = async (target: SessionSummary): Promise<void> => {
+    setDeleteError(null);
+    try {
+      const bareName = target.fileName.split('/').pop() ?? target.fileName;
+      const response = await api.deleteSession(bareName);
+      if (!response.success) {
+        setDeleteError(response.error ?? 'delete failed');
+        return;
+      }
+      removeArchived(target.fileName);
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   // Stay in sync when the sidebar archives/restores while this page is open.
@@ -519,6 +541,15 @@ export function SettingsPage({
                         >
                           {t('settings.restore')}
                         </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            setDeleteTarget(session);
+                          }}
+                        >
+                          {t('sessions.delete')}
+                        </button>
                       </div>
                     );
                   })}
@@ -560,6 +591,24 @@ export function SettingsPage({
         ) : null}
         {section === 'lab' ? <LabSection /> : null}
       </div>
+
+      {deleteTarget !== null ? (
+        <ConfirmDialog
+          title={t('sessions.delete')}
+          message={t('sessions.deleteConfirm', { name: deleteTarget.name ?? deleteTarget.fileName })}
+          onConfirm={() => {
+            void deleteArchivedSession(deleteTarget);
+          }}
+          onCancel={() => {
+            setDeleteTarget(null);
+          }}
+        />
+      ) : null}
+      {deleteError !== null ? (
+        <div className="settings-error mono" role="alert">
+          {deleteError}
+        </div>
+      ) : null}
     </section>
   );
 }

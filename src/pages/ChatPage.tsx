@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
-import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
-import { archiveSession } from '../sessions/sessionActions.js';
 import { api } from '../api/client.js';
+import type { AgentMessage } from '../../shared/types.js';
 import './ChatPage.css';
 
 /** One user prompt and everything that followed it until the next prompt. */
@@ -45,6 +44,17 @@ function formatDuration(ms: number, locale: Locale): string {
     return `${pad(hours)}时${pad(minutes)}分${pad(seconds)}秒`;
   }
   return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+}
+
+/** Extracts the assistant reply as plain markdown text (copy primitive). */
+function extractAssistantMarkdown(message: AgentMessage): string {
+  if (message.role !== 'assistant') {
+    return '';
+  }
+  return message.content
+    .map((block) => (block.type === 'text' ? block.text : ''))
+    .join('\n')
+    .trim();
 }
 
 interface ChatPageProps {
@@ -140,42 +150,46 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     });
   };
 
+  // Branch at the bottom of an agent reply (P1-10 B): pi's fork RPC splits
+  // before a user message, so forking the *next* user message after this
+  // reply yields a branch that ends exactly at this reply. If no next user
+  // message exists (this reply is the session leaf), clone forks at the leaf
+  // — the same break point.
+  const forkAtReply = async (entryId: string): Promise<void> => {
+    try {
+      const index = chat.messages.findIndex((item) => item.entryId === entryId);
+      const nextUser = chat.messages
+        .slice(index + 1)
+        .find((item) => item.message.role === 'user' && item.entryId !== undefined);
+      const response =
+        nextUser?.entryId !== undefined
+          ? await api.forkSession(nextUser.entryId)
+          : await api.cloneSession();
+      if (response.success) {
+        onSessionChanged();
+      }
+    } catch {
+      // chat state surfaces backend errors
+    }
+  };
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyReplyAsMarkdown = async (item: ChatMessage): Promise<void> => {
+    try {
+      const text = extractAssistantMarkdown(item.message);
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(item.key);
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === item.key ? null : current));
+      }, 1500);
+    } catch {
+      // clipboard unavailable; ignore
+    }
+  };
+
   return (
     <section className="chatpage">
-      <div className="chatpage-toolbar">
-        <div className="chatpage-toolbar-spacer" />
-        <div className="chatpage-toolbar-actions">
-          <IconButton
-            icon="hico-square-grid"
-            label={t('sidebar.newBranch')}
-            placement="bottom"
-            onClick={() => {
-              void api
-                .cloneSession()
-                .then((response) => {
-                  if (response.success) {
-                    onSessionChanged();
-                  }
-                })
-                .catch(() => {
-                  // chat state surfaces backend errors
-                });
-            }}
-          />
-          <IconButton
-            icon="hico-rectangle-stack"
-            label={t('sidebar.archive')}
-            placement="bottom"
-            onClick={() => {
-              const file = chat.rpcState?.sessionFile;
-              if (file !== undefined && file.length > 0) {
-                archiveSession(file);
-                onSessionChanged();
-              }
-            }}
-          />
-        </div>
-      </div>
       <div className="chatpage-scroll scroll-area" ref={scrollRef}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
@@ -241,6 +255,51 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                       ))}
                     </div>
                   ) : null}
+                  {(() => {
+                    // Reply footer (P1-10 B): branch at this reply's tree
+                    // node + copy the reply as markdown. Left-aligned.
+                    const lastAssistant = [...unit.rest].reverse().find(
+                      (item) => item.message.role === 'assistant',
+                    );
+                    const branchEntryId = lastAssistant?.entryId;
+                    if (lastAssistant === undefined) {
+                      return null;
+                    }
+                    return (
+                      <div className="chat-unit-footer">
+                        <button
+                          type="button"
+                          className="chat-unit-footer-btn mono"
+                          disabled={branchEntryId === undefined}
+                          title={
+                            branchEntryId === undefined
+                              ? t('sidebar.newBranch')
+                              : t('sidebar.newBranch')
+                          }
+                          onClick={() => {
+                            if (branchEntryId !== undefined) {
+                              void forkAtReply(branchEntryId);
+                            }
+                          }}
+                        >
+                          <span className="hico hico-square-grid" aria-hidden="true" />
+                          {t('sidebar.newBranch')}
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-unit-footer-btn mono"
+                          onClick={() => {
+                            void copyReplyAsMarkdown(lastAssistant);
+                          }}
+                        >
+                          <span className="hico hico-rectangle-stack" aria-hidden="true" />
+                          {copiedKey === lastAssistant.key
+                            ? t('chat.copied')
+                            : t('chat.copyResult')}
+                        </button>
+                      </div>
+                    );
+                  })()}
                   {showSummary ? (
                     <div className="chat-unit-summary">
                       <button
