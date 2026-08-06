@@ -18,6 +18,8 @@ export const zhMessages = {
   'header.theme.light': '浅色',
   'header.theme.toggle': '切换主题',
   'header.menu': '菜单',
+  'kMode.demo': '演示',
+  'kMode.debug': '调试',
 
   // settings: language
   'settings.language': '语言',
@@ -304,6 +306,8 @@ export const enMessages: Record<MessageKey, string> = {
   'header.theme.light': 'light',
   'header.theme.toggle': 'Toggle theme',
   'header.menu': 'Menu',
+  'kMode.demo': 'demo',
+  'kMode.debug': 'debug',
 
   'settings.language': 'Language',
 
