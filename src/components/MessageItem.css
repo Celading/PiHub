@@ -163,6 +163,25 @@
   font-family: var(--font-sans);
 }
 
+/* ---- L008-C4: smooth collapse via grid-template-rows 0fr<->1fr ---- */
+.collapse-region {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
+}
+
+.collapse-region[data-collapsed='true'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.collapse-region-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* tool call — inline row, not a full-width card (visual audit M-6/L-1:
  * a card + inner code block competes with the assistant answer). */
 .toolcall {

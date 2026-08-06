@@ -30,9 +30,11 @@ function ToolCallBlock({
           {expanded ? '−' : '+'}
         </span>
       </button>
-      {expanded ? (
-        <pre className="toolcall-args">{argumentsText}</pre>
-      ) : null}
+      <div className="collapse-region" data-collapsed={!expanded}>
+        <div className="collapse-region-inner">
+          <pre className="toolcall-args">{argumentsText}</pre>
+        </div>
+      </div>
     </div>
   );
 }
@@ -97,7 +99,11 @@ function ThinkingBlock({
         <span className="thinking-label mono">{label}</span>
         <span className="hico hico-chevron-down thinking-chevron" aria-hidden="true" />
       </button>
-      {expanded ? <div className="thinking-body">{text}</div> : null}
+      <div className="collapse-region" data-collapsed={!expanded}>
+        <div className="collapse-region-inner">
+          <div className="thinking-body">{text}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -206,7 +212,11 @@ function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 't
         <span className="toolresult-status mono">{message.isError ? 'error' : 'ok'}</span>
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
       </button>
-      {expanded ? <pre className="toolresult-output">{preview}</pre> : null}
+      <div className="collapse-region" data-collapsed={!expanded}>
+        <div className="collapse-region-inner">
+          <pre className="toolresult-output">{preview}</pre>
+        </div>
+      </div>
     </div>
   );
 }
