@@ -96,6 +96,19 @@ npm test           # schema & session-parsing tests
 Then open **http://localhost:18384**. The panel binds to the loopback
 interface only.
 
+## Screenshots
+
+A peek at the panel in showcase mode (synthetic, desensitized data):
+
+| | |
+|---|---|
+| ![Chat](docs/screenshots/demo-chat.png) | ![Sessions](docs/screenshots/demo-sessions.png) |
+| Chat stream with reasoning, tool-cluster collapse, live elapsed timer and per-reply branch/copy | Session list with collections and status lights |
+| ![Stats](docs/screenshots/demo-stats.png) | ![Settings](docs/screenshots/demo-settings.png) |
+| Token & cost analytics by model / provider / directory | Seven-area settings with session restore & delete |
+| ![Pipelines](docs/screenshots/demo-pipelines.png) | |
+| PiHub-exclusive Pipelines: skill import (hard/soft convert) and run timeline | |
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

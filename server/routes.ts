@@ -357,6 +357,17 @@ export function createRouter(
   });
 
   router.get('/api/rpc/messages', async (_req, res) => {
+    if (mode === 'demo') {
+      // kMode: demo never spawns real pi; serve the running mock session's
+      // message stream so the chat view renders the showcase conversation.
+      const detail = await sessions.get(DEMO_RUNNING_ID);
+      const messages =
+        detail?.entries
+          .filter((entry) => entry.type === 'message')
+          .map((entry) => entry.message) ?? [];
+      res.json({ messages });
+      return;
+    }
     await withBridge(res, () => bridge.send({ type: 'get_messages' }));
   });
 

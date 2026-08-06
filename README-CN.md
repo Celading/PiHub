@@ -92,6 +92,19 @@ npm test           # schema 与会话解析测试
 
 然后打开 **http://localhost:18384**。面板仅监听本机回环地址。
 
+## 界面预览
+
+展示模式截图（合成、去敏数据）：
+
+| | |
+|---|---|
+| ![对话](docs/screenshots/demo-chat.png) | ![会话](docs/screenshots/demo-sessions.png) |
+| 聊天流：推理、工具集合折叠、实时已消耗计时、回复底部新建分支/复制 | 会话列表：集合与状态灯 |
+| ![统计](docs/screenshots/demo-stats.png) | ![设置](docs/screenshots/demo-settings.png) |
+| 按模型/渠道/目录的 token 与成本统计 | 七大区设置：会话恢复与删除 |
+| ![工程流](docs/screenshots/demo-pipelines.png) | |
+| PiHub 独家工程流：技能导入（硬/软转换）与运行时间线 | |
+
 ## 快捷键
 
 | 快捷键 | 动作 |
