@@ -8,6 +8,7 @@ import { DemoStateMachine } from './demo/state-machine.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
 import { createPipelineStore } from './pipelines/store.js';
+import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 
@@ -56,10 +57,14 @@ if (mode !== 'demo') {
 const demoMachine = mode === 'demo' ? new DemoStateMachine(hub, sessions) : null;
 
 // Pipelines (P1-02-C): demo mode uses a throwaway temp store so the showcase
-// never writes PiHub-owned state on this machine.
+// never writes PiHub-owned state on this machine; demo seeds show the surface
+// (runs stay read-only via the 503 write guards).
 const pipelineStore = createPipelineStore(
   mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : undefined,
 );
+if (mode === 'demo') {
+  seedDemoPipelines(pipelineStore);
+}
 const pipelineEngine = mode === 'demo' ? null : new PipelineEngine(bridge, pipelineStore);
 if (pipelineEngine !== null) {
   pipelineEngine.on('run-change', (run) => {
