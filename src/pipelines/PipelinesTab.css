@@ -187,3 +187,249 @@
   font-size: 11px;
   opacity: 0.6;
 }
+
+/* Run view (C5): timeline cards */
+
+.pipelines-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.pipelines-runs-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.run-timeline {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-timeline[data-run-status='running'] {
+  border-left: 2px solid var(--status-info);
+}
+
+.run-timeline[data-run-status='failed'] {
+  border-left: 2px solid var(--status-error);
+}
+
+.run-timeline[data-run-status='aborted'] {
+  border-left: 2px solid var(--status-warning);
+}
+
+.run-timeline[data-run-status='completed'] {
+  border-left: 2px solid var(--status-ok);
+}
+
+.run-timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-timeline-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.run-timeline-meta {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.run-timeline-abort {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.run-timeline-input {
+  font-size: 11px;
+  opacity: 0.8;
+  padding: 4px 8px;
+  background: var(--bg-subtle);
+  border-radius: 3px;
+}
+
+.run-timeline-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.run-step {
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.run-step[data-step-status='running'] {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
+
+.run-step[data-step-status='awaiting-approval'] {
+  border-color: var(--status-warning);
+}
+
+.run-step[data-step-status='failed'] {
+  border-color: var(--status-error);
+}
+
+.run-step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 6px;
+}
+
+.run-step-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+  font: inherit;
+}
+
+.run-step-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.run-step-dot[data-status='running'] {
+  background: var(--status-info);
+  animation: status-pulse 1.6s ease-in-out infinite;
+}
+
+.run-step-dot[data-status='succeeded'] {
+  background: var(--status-ok);
+}
+
+.run-step-dot[data-status='failed'] {
+  background: var(--status-error);
+}
+
+.run-step-dot[data-status='skipped'] {
+  background: var(--status-warning);
+}
+
+.run-step-dot[data-status='awaiting-approval'] {
+  background: var(--status-warning);
+  animation: status-pulse 1.6s ease-in-out infinite;
+}
+
+.run-step-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.run-step-type {
+  font-size: 10px;
+  opacity: 0.6;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+}
+
+.run-step-meta {
+  font-size: 11px;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-step-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.run-step-action {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.run-step-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 6px 8px 22px;
+  border-top: 1px dashed var(--border);
+}
+
+.run-step-detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.run-step-detail-label {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.run-step-detail-pre {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.run-step-detail-error {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.run-step-detail-meta {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* run input modal */
+
+.pipe-run-modal {
+  width: min(480px, 100%);
+}
+
+.pipe-run-input {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}

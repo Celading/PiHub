@@ -2,6 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Pipeline, PipelineRunRecord } from '../../shared/types.js';
 import { api } from '../api/client.js';
 
+const ACTIVE_RUN_STATUSES: readonly string[] = ['running', 'idle', 'awaiting-approval'];
+
+/** Runs shown in the run view: active first, then the latest finished. */
+export function selectVisibleRuns(runs: PipelineRunRecord[]): PipelineRunRecord[] {
+  const active = runs.filter((r) => ACTIVE_RUN_STATUSES.includes(r.status));
+  const finished = runs
+    .filter((r) => !ACTIVE_RUN_STATUSES.includes(r.status))
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 3);
+  return [...active.sort((a, b) => b.startedAt - a.startedAt), ...finished];
+}
+
 /** Shape guard for SSE pipeline_step snapshots (untrusted event data). */
 function isPipelineRunRecord(value: unknown): value is PipelineRunRecord {
   if (typeof value !== 'object' || value === null) {
@@ -80,9 +92,10 @@ export function usePipelines(): {
         return next;
       });
     };
-    source.addEventListener('message', onEvent);
+    // The hub broadcasts named `pi` events (same channel as chat state).
+    source.addEventListener('pi', onEvent);
     return () => {
-      source.removeEventListener('message', onEvent);
+      source.removeEventListener('pi', onEvent);
       source.close();
     };
   }, []);

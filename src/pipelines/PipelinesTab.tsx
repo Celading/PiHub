@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Pipeline } from '../../shared/types.js';
-import { usePipelines } from './usePipelines.js';
+import { usePipelines, selectVisibleRuns } from './usePipelines.js';
+import { RunTimeline } from './RunTimeline.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { LoadingHint } from '../components/LoadingHint.js';
@@ -40,12 +41,16 @@ function editorTemplate(): string {
  */
 export function PipelinesTab(): React.JSX.Element {
   const { t } = useI18n();
-  const { pipelines, runs, error, save, remove, run } = usePipelines();
+  const { pipelines, runs, error, save, remove, run, abort, approve } = usePipelines();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorText, setEditorText] = useState<string>(() => editorTemplate());
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
+  const [runTarget, setRunTarget] = useState<Pipeline | null>(null);
+  const [runInput, setRunInput] = useState('');
+
+  const visibleRuns = useMemo(() => selectVisibleRuns(runs), [runs]);
 
   const latestRuns = useMemo(() => {
     const map = new Map<string, Pipeline['id']>();
@@ -157,9 +162,8 @@ export function PipelinesTab(): React.JSX.Element {
                     type="button"
                     className="btn-primary pipeline-action mono"
                     onClick={() => {
-                      void run(pipeline.id).catch((err: unknown) => {
-                        setEditorError(err instanceof Error ? err.message : String(err));
-                      });
+                      setRunInput('');
+                      setRunTarget(pipeline);
                     }}
                   >
                     {t('pipelines.run')}
@@ -188,6 +192,30 @@ export function PipelinesTab(): React.JSX.Element {
           })}
         </div>
       )}
+
+      {visibleRuns.length > 0 ? (
+        <div className="pipelines-runs">
+          <div className="pipelines-runs-title mono">{t('pipelines.runView')}</div>
+          {visibleRuns.map((record) => (
+            <RunTimeline
+              key={record.runId}
+              run={record}
+              onAbort={(runId) => {
+                void abort(runId).catch((err: unknown) => {
+                  setEditorError(err instanceof Error ? err.message : String(err));
+                });
+              }}
+              onApprove={(runId, approved) => {
+                void approve(runId, approved).catch((err: unknown) => {
+                  setEditorError(err instanceof Error ? err.message : String(err));
+                });
+              }}
+            />
+          ))}
+        </div>
+      ) : pipelines !== null && pipelines.length > 0 ? (
+        <p className="automation-hint">{t('pipelines.noActiveRuns')}</p>
+      ) : null}
 
       {editorOpen ? (
         <div className="pipe-editor-overlay" role="presentation">
@@ -228,6 +256,65 @@ export function PipelinesTab(): React.JSX.Element {
                 }}
               >
                 {saving ? t('settings.loading') : t('pipelines.editor.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {runTarget !== null ? (
+        <div className="pipe-editor-overlay" role="presentation">
+          <div
+            className="pipe-editor pipe-run-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('pipelines.runInput.title', { name: runTarget.name })}
+          >
+            <div className="pipe-editor-head">
+              <span className="pipe-editor-title mono">
+                {t('pipelines.runInput.title', { name: runTarget.name })}
+              </span>
+              <button
+                type="button"
+                className="btn-secondary mono"
+                onClick={() => {
+                  setRunTarget(null);
+                }}
+              >
+                {t('pipelines.editor.cancel')}
+              </button>
+            </div>
+            <input
+              className="pipe-run-input mono"
+              value={runInput}
+              placeholder={t('pipelines.runInput.placeholder')}
+              onChange={(event) => {
+                setRunInput(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  // runTarget is narrowed to Pipeline inside this branch.
+                  void run(runTarget.id, runInput).catch((err: unknown) => {
+                    setEditorError(err instanceof Error ? err.message : String(err));
+                  });
+                  setRunTarget(null);
+                }
+              }}
+            />
+            <div className="pipe-editor-foot">
+              <span className="pipe-editor-hint mono">{runTarget.steps.length} {t('pipelines.steps')}</span>
+              <button
+                type="button"
+                className="btn-primary mono"
+                onClick={() => {
+                  // runTarget is narrowed to Pipeline inside this branch.
+                  void run(runTarget.id, runInput).catch((err: unknown) => {
+                    setEditorError(err instanceof Error ? err.message : String(err));
+                  });
+                  setRunTarget(null);
+                }}
+              >
+                {t('pipelines.runInput.start')}
               </button>
             </div>
           </div>
