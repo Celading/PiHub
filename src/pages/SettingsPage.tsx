@@ -214,7 +214,8 @@ export function SettingsPage({
         setDeleteError(response.error ?? 'delete failed');
         return;
       }
-      removeArchived(target.fileName);
+      // Archived markers are keyed by session id, not file name.
+      removeArchived(target.id);
       setDeleteTarget(null);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : String(err));
