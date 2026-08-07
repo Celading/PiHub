@@ -32,7 +32,7 @@ function ToolCallBlock({
           {t(summary.key, summary.params)}
         </span>
         <span className="toolcall-chevron" aria-hidden="true">
-          {expanded ? '−' : '+'}
+          {expanded ? '−' : '>'}
         </span>
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>

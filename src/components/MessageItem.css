@@ -208,10 +208,17 @@
   color: var(--primary);
 }
 
-/* P1-12 C: one-line human summary of the tool call. */
+/* P1-12 C / P1-13 C: one-line human summary of the tool call; long bash
+ * lines fade out to transparent on the right (mask over the full width —
+ * short summaries stay fully visible). */
 .toolcall-summary {
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, black 0%, black 78%, transparent 100%);
+  mask-image: linear-gradient(to right, black 0%, black 78%, transparent 100%);
 }
 
 .toolcall-meta {

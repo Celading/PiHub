@@ -72,7 +72,10 @@ export function summarizeToolCall(name: string, args: unknown): ToolSummary {
     lower.includes('run') ||
     lower.includes('command')
   ) {
-    return { key: 'tool.summary.exec', params };
+    // P1-13 C: bash lines are trimmed to 25 chars; the fade-out gradient is
+    // applied by CSS mask on the summary element.
+    const display = target.length > 25 ? `${target.slice(0, 25)}…` : target;
+    return { key: 'tool.summary.exec', params: { target: display } };
   }
   if (lower.includes('search') || lower.includes('grep') || lower.includes('find')) {
     return { key: 'tool.summary.search', params };
