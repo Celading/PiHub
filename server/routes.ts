@@ -297,13 +297,30 @@ export function createRouter(
       return;
     }
     try {
-      const response = await fetch(
-        `https://pi.dev/api/models/providers/${encodeURIComponent(provider)}`,
-        {
-          headers: { accept: 'application/json', 'User-Agent': 'pihub/1.0' },
-          signal: AbortSignal.timeout(12000),
-        },
-      );
+      // pi.dev has intermittent connectivity from some networks — one retry
+      // before surfacing the honest 502.
+      let response: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          response = await fetch(
+            `https://pi.dev/api/models/providers/${encodeURIComponent(provider)}`,
+            {
+              headers: { accept: 'application/json', 'User-Agent': 'pihub/1.0' },
+              signal: AbortSignal.timeout(12000),
+            },
+          );
+          break;
+        } catch {
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            throw new Error('fetch failed after retry');
+          }
+        }
+      }
+      if (response === null) {
+        throw new Error('fetch failed');
+      }
       const body: unknown = await response.json().catch(() => null);
       catalogCache.set(provider, { at: Date.now(), status: response.status, body });
       res.status(response.status).json(body);
