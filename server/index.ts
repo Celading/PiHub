@@ -111,6 +111,7 @@ app.use(
     demoMachine,
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
+    allowedRoot: AGENT_CWD,
     ...(mode === 'debug'
       ? {
           debugState: (): Record<string, unknown> => ({

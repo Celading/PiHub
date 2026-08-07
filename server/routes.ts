@@ -1,4 +1,4 @@
-import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -145,6 +145,8 @@ export interface RouterModeOptions {
    * 'deferred' when the reload waits for the current agent run to settle.
    */
   reloadModels?: () => 'reloaded' | 'deferred';
+  /** P1-03: workspace root the file preview may read from (cwd subtree). */
+  allowedRoot?: string;
 }
 
 /** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
@@ -490,6 +492,10 @@ export function createRouter(
         type: 'switch_session',
         sessionPath: body.data.sessionPath,
       });
+      // P1-03: the file preview follows the ACTIVE session's cwd — resolve
+      // it from the session store (best-effort, keeps the previous root on
+      // failure).
+      void resolvePreviewRoot(body.data.sessionPath);
       res.json(response);
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
@@ -693,6 +699,57 @@ export function createRouter(
 
   router.get('/api/rpc/session-stats', async (_req, res) => {
     await withBridge(res, () => bridge.send({ type: 'get_session_stats' }));
+  });
+
+  /* ---- P1-03: read-only file preview within the ACTIVE session's cwd ----
+   * The root follows the session the user switched to (resolvePreviewRoot),
+   * falling back to the panel workspace. Paths are normalized and must stay
+   * inside the root subtree; traversal or oversized files fail honestly. */
+  let previewRoot: string | undefined = options?.allowedRoot;
+  const resolvePreviewRoot = async (sessionPath: string): Promise<void> => {
+    try {
+      const all = await sessions.list();
+      const match = all.find((session) => session.fileName === sessionPath);
+      if (match !== undefined && match.cwd.length > 0) {
+        previewRoot = match.cwd;
+      }
+    } catch {
+      // keep the previous root — preview stays conservative
+    }
+  };
+  const MAX_PREVIEW_BYTES = 512 * 1024;
+  router.get('/api/file/preview', async (req, res) => {
+    const root = previewRoot;
+    if (root === undefined || root.length === 0) {
+      res.status(503).json({ error: 'file preview unavailable' });
+      return;
+    }
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    if (rawPath.length === 0 || rawPath.length > 1024) {
+      res.status(400).json({ error: 'invalid path' });
+      return;
+    }
+    const rootResolved = path.resolve(root);
+    const resolved = path.resolve(rootResolved, rawPath);
+    if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
+      res.status(400).json({ error: 'path outside workspace' });
+      return;
+    }
+    try {
+      const info = await stat(resolved);
+      if (!info.isFile()) {
+        res.status(400).json({ error: 'not a file' });
+        return;
+      }
+      if (info.size > MAX_PREVIEW_BYTES) {
+        res.status(413).json({ error: 'file too large for preview', size: info.size });
+        return;
+      }
+      const content = await readFile(resolved, 'utf8');
+      res.json({ path: resolved, size: info.size, content });
+    } catch (error) {
+      res.status(404).json({ error: `cannot read file: ${error instanceof Error ? error.message : String(error)}` });
+    }
   });
 
   // Extension UI protocol (P1-01): pending dialog requests + answering.

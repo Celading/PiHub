@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
+import { FilePreview } from '../components/FilePreview.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
@@ -92,7 +93,13 @@ function isToolMessage(item: ChatMessage): boolean {
 
 /** Tool-cluster collapse (P1-10 C3): all tool blocks of one prompt run fold
  *  into a single set with a tool-name list header. */
-function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
+function ToolCluster({
+  items,
+  onOpenFile,
+}: {
+  items: ChatMessage[];
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const names = [
@@ -133,7 +140,7 @@ function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
       {expanded ? (
         <div className="tool-cluster-body">
           {items.map((item) => (
-            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} />
+            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} onOpenFile={onOpenFile} />
           ))}
         </div>
       ) : null}
@@ -150,9 +157,11 @@ function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
 function AssistantProcessCollapse({
   items,
   durationLabel,
+  onOpenFile,
 }: {
   items: ChatMessage[];
   durationLabel: string | null;
+  onOpenFile?: ((path: string) => void) | undefined;
 }): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -179,7 +188,7 @@ function AssistantProcessCollapse({
       <div className="collapse-region" data-collapsed={!expanded}>
         <div className="collapse-region-inner">
           {items.map((item) => (
-            <MessageItem key={item.key} message={item.message} isStreaming={false} thinkingStatus="done" />
+            <MessageItem key={item.key} message={item.message} isStreaming={false} thinkingStatus="done" onOpenFile={onOpenFile} />
           ))}
         </div>
       </div>
@@ -222,6 +231,8 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   // at the bottom; clicking the bar or Cmd/Ctrl+R expands it (forced).
   const [atBottom, setAtBottom] = useState(true);
   const [composerForced, setComposerForced] = useState(false);
+  // P1-03: read-only file preview + recent file operations.
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [collapsedUnits, setCollapsedUnits] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -265,6 +276,50 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
+  }, []);
+
+  // P1-03 D: recent file operations aggregated from the tool calls of the
+  // visible conversation (most recent unique paths, capped).
+  const recentFiles = useMemo(() => {
+    const out: Array<{ path: string; action: string }> = [];
+    const seen = new Set<string>();
+    for (let index = chat.messages.length - 1; index >= 0 && out.length < 12; index -= 1) {
+      const item = chat.messages[index];
+      if (item === undefined || item.message.role !== 'assistant') {
+        continue;
+      }
+      for (const block of item.message.content) {
+        if (block.type !== 'toolCall') {
+          continue;
+        }
+        const name = typeof block.name === 'string' ? block.name : '';
+        if (name !== 'read' && name !== 'write' && name !== 'edit' && name !== 'patch') {
+          continue;
+        }
+        const args =
+          typeof block.arguments === 'object' && block.arguments !== null
+            ? (block.arguments as Record<string, unknown>)
+            : {};
+        const rawPath =
+          typeof args['path'] === 'string'
+            ? args['path']
+            : typeof args['filePath'] === 'string'
+              ? args['filePath']
+              : typeof args['file'] === 'string'
+                ? args['file']
+                : null;
+        if (rawPath === null || rawPath.length === 0 || seen.has(rawPath)) {
+          continue;
+        }
+        seen.add(rawPath);
+        out.push({ path: rawPath, action: name });
+      }
+    }
+    return out;
+  }, [chat.messages]);
+
+  const openFile = useCallback((filePath: string): void => {
+    setPreviewPath(filePath);
   }, []);
 
   // Refresh the model display when the model is cycled via Ctrl+Shift+L.
@@ -615,6 +670,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                               <AssistantProcessCollapse
                                 items={processItems}
                                 durationLabel={runDurationLabel(unit.rest)}
+                                onOpenFile={openFile}
                               />
                             ) : null}
                             {keptItems.map((item) => (
@@ -625,9 +681,10 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                                 thinkingStatus={
                                   unitIndex === units.length - 1 ? thinkingStatus : 'done'
                                 }
+                                onOpenFile={openFile}
                               />
                             ))}
-                            {toolItems.length > 0 ? <ToolCluster items={toolItems} /> : null}
+                            {toolItems.length > 0 ? <ToolCluster items={toolItems} onOpenFile={openFile} /> : null}
                           </>
                         );
                       })()}
@@ -731,7 +788,37 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
         )}
       </div>
       {terminalOpen ? <TerminalPanel /> : null}
+      {previewPath !== null ? (
+        <FilePreview
+          path={previewPath}
+          onClose={() => {
+            setPreviewPath(null);
+          }}
+        />
+      ) : null}
       <div className="chatpage-bottom">
+        {/* P1-03 D: recent file operations aggregated from tool calls. */}
+        {recentFiles.length > 0 ? (
+          <div className="chat-files mono">
+            <span className="chat-files-label">{t('chat.files')}</span>
+            <div className="chat-files-list">
+              {recentFiles.map((file: { path: string; action: string }) => (
+                <button
+                  key={file.path}
+                  type="button"
+                  className="chat-file-chip mono"
+                  title={file.path}
+                  onClick={() => {
+                    setPreviewPath(file.path);
+                  }}
+                >
+                  <span className="chat-file-action">{file.action}</span>
+                  <span className="chat-file-path">{file.path}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <button
           type="button"
           className="chatpage-terminal-toggle mono"

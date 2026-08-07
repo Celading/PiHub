@@ -258,6 +258,13 @@ export const api = {
     });
   },
 
+  /** P1-03: read-only file preview within the workspace root. */
+  filePreview(path: string): Promise<{ path: string; size: number; content: string }> {
+    return request<{ path: string; size: number; content: string }>(
+      `/api/file/preview?path=${encodeURIComponent(path)}`,
+    );
+  },
+
   /** pi.dev official per-provider model catalog (P1-15 C). */
   catalogModels(provider: string): Promise<CatalogModel[]> {
     return request<Record<string, unknown>>(`/api/models/catalog/${encodeURIComponent(provider)}`).then(

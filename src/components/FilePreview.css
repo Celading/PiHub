@@ -1,0 +1,136 @@
+/* P1-03: file preview overlay + diff highlighting + path links. */
+
+.file-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgb(0 0 0 / 0.35);
+  animation: appear-scale var(--duration-fast) var(--ease-out) 1;
+}
+
+.file-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(52rem, calc(100% - 2rem));
+  max-height: min(80vh, 40rem);
+  background-color: var(--surface);
+  border: var(--border-thin) solid var(--border-strong);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.3);
+}
+
+.file-preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface-subtle);
+}
+
+.file-preview-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.file-preview-meta {
+  font-size: var(--text-xs);
+  color: var(--text-placeholder);
+}
+
+.file-preview-close {
+  border: 0;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+}
+
+.file-preview-close:hover {
+  color: var(--primary);
+}
+
+.file-preview-body {
+  overflow: auto;
+  padding: var(--space-3);
+  min-height: 8rem;
+}
+
+.file-preview-hint,
+.file-preview-error {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.file-preview-error {
+  color: var(--red-60);
+}
+
+.file-preview-code {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* ---- inline diff (P1-03 C) ---- */
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.diff-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+.diff-line.diff-meta {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.diff-line.diff-hunk {
+  color: var(--primary);
+}
+
+.diff-line.diff-add {
+  background-color: rgb(46 160 67 / 0.18);
+}
+
+.diff-line.diff-del {
+  background-color: rgb(248 81 73 / 0.16);
+}
+
+/* ---- clickable file paths in tool output (P1-03 B) ---- */
+.file-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--primary);
+  font-size: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.file-link:hover {
+  text-decoration-style: solid;
+  color: var(--primary-hover, var(--primary));
+}

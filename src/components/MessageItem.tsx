@@ -4,6 +4,7 @@ import { Markdown } from './Markdown.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
 import { summarizeToolCall } from './toolSummary.js';
+import { linkifyPaths } from './filePaths.js';
 import './MessageItem.css';
 
 export type ThinkingStatus = 'active' | 'done' | 'interrupted';
@@ -289,7 +290,13 @@ function AssistantMessageView({
   );
 }
 
-function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 'toolResult' }> }): React.JSX.Element {
+function ToolResultView({
+  message,
+  onOpenFile,
+}: {
+  message: Extract<AgentMessage, { role: 'toolResult' }>;
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
   const compactTools = useLabFlag('compactTools');
   const [expanded, setExpanded] = useState(!compactTools);
   const text = message.content
@@ -316,21 +323,33 @@ function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 't
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>
         <div className="collapse-region-inner">
-          <pre className="toolresult-output">{preview}</pre>
+          {/* P1-03 B: clickable file paths inside tool output. */}
+          <pre className="toolresult-output">
+            {onOpenFile !== undefined ? linkifyPaths(preview, onOpenFile) : preview}
+          </pre>
         </div>
       </div>
     </div>
   );
 }
 
-function BashExecutionView({ message }: { message: Extract<AgentMessage, { role: 'bashExecution' }> }): React.JSX.Element {
+function BashExecutionView({
+  message,
+  onOpenFile,
+}: {
+  message: Extract<AgentMessage, { role: 'bashExecution' }>;
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
   return (
     <div className="toolresult">
       <div className="toolresult-header">
         <span className="toolresult-name mono">bash</span>
         <span className="toolresult-status mono">exit {String(message.exitCode)}</span>
       </div>
-      <pre className="toolresult-output">{message.output}</pre>
+      {/* P1-03 B: clickable file paths inside bash output. */}
+      <pre className="toolresult-output">
+        {onOpenFile !== undefined ? linkifyPaths(message.output, onOpenFile) : message.output}
+      </pre>
     </div>
   );
 }
@@ -342,6 +361,8 @@ interface MessageItemProps {
   /** P1-16 B: action row rendered INSIDE the user message container so the
    *  bubble + footer form one unit (footer right-aligned via CSS). */
   footer?: React.ReactNode;
+  /** P1-03 B: clickable file paths in tool output open the preview. */
+  onOpenFile?: ((path: string) => void) | undefined;
 }
 
 export function MessageItem({
@@ -349,6 +370,7 @@ export function MessageItem({
   isStreaming,
   thinkingStatus = 'done',
   footer,
+  onOpenFile,
 }: MessageItemProps): React.JSX.Element {
   const streamAnimation = useLabFlag('streamAnimation');
   switch (message.role) {
@@ -373,13 +395,13 @@ export function MessageItem({
     case 'toolResult':
       return (
         <div className="message message-tool">
-          <ToolResultView message={message} />
+          <ToolResultView message={message} onOpenFile={onOpenFile} />
         </div>
       );
     case 'bashExecution':
       return (
         <div className="message message-tool">
-          <BashExecutionView message={message} />
+          <BashExecutionView message={message} onOpenFile={onOpenFile} />
         </div>
       );
   }
