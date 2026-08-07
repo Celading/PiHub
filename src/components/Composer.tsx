@@ -72,23 +72,50 @@ export function Composer({
   }, []);
 
   // Load model options once for the inline model selector (phase-3: the
-  // model/thinking controls moved down next to the send button).
+  // model/thinking controls moved down next to the send button). Merges the
+  // pi model store with the panel's custom channels (models.json) so
+  // configured providers are switchable from the chat (P1-13 A).
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const response = await api.models();
+        const [storeRes, configRes] = await Promise.all([
+          api.models(),
+          api.modelsConfig().catch(() => null),
+        ]);
         if (cancelled) {
           return;
         }
         const flat: ModelOption[] = [];
-        for (const entry of response.providers) {
+        for (const entry of storeRes.providers) {
           for (const model of entry.models) {
             flat.push({
               provider: entry.provider,
               modelId: model.id,
               label: model.name,
             });
+          }
+        }
+        const config = configRes as
+          | {
+              providers?: Record<
+                string,
+                { name?: string; apiKey?: string; models?: Array<{ id: string; name?: string }> }
+              >;
+            }
+          | null
+          | undefined;
+        const providers = config?.providers;
+        if (providers !== undefined) {
+          for (const [key, provider] of Object.entries(providers)) {
+            const hasKey = typeof provider.apiKey === 'string' && provider.apiKey.length > 0;
+            for (const model of provider.models ?? []) {
+              flat.push({
+                provider: key,
+                modelId: model.id,
+                label: `${hasKey ? '' : '🔒 '}${model.name ?? model.id}`,
+              });
+            }
           }
         }
         setModelOptions(flat);
