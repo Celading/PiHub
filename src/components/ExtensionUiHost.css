@@ -1,0 +1,169 @@
+/* Extension UI surfaces (P1-01): dialogs reuse confirm-overlay language. */
+
+.extui-dialog {
+  width: min(30rem, 90vw);
+  background-color: var(--surface);
+  border-top: var(--border-thick) solid var(--primary);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.extui-dialog-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.extui-timeout-hint {
+  font-size: var(--text-xs);
+  color: var(--text-placeholder);
+}
+
+.extui-search,
+.extui-input {
+  padding: var(--space-2);
+  border: var(--border-thin) solid var(--border-strong);
+  border-radius: var(--radius-none);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.extui-search:focus,
+.extui-input:focus {
+  outline: var(--border-thick) solid var(--focus);
+  outline-offset: 0;
+}
+
+.extui-options {
+  max-height: 40vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border: var(--border-thin) solid var(--border-subtle);
+}
+
+.extui-option {
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background-color: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.extui-option[data-active='true'],
+.extui-option:hover {
+  background-color: var(--primary);
+  color: #ffffff;
+}
+
+.extui-empty {
+  padding: var(--space-3);
+  color: var(--text-placeholder);
+  font-size: var(--text-sm);
+}
+
+/* full-screen editor dialog */
+.extui-editor {
+  width: min(64rem, 94vw);
+  height: min(80vh, 720px);
+  background-color: var(--surface);
+  border-top: var(--border-thick) solid var(--primary);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.extui-editor-text {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  padding: var(--space-3);
+  border: var(--border-thin) solid var(--border-strong);
+  border-radius: var(--radius-none);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.extui-editor-text:focus {
+  outline: var(--border-thick) solid var(--focus);
+  outline-offset: 0;
+}
+
+/* status bar (top of the main area) */
+.extui-statusbar {
+  position: fixed;
+  top: var(--header-height);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background-color: var(--background-inverse);
+  color: var(--text-inverse);
+  font-size: var(--text-xs);
+  border-radius: 0 0 var(--radius-none) var(--radius-none);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* widget slots (above the composer) */
+.extui-widget {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 11rem;
+  z-index: 70;
+  min-width: 20rem;
+  max-width: 44rem;
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--surface);
+  border: var(--border-thin) solid var(--border-subtle);
+  border-left: var(--border-thick) solid var(--primary);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* toasts (bottom-right) */
+.extui-toasts {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.extui-toast {
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--background-inverse);
+  color: var(--text-inverse);
+  font-size: var(--text-xs);
+  border-left: var(--border-thick) solid var(--status-info);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  animation: appear-up var(--duration-base) var(--ease-out) 1;
+  max-width: 24rem;
+}
+
+.extui-toast[data-type='warning'] {
+  border-left-color: var(--status-warning);
+}
+
+.extui-toast[data-type='error'] {
+  border-left-color: var(--status-error);
+}

@@ -9,7 +9,10 @@ import type { z } from 'zod';
 import type {
   agentMessageSchema,
   contentBlockSchema,
+  extensionUiRequestSchema,
   modelInfoSchema,
+  pipelineSchema,
+  pipelineStepSchema,
   rpcResponseSchema,
   sessionEventSchema,
   sessionHeaderEventSchema,
@@ -164,10 +167,95 @@ export interface RpcStreamEvent {
 
 export type PiCommandSource = 'extension' | 'prompt' | 'skill';
 
+/** One node of the current RPC session entry tree (get_entries). */
+export interface EntryItem {
+  id: string;
+  parentId: string | null;
+  type: string;
+  timestamp?: string;
+  message?: AgentMessage;
+}
+
+export interface EntriesResponse {
+  entries: EntryItem[];
+  leafId?: string;
+}
+
 export interface PiCommand {
   name: string;
   description?: string;
   source: PiCommandSource;
   location?: string;
   path?: string;
+  /** Raw get_commands entry (sourceInfo etc.); skill conversion reads path. */
+  sourceInfo?: { path?: string; source?: string; scope?: string };
+}
+
+/* ---- extension UI protocol (phase-3 P1-01) ---- */
+
+/** Extension UI interaction methods (server-normalized from pi frames). */
+export type ExtensionUiMethod =
+  | 'select'
+  | 'confirm'
+  | 'input'
+  | 'editor'
+  | 'notify'
+  | 'setStatus'
+  | 'setWidget'
+  | 'setTitle'
+  | 'set_editor_text';
+
+/** Extension UI request (schema-derived, exactOptionalPropertyTypes-safe). */
+export type ExtensionUiRequest = z.infer<typeof extensionUiRequestSchema>;
+
+/** Response sent back to pi on stdin (extension_ui_response frame). */
+export interface ExtensionUiResponse {
+  id: string;
+  value?: string | undefined;
+  confirmed?: boolean | undefined;
+  cancelled?: boolean | undefined;
+}
+
+/* ---- pipelines (phase-3 P1-02-C) ---- */
+
+export type PipelineStep = z.infer<typeof pipelineStepSchema>;
+export type Pipeline = z.infer<typeof pipelineSchema>;
+
+/** Engine run/step state machine (server-owned; shared for the run view). */
+export type PipelineStepStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped'
+  | 'awaiting-approval';
+
+export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'aborted' | 'failed';
+
+export interface PipelineStepRecord {
+  stepId: string;
+  name: string;
+  type: PipelineStep['type'];
+  status: PipelineStepStatus;
+  startedAt?: number;
+  finishedAt?: number;
+  /** Expanded template text sent to the session (prompt/steer steps). */
+  input?: string;
+  /** Last assistant text produced by this step (for match and vars). */
+  output?: string;
+  /** Last tool output text produced while this step was running. */
+  toolOutput?: string;
+  error?: string;
+  attempts?: number;
+}
+
+export interface PipelineRunRecord {
+  runId: string;
+  pipelineId: string;
+  pipelineName: string;
+  status: PipelineRunStatus;
+  input: string;
+  startedAt: number;
+  finishedAt?: number;
+  steps: PipelineStepRecord[];
 }

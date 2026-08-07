@@ -1,6 +1,7 @@
 import type { Theme } from '../types/app';
 import { useServerHealth } from '../hooks/useServerHealth';
 import { useI18n } from '../i18n/I18nProvider.js';
+import { useMode } from '../kMode/useMode.js';
 import './Header.css';
 
 interface HeaderProps {
@@ -11,10 +12,13 @@ interface HeaderProps {
 
 export function Header({ theme, onThemeToggle, onMenuClick }: HeaderProps): React.JSX.Element {
   const serverStatus = useServerHealth();
+  const mode = useMode();
   const { t } = useI18n();
 
   const statusKey =
     serverStatus === 'online' ? 'header.status.online' : serverStatus === 'offline' ? 'header.status.offline' : 'header.status.checking';
+  const modeLabel =
+    mode === 'demo' ? t('kMode.demo') : mode === 'debug' ? t('kMode.debug') : null;
 
   return (
     <header className="header">
@@ -27,6 +31,11 @@ export function Header({ theme, onThemeToggle, onMenuClick }: HeaderProps): Reac
         >
           <span aria-hidden="true">☰</span>
         </button>
+        {modeLabel !== null ? (
+          <span className="header-mode-badge mono" data-mode={mode}>
+            {modeLabel}
+          </span>
+        ) : null}
         <span className="header-brand-mark" aria-hidden="true">
           π
         </span>

@@ -1,6 +1,11 @@
 import type {
+  EntriesResponse,
+  ExtensionUiRequest,
+  ExtensionUiResponse,
   ModelInfo,
   PiCommand,
+  Pipeline,
+  PipelineRunRecord,
   RpcResponse,
   RpcState,
   SessionDetail,
@@ -12,11 +17,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
+  const raw = await response.text();
+  const parsed = (raw.length === 0 ? null : (JSON.parse(raw) as unknown)) as
+    | T
+    | { error?: string }
+    | null;
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `HTTP ${String(response.status)} ${response.statusText}`);
+    const errBody = parsed as { error?: string } | null;
+    throw new Error(errBody?.error ?? `HTTP ${String(response.status)} ${response.statusText}`);
   }
-  return (await response.json()) as T;
+  return (parsed ?? {}) as T;
 }
 
 export interface SessionListResponse {
@@ -64,6 +74,22 @@ export const api = {
 
   rpcMessages(): Promise<MessagesResponse> {
     return request<MessagesResponse>('/api/rpc/messages');
+  },
+
+  rpcEntries(): Promise<EntriesResponse> {
+    return request<EntriesResponse>('/api/rpc/entries');
+  },
+
+  // Extension UI protocol (P1-01)
+  uiRequests(): Promise<{ requests: ExtensionUiRequest[] }> {
+    return request<{ requests: ExtensionUiRequest[] }>('/api/rpc/ui-requests');
+  },
+
+  respondUi(response: ExtensionUiResponse): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/rpc/ui-respond', {
+      method: 'POST',
+      body: JSON.stringify(response),
+    });
   },
 
   prompt(
@@ -210,5 +236,67 @@ export const api = {
 
   commands(): Promise<PiCommand[]> {
     return request<{ commands: PiCommand[] }>('/api/rpc/commands').then((response) => response.commands);
+  },
+
+  /* ---- pipelines (P1-02-C) ---- */
+
+  pipelines(): Promise<{ pipelines: Pipeline[] }> {
+    return request<{ pipelines: Pipeline[] }>('/api/pipelines');
+  },
+
+  savePipeline(pipeline: Pipeline): Promise<{ pipeline: Pipeline }> {
+    return request<{ pipeline: Pipeline }>('/api/pipelines', {
+      method: 'POST',
+      body: JSON.stringify({ pipeline }),
+    });
+  },
+
+  deletePipeline(id: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/pipelines/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  pipelineRuns(): Promise<{ runs: PipelineRunRecord[] }> {
+    return request<{ runs: PipelineRunRecord[] }>('/api/pipelines/runs');
+  },
+
+  runPipeline(pipelineId: string, input?: string): Promise<{ run: PipelineRunRecord }> {
+    return request<{ run: PipelineRunRecord }>('/api/pipelines/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        pipelineId,
+        ...(input === undefined || input.length === 0 ? {} : { input }),
+      }),
+    });
+  },
+
+  abortPipelineRun(runId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/abort`, {
+      method: 'POST',
+    });
+  },
+
+  approvePipelineRun(runId: string, approve: boolean): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/api/pipelines/runs/${encodeURIComponent(runId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ approve }),
+    });
+  },
+
+  /* ---- skill → pipeline conversion (P1-10 A) ---- */
+
+  convertPipelineHard(commandName: string): Promise<{ pipeline: Pipeline }> {
+    return request<{ pipeline: Pipeline }>('/api/pipelines/convert/hard', {
+      method: 'POST',
+      body: JSON.stringify({ commandName }),
+    });
+  },
+
+  convertPipelineSoft(commandName: string): Promise<{ pipeline: Pipeline }> {
+    return request<{ pipeline: Pipeline }>('/api/pipelines/convert/soft', {
+      method: 'POST',
+      body: JSON.stringify({ commandName }),
+    });
   },
 };

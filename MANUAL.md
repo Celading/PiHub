@@ -3,6 +3,8 @@
 *Your π, connecting everything — a local web panel for the
 [pi coding agent](https://pi.dev).*
 
+**English** · [中文版](MANUAL.zh-CN.md)
+
 > **Safety first:** PiHub listens on `127.0.0.1` / `localhost` only. It never
 > reads `~/.pi/agent/auth.json`. Everything you see is on your machine.
 

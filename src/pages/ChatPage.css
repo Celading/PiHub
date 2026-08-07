@@ -206,3 +206,113 @@
   color: var(--status-warning);
   animation: thinking-pulse 1.2s ease-in-out infinite;
 }
+
+/* Reply footer (P1-11 B): hidden until the reply area is hovered; pure
+ * icons with IconButton hover-tooltip labels. */
+
+.chat-unit-footer {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 0 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-unit:hover .chat-unit-footer,
+.chat-unit-footer:focus-within {
+  opacity: 1;
+}
+
+/* Tool-cluster collapse (P1-10 C3). */
+
+.tool-cluster {
+  margin: 6px 0;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.tool-cluster-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+  opacity: 0.8;
+}
+
+.tool-cluster-header:hover {
+  opacity: 1;
+}
+
+.tool-cluster-chevron {
+  margin-left: auto;
+}
+
+.tool-cluster-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 10px 10px;
+  border-top: 1px dashed var(--border);
+}
+
+/* P1-13 D/E: user prompt footer + edit-and-resend. */
+
+.chat-unit-user-footer {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-unit:hover .chat-unit-user-footer,
+.chat-unit-user-footer:focus-within {
+  opacity: 1;
+}
+
+.chat-unit-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 10px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.chat-unit-edit-text {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.chat-unit-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.chat-unit-edit-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+}

@@ -15,6 +15,25 @@
   gap: var(--space-3);
 }
 
+/* kMode badge (KMODE-001 K5): demo/debug are highlighted, production is hidden */
+.header-mode-badge {
+  padding: 2px var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.header-mode-badge[data-mode='demo'] {
+  background-color: var(--status-warning);
+  color: #161616;
+}
+
+.header-mode-badge[data-mode='debug'] {
+  background-color: var(--background-inverse);
+  color: var(--text-inverse);
+}
+
 .header-brand-mark {
   display: inline-flex;
   align-items: center;

@@ -195,3 +195,18 @@
   font-size: var(--text-sm);
   color: var(--status-ok);
 }
+
+/* P1-12 E: one-click provider templates. */
+.channels-template-select {
+  font-size: 12px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  max-width: 260px;
+}
+
+.channels-template-select:disabled {
+  opacity: 0.5;
+}

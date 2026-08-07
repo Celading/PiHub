@@ -11,7 +11,19 @@
   <strong>pi coding agent 的本地 Web 面板。</strong><br/>
   <sub>流式对话 · 会话树 · 模型与成本 · 扩展与技能 — 全在本机浏览器里</sub>
 </p>
+<p align="center">
+  <a href="README.md">English</a> · <strong><a href="README-CN.md">中文</a></strong> · <a href="docs/README.ru-RU.md">Русский</a>
+</p>
 </div>
+
+## 代码仓库
+
+PiHub 在以下两个同步镜像中开放开发：
+
+- **GitHub**：<https://github.com/HapPub/PiHub>
+- **AtomGit**：<https://atomgit.com/HapPub/PiHub>
+
+欢迎在两个镜像上提交 issue 与 PR；两仓保持同步。
 
 ## PiHub 是什么
 
@@ -51,6 +63,15 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 通用设置 · 个性化设置 · 模型渠道 · 会话管理 · 权限管理 ·
 提示词收藏夹 · 实验室能力
 
+### 自动化 · 技能 · 工程流
+- 命令中心：`get_commands` 全量目录（技能 / 提示词模板 / 扩展命令），搜索与一键运行
+- 自动化概览：常用开关状态（自动压缩 / 自动重试 / 模式）
+- **工程流（Pipelines）**：PiHub 独家多步编排——prompt / steer / approval /
+  setModel / setThinking 步骤序列在同一 pi 会话上执行，支持匹配分支、
+  错误策略、人工确认闸门与实时运行时间线。隶属于 HaomoKit 泛化能力。
+- 技能导入：将任意技能转换为工程流——算法转换（零 token）或 agent 辅助转换
+  （消耗 token，操作前确认）
+
 ## 快速开始
 
 需要 [pi](https://pi.dev)（`pi --version` ≥ 0.83）与 Node.js ≥ 20。
@@ -70,6 +91,19 @@ npm test           # schema 与会话解析测试
 ```
 
 然后打开 **http://localhost:18384**。面板仅监听本机回环地址。
+
+## 界面预览
+
+展示模式截图（合成、去敏数据）：
+
+| | |
+|---|---|
+| ![对话](docs/screenshots/demo-chat.png) | ![会话](docs/screenshots/demo-sessions.png) |
+| 聊天流：推理、工具集合折叠、实时已消耗计时、回复底部新建分支/复制 | 会话列表：集合与状态灯 |
+| ![统计](docs/screenshots/demo-stats.png) | ![设置](docs/screenshots/demo-settings.png) |
+| 按模型/渠道/目录的 token 与成本统计 | 七大区设置：会话恢复与删除 |
+| ![工程流](docs/screenshots/demo-pipelines.png) | |
+| PiHub 独家工程流：技能导入（硬/软转换）与运行时间线 | |
 
 ## 快捷键
 
@@ -112,6 +146,6 @@ Apache License 2.0 — 见 [LICENSE](LICENSE)。
 
 ## 文档
 
-- [Manual（英文）](../MANUAL.md)
-- [README（English）](../README.md)
-- [README на русском](README.ru-RU.md)
+- [Manual（中文）](MANUAL.zh-CN.md) · [Manual（English）](MANUAL.md)
+- [README（English）](README.md)
+- [README на русском](docs/README.ru-RU.md)

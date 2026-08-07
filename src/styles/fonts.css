@@ -75,3 +75,52 @@
 .hico-chevron-right::before { content: '\F00D9'; }
 .hico-chevron-left::before { content: '\F00DA'; }
 .hico-chevron-down::before { content: '\F00DB'; }
+
+/* ---- P1-11: HMSymbols Extra subset (8 glyphs, PUA F0600+) ---- */
+@font-face {
+  font-family: 'HMSymbols Extra';
+  src: url('../assets/fonts/hm-symbols-extra.woff2') format('woff2');
+  font-display: swap;
+}
+
+.hico-plus-square-fill::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0600';
+}
+.hico-arrow-triangle-divide::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0601';
+}
+.hico-square-on-square-fill::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0602';
+}
+.hico-folder-badge-plus::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0603';
+}
+.hico-arrow-counterclockwise-clock::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0604';
+}
+.hico-yuansign-coupon-fill::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0605';
+}
+.hico-mind-map::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0606';
+}
+.hico-cross-store::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0607';
+}
+.hico-trash::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0608';
+}
+
+.hico-square-and-pencil::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0609';
+}

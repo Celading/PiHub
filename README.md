@@ -11,7 +11,19 @@
   <strong>A local web panel for the <a href="https://pi.dev">pi coding agent</a>.</strong><br/>
   <sub>streaming chat · session trees · models &amp; costs · extensions &amp; skills — in your browser, on your machine</sub>
 </p>
+<p align="center">
+  <strong><a href="README.md">English</a></strong> · <a href="README-CN.md">中文</a> · <a href="docs/README.ru-RU.md">Русский</a>
+</p>
 </div>
+
+## Repository
+
+PiHub is developed in the open under two synchronized mirrors:
+
+- **GitHub**: <https://github.com/HapPub/PiHub>
+- **AtomGit**: <https://atomgit.com/HapPub/PiHub>
+
+Issues and pull requests are welcome on either mirror; both stay in sync.
 
 ## What is PiHub
 
@@ -52,6 +64,17 @@ no external UI source is reused.
 General · Personalization · Models &amp; Channels · Session Management ·
 Permissions · Prompt Favorites · Lab
 
+### Automation · Skills · Pipelines
+- Command center: the full `get_commands` directory (skills / prompt
+  templates / extensions) with search and one-click run
+- Automation overview of live switches (auto-compaction, auto-retry, modes)
+- **Pipelines**: PiHub-exclusive multi-step orchestration — a sequence of
+  prompt / steer / approval / model / thinking steps executed on one pi
+  session, with match branching, error strategies, human approval gates and
+  a live run timeline. Part of the HaomoKit generalized capability set.
+- Skill import: convert any skill into a pipeline — algorithmic conversion
+  (zero tokens) or agent-assisted conversion (token-gated, confirmed first)
+
 ## Quick Start
 
 Requires [pi](https://pi.dev) (`pi --version` ≥ 0.83) and Node.js ≥ 20.
@@ -72,6 +95,19 @@ npm test           # schema & session-parsing tests
 
 Then open **http://localhost:18384**. The panel binds to the loopback
 interface only.
+
+## Screenshots
+
+A peek at the panel in showcase mode (synthetic, desensitized data):
+
+| | |
+|---|---|
+| ![Chat](docs/screenshots/demo-chat.png) | ![Sessions](docs/screenshots/demo-sessions.png) |
+| Chat stream with reasoning, tool-cluster collapse, live elapsed timer and per-reply branch/copy | Session list with collections and status lights |
+| ![Stats](docs/screenshots/demo-stats.png) | ![Settings](docs/screenshots/demo-settings.png) |
+| Token & cost analytics by model / provider / directory | Seven-area settings with session restore & delete |
+| ![Pipelines](docs/screenshots/demo-pipelines.png) | |
+| PiHub-exclusive Pipelines: skill import (hard/soft convert) and run timeline | |
 
 ## Keyboard Shortcuts
 
@@ -117,5 +153,5 @@ Third-party assets:
 ## Documentation
 
 - [Manual (English)](MANUAL.md)
-- [README 中文](docs/README.zh-CN.md)
+- [README 中文](README-CN.md)
 - [README на русском](docs/README.ru-RU.md)

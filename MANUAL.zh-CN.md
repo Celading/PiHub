@@ -2,6 +2,8 @@
 
 *你的π，由此汇聚 — pi coding agent 的本地 Web 面板。*
 
+[English](MANUAL.md) · **中文版**
+
 > **安全优先：** PiHub 仅监听 `127.0.0.1` / `localhost`，从不读取
 > `~/.pi/agent/auth.json`。你所见的一切都在本机。
 

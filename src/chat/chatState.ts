@@ -6,6 +6,9 @@ export interface ChatMessage {
   key: string;
   message: AgentMessage;
   isStreaming: boolean;
+  /** pi session-tree node id (get_entries / runtime events); used to fork
+   *  a branch at this message. Absent for history reloads without a tree. */
+  entryId?: string;
 }
 
 export interface RunSummary {
@@ -35,7 +38,7 @@ interface ChatState {
 type ChatAction =
   | { type: 'reset'; messages: ChatMessage[]; rpcState: RpcState | null }
   | { type: 'push'; message: AgentMessage }
-  | { type: 'updateLast'; message: AgentMessage }
+  | { type: 'updateLast'; message: AgentMessage; entryId?: string }
   | { type: 'markStreaming'; streaming: boolean }
   | { type: 'agentRunning'; running: boolean }
   | { type: 'queue'; steer: string[]; followUp: string[] }
@@ -43,7 +46,8 @@ type ChatAction =
   | { type: 'error'; error: string }
   | { type: 'runSettled'; at: number }
   | { type: 'runAborted' }
-  | { type: 'retrying'; retrying: boolean };
+  | { type: 'retrying'; retrying: boolean }
+  | { type: 'clearAfter'; key: string };
 
 let nextKey = 0;
 
@@ -99,20 +103,35 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         return {
           ...state,
           messages: [
-            { key: makeKey(), message: action.message, isStreaming: state.isAgentRunning },
+            {
+              key: makeKey(),
+              message: action.message,
+              isStreaming: state.isAgentRunning,
+              ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
+            },
           ],
         };
       }
       const messages = [...state.messages];
       const last = messages[messages.length - 1];
-      if (last === undefined || last.message.role !== 'assistant') {
+      // Same-role → replace in place (covers user message_end after
+      // message_start, and assistant streaming updates). Different role →
+      // append. Previously only assistant was updated, so user message_end
+      // pushed a duplicate of the just-started user turn.
+      if (last !== undefined && last.message.role === action.message.role) {
+        messages[messages.length - 1] = {
+          ...last,
+          message: action.message,
+          isStreaming: state.isAgentRunning && action.message.role === 'assistant',
+          ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
+        };
+      } else {
         messages.push({
           key: makeKey(),
           message: action.message,
-          isStreaming: state.isAgentRunning,
+          isStreaming: state.isAgentRunning && action.message.role === 'assistant',
+          ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
         });
-      } else {
-        messages[messages.length - 1] = { ...last, message: action.message };
       }
       return { ...state, messages };
     }
@@ -157,6 +176,23 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, rpcState: action.rpcState };
     case 'error':
       return { ...state, error: action.error };
+    case 'clearAfter': {
+      // P1-13 D: resending an edited prompt drops everything from that
+      // message onward (panel-side display; the pi session file is not
+      // rewritten).
+      const index = state.messages.findIndex((message) => message.key === action.key);
+      if (index === -1) {
+        return state;
+      }
+      return {
+        ...state,
+        messages: state.messages.slice(0, index),
+        isAgentRunning: false,
+        runStartedAt: null,
+        lastRun: null,
+        runAbortedFlag: false,
+      };
+    }
   }
 }
 
@@ -187,12 +223,19 @@ function eventToAction(event: RpcStreamEvent): ChatAction | null {
       return null;
     case 'message_update':
       if (isAgentMessage(event['message'])) {
-        return { type: 'updateLast', message: event['message'] };
+        const assistantEvent = event['assistantMessageEvent'] as { id?: unknown } | undefined;
+        const entryId = typeof assistantEvent?.id === 'string' ? assistantEvent.id : undefined;
+        return { type: 'updateLast', message: event['message'], ...(entryId === undefined ? {} : { entryId }) };
       }
       return null;
     case 'message_end':
       if (isAgentMessage(event['message'])) {
-        return { type: 'updateLast', message: event['message'] };
+        const endId = event['id'];
+        return {
+          type: 'updateLast',
+          message: event['message'],
+          ...(typeof endId === 'string' ? { entryId: endId } : {}),
+        };
       }
       return null;
     case 'queue_update': {
@@ -231,6 +274,8 @@ export interface ChatSession {
   setModel: (provider: string, modelId: string) => Promise<void>;
   setThinkingLevel: (level: string) => Promise<void>;
   refreshState: () => Promise<void>;
+  /** Drops all messages from `key` onward (edited-prompt resend). */
+  clearAfter: (key: string) => void;
 }
 
 export function useChatSession(): ChatSession {
@@ -244,10 +289,27 @@ export function useChatSession(): ChatSession {
         if (cancelled) {
           return;
         }
+        // Entry ids are best-effort: a transient failure must not blank the
+        // whole chat — messages and state still load, branch buttons just
+        // stay disabled until the next run provides ids.
+        const entriesRes = await api.rpcEntries().catch(() => null);
         const rawMessages = Array.isArray(messagesRes.messages) ? messagesRes.messages : [];
         const chatMessages: ChatMessage[] = rawMessages
           .filter(isAgentMessage)
           .map((message) => ({ key: makeKey(), message, isStreaming: false }));
+        // Align the session-tree entry ids (get_entries) with the message
+        // list by order — both sequences follow conversation order.
+        if (entriesRes !== null && Array.isArray(entriesRes.entries)) {
+          const messageEntryIds = entriesRes.entries
+            .filter((entry) => entry.message !== undefined)
+            .map((entry) => entry.id);
+          chatMessages.forEach((chatMessage, index) => {
+            const entryId = messageEntryIds[index];
+            if (entryId !== undefined) {
+              chatMessage.entryId = entryId;
+            }
+          });
+        }
         dispatch({ type: 'reset', messages: chatMessages, rpcState: stateRes });
       } catch (error) {
         if (!cancelled) {
@@ -386,5 +448,8 @@ export function useChatSession(): ChatSession {
     setModel,
     setThinkingLevel,
     refreshState,
+    clearAfter: (key: string) => {
+      dispatch({ type: 'clearAfter', key });
+    },
   };
 }

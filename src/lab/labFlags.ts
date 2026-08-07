@@ -3,13 +3,21 @@ import { useEffect, useState } from 'react';
 export const LAB_STORAGE_KEY = 'pi-panel:lab';
 export const LAB_CHANGED_EVENT = 'pihub:lab-changed';
 
-export type LabFlag = 'streamAnimation' | 'compactTools' | 'settledNotify' | 'simplifiedOutput';
+export type LabFlag =
+  | 'streamAnimation'
+  | 'compactTools'
+  | 'settledNotify'
+  | 'simplifiedOutput'
+  | 'showThinkingLive';
 
 const LAB_DEFAULTS: Record<LabFlag, boolean> = {
   streamAnimation: true,
   compactTools: false,
   settledNotify: true,
   simplifiedOutput: false,
+  // L005 owner spec stays the default: reasoning text is hidden while
+  // streaming; the option reveals it live until the run settles.
+  showThinkingLive: false,
 };
 
 export function getLabFlag(flag: LabFlag): boolean {

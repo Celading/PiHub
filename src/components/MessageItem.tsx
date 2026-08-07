@@ -3,6 +3,7 @@ import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
+import { summarizeToolCall } from './toolSummary.js';
 import './MessageItem.css';
 
 export type ThinkingStatus = 'active' | 'done' | 'interrupted';
@@ -12,8 +13,10 @@ function ToolCallBlock({
 }: {
   block: Extract<ContentBlock, { type: 'toolCall' }>;
 }): React.JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const argumentsText = JSON.stringify(block.arguments, null, 2);
+  const summary = summarizeToolCall(block.name, block.arguments);
 
   return (
     <div className="toolcall">
@@ -25,13 +28,16 @@ function ToolCallBlock({
         }}
         aria-expanded={expanded}
       >
-        <span className="toolcall-name mono">{block.name}</span>
+        <span className="toolcall-summary">
+          {t(summary.key, summary.params)}
+        </span>
         <span className="toolcall-chevron" aria-hidden="true">
-          {expanded ? '−' : '+'}
+          {expanded ? '−' : '>'}
         </span>
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>
         <div className="collapse-region-inner">
+          <div className="toolcall-meta mono">{block.name}</div>
           <pre className="toolcall-args">{argumentsText}</pre>
         </div>
       </div>
@@ -50,6 +56,9 @@ function ThinkingBlock({
 }): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  // L005 owner spec keeps the reasoning body collapsed while streaming; the
+  // lab option reveals it live until the run settles.
+  const showLive = useLabFlag('showThinkingLive');
 
   const label =
     status === 'active'
@@ -61,11 +70,8 @@ function ThinkingBlock({
     status === 'interrupted' ? 'hico-exclamationmark' : 'hico-waveform';
 
   if (status === 'active') {
-    // During streaming the thinking body stays collapsed: only the
-    // transition animation is shown — the label characters fade in/out
-    // one by one (owner spec).
     return (
-      <div className="thinking thinking-active" data-anim={animate} data-expanded={false}>
+      <div className="thinking thinking-active" data-anim={animate} data-expanded={showLive}>
         <div className="thinking-toggle" aria-live="polite">
           <span className={`hico ${iconClass} thinking-icon`} aria-hidden="true" />
           <span className="thinking-label mono" aria-hidden="true">
@@ -81,6 +87,9 @@ function ThinkingBlock({
           </span>
           <span className="thinking-label mono thinking-sr">{label}</span>
         </div>
+        {showLive && text.trim().length > 0 ? (
+          <div className="thinking-body thinking-body-live">{text}</div>
+        ) : null}
       </div>
     );
   }
@@ -120,34 +129,59 @@ function ImageBlock({
   return <img className="message-image" src={src} alt="attachment" />;
 }
 
+/** Renderable block: known ContentBlock or a provider-extension generic
+ *  object (P1-12 E) that is skipped by the switch. */
+type RenderBlock = ContentBlock | Record<string, unknown>;
+
 function ContentBlocks({
   blocks,
   thinkingStatus,
   animate,
 }: {
-  blocks: ContentBlock[];
+  blocks: RenderBlock[];
   thinkingStatus: ThinkingStatus;
   animate: boolean;
 }): React.JSX.Element {
   return (
     <>
       {blocks.map((block, index) => {
-        switch (block.type) {
-          case 'text':
-            return <Markdown key={index} text={block.text} />;
-          case 'thinking':
-            return (
+        // Unknown provider blocks (e.g. Volcengine reasoning_content) are
+        // preserved in the data but render nothing here. The runtime guard
+        // goes through `unknown` because the static type cannot express the
+        // loose schema output.
+        const raw: unknown = block;
+        if (raw === null || typeof raw !== 'object' || !('type' in raw)) {
+          return null;
+        }
+        const typeValue: unknown = (raw as { type?: unknown }).type;
+        if (typeof typeValue !== 'string') {
+          return null;
+        }
+        const known = block as ContentBlock;
+        switch (known.type) {
+          case 'text': {
+            // Runtime guard: the loose provider-tolerant schema can keep a
+            // malformed block alive; never crash the stream on it.
+            const textValue: unknown = (known as { text?: unknown }).text;
+            return typeof textValue === 'string' ? (
+              <Markdown key={index} text={textValue} />
+            ) : null;
+          }
+          case 'thinking': {
+            const thinkingValue: unknown = (known as { thinking?: unknown }).thinking;
+            return typeof thinkingValue === 'string' ? (
               <ThinkingBlock
                 key={index}
-                text={block.thinking}
+                text={thinkingValue}
                 status={thinkingStatus}
                 animate={animate}
               />
-            );
+            ) : null;
+          }
           case 'toolCall':
-            return <ToolCallBlock key={index} block={block} />;
+            return <ToolCallBlock key={index} block={known} />;
           case 'image':
-            return <ImageBlock key={index} block={block} />;
+            return <ImageBlock key={index} block={known} />;
         }
       })}
     </>
@@ -209,7 +243,9 @@ function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 't
         aria-expanded={expanded}
       >
         <span className="toolresult-name mono">{message.toolName}</span>
-        <span className="toolresult-status mono">{message.isError ? 'error' : 'ok'}</span>
+        <span className="toolresult-status mono" aria-label={message.isError ? 'error' : 'ok'}>
+          {message.isError ? '❌' : '✅'}
+        </span>
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>

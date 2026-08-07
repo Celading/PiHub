@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { rpcResponseSchema, rpcStreamEventSchema } from '../shared/schemas.js';
-import type { RpcResponse, RpcStreamEvent } from '../shared/types.js';
+import { extensionUiRequestSchema, rpcResponseSchema, rpcStreamEventSchema } from '../shared/schemas.js';
+import type { ExtensionUiMethod, ExtensionUiRequest, ExtensionUiResponse, RpcResponse, RpcStreamEvent } from '../shared/types.js';
 
 const MAX_RESTARTS = 3;
 const RESTART_BACKOFF_MS = 1000;
@@ -42,9 +42,17 @@ interface PendingRequest {
   timer: NodeJS.Timeout;
 }
 
+/** Pending extension UI interaction awaiting a frontend answer. */
+interface PendingUiRequest {
+  request: ExtensionUiRequest;
+  timer: NodeJS.Timeout | null;
+}
+
 interface RpcBridgeEvents {
   event: (event: RpcStreamEvent) => void;
   response: (response: RpcResponse) => void;
+  /** Extension UI interaction (fire-and-forget and dialog requests). */
+  'ui-request': (request: ExtensionUiRequest) => void;
   exit: (code: number | null) => void;
   error: (error: Error) => void;
 }
@@ -59,6 +67,7 @@ interface RpcBridgeEvents {
 export class RpcBridge extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
   private pending = new Map<string, PendingRequest>();
+  private pendingUi = new Map<string, PendingUiRequest>();
   private nextId = 1;
   private buffer = '';
   private restartCount = 0;
@@ -141,6 +150,11 @@ export class RpcBridge extends EventEmitter {
     return this.child !== null;
   }
 
+  /** Number of in-flight RPC requests awaiting a response (debug channel). */
+  pendingRequestCount(): number {
+    return this.pending.size;
+  }
+
   /** Fire-and-forget command with response correlation. */
   send(command: RpcCommand): Promise<RpcResponse> {
     const id = `pi-panel-${String(this.nextId)}`;
@@ -176,6 +190,39 @@ export class RpcBridge extends EventEmitter {
     return promise;
   }
 
+  /** Pending dialog requests the frontend still owes an answer for. */
+  getPendingUiRequests(): ExtensionUiRequest[] {
+    return [...this.pendingUi.values()].map((entry) => entry.request);
+  }
+
+  /** Answer an extension UI dialog request back on stdin. */
+  sendUiResponse(response: ExtensionUiResponse): boolean {
+    if (this.child === null) {
+      return false;
+    }
+    const pending = this.pendingUi.get(response.id);
+    if (pending === undefined) {
+      return false;
+    }
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingUi.delete(response.id);
+    const payload: Record<string, unknown> = {
+      type: 'extension_ui_response',
+      id: response.id,
+    };
+    if (response.cancelled === true) {
+      payload['cancelled'] = true;
+    } else if (response.confirmed !== undefined) {
+      payload['confirmed'] = response.confirmed;
+    } else {
+      payload['value'] = response.value ?? '';
+    }
+    this.child.stdin.write(`${JSON.stringify(payload)}\n`);
+    return true;
+  }
+
   private handleLine(line: string): void {
     const trimmed = line.endsWith('\r') ? line.slice(0, -1) : line;
     if (trimmed.length === 0) {
@@ -192,6 +239,29 @@ export class RpcBridge extends EventEmitter {
       return;
     }
     const record = parsed as Record<string, unknown>;
+    if (record['type'] === 'extension_ui_request') {
+      const request = extensionUiRequestSchema.safeParse(record);
+      if (!request.success) {
+        this.emit('error', new Error('invalid extension_ui_request shape from pi'));
+        return;
+      }
+      const data = request.data;
+      const dialogMethods: ExtensionUiMethod[] = ['select', 'confirm', 'input', 'editor'];
+      if (dialogMethods.includes(data.method)) {
+        // Dialog: hold until the frontend answers (agent auto-resolves on
+        // timeout — we only relay the timeout hint to the UI).
+        const timeout = 'timeout' in data ? data.timeout : undefined;
+        const timer =
+          typeof timeout === 'number'
+            ? setTimeout(() => {
+                this.pendingUi.delete(data.id);
+              }, timeout)
+            : null;
+        this.pendingUi.set(data.id, { request: data, timer });
+      }
+      this.emit('ui-request', data);
+      return;
+    }
     if (record['type'] === 'response') {
       const response = rpcResponseSchema.safeParse(record);
       if (!response.success) {

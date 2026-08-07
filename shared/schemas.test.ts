@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentMessageSchema,
+  extensionUiRequestSchema,
   messageEventSchema,
+  rpcStreamEventSchema,
   sessionEventSchema,
   sessionHeaderEventSchema,
 } from './schemas.js';
@@ -172,5 +174,110 @@ describe('session event schema', () => {
     if (result.success && result.data.type === 'session_info') {
       expect(result.data.name).toBe('PiHub Smoke Session');
     }
+  });
+});
+
+describe('extension UI request schema (P1-01)', () => {
+  it('parses a select dialog request', () => {
+    const frame = {
+      type: 'extension_ui_request',
+      id: 'sel-1',
+      method: 'select',
+      title: 'Pick a model',
+      options: ['a', 'b', 'c'],
+      timeout: 10000,
+    };
+    const result = extensionUiRequestSchema.safeParse(frame);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.method).toBe('select');
+      if (result.data.method === 'select') {
+        expect(result.data.options).toHaveLength(3);
+        expect('timeout' in result.data ? result.data.timeout : undefined).toBe(10000);
+      }
+    }
+  });
+
+  it('parses confirm / input / editor / notify / status / widget / title frames', () => {
+    const frames = [
+      { type: 'extension_ui_request', id: 'c1', method: 'confirm', title: 'OK?', message: 'really?' },
+      { type: 'extension_ui_request', id: 'i1', method: 'input', title: 'Name', placeholder: 'x' },
+      { type: 'extension_ui_request', id: 'e1', method: 'editor', title: 'Edit', prefill: 'hello' },
+      { type: 'extension_ui_request', id: 'n1', method: 'notify', message: 'done', notifyType: 'warning' },
+      { type: 'extension_ui_request', id: 's1', method: 'setStatus', statusKey: 'run', statusText: 'busy' },
+      { type: 'extension_ui_request', id: 'w1', method: 'setWidget', widgetKey: 'stats', widgetLines: ['1', '2'] },
+      { type: 'extension_ui_request', id: 't1', method: 'setTitle', title: 'PiHub' },
+      { type: 'extension_ui_request', id: 'x1', method: 'set_editor_text', text: 'content' },
+    ];
+    for (const frame of frames) {
+      const result = extensionUiRequestSchema.safeParse(frame);
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects unknown methods', () => {
+    const bad = { type: 'extension_ui_request', id: 'x', method: 'explode' };
+    expect(extensionUiRequestSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe('rpc stream event schema', () => {
+  it('validates type and preserves protocol fields (passthrough)', () => {
+    const frame = {
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+      assistantMessageEvent: { id: 'm1', parentId: null },
+    };
+    const result = rpcStreamEventSchema.safeParse(frame);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const data = result.data as Record<string, unknown>;
+      expect(data['message']).toEqual(frame.message);
+      expect(data['assistantMessageEvent']).toEqual(frame.assistantMessageEvent);
+    }
+  });
+
+  it('rejects non-object lines without a string type', () => {
+    expect(rpcStreamEventSchema.safeParse('garbage').success).toBe(false);
+    expect(rpcStreamEventSchema.safeParse({ type: 42 }).success).toBe(false);
+  });
+});
+
+describe('provider-tolerant content blocks (P1-12 E)', () => {
+  it('keeps unknown block types without failing the message', () => {
+    const result = agentMessageSchema.safeParse({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'visible answer' },
+        { type: 'reasoning', content: 'volcengine-style hidden reasoning' },
+      ],
+      timestamp: Date.now(),
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.role === 'assistant') {
+      const blocks = result.data.content;
+      expect(Array.isArray(blocks)).toBe(true);
+      if (Array.isArray(blocks)) {
+        const texts = blocks.filter(
+          (block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text',
+        );
+        expect(texts).toHaveLength(1);
+        // unknown block survives as a generic object
+        expect(
+          blocks.some((block) => (block as { type?: string }).type === 'reasoning'),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('degrades malformed known blocks instead of dropping the message', () => {
+    const result = agentMessageSchema.safeParse({
+      role: 'assistant',
+      content: [{ type: 'text', text: 42 }],
+      timestamp: Date.now(),
+    });
+    // The loose union keeps the message alive; the renderer guards the
+    // block shape at runtime (P1-12 E).
+    expect(result.success).toBe(true);
   });
 });

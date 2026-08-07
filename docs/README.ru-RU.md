@@ -11,6 +11,9 @@
   <strong>Локальная веб-панель для pi coding agent.</strong><br/>
   <sub>потоковый чат · деревья сессий · модели и стоимость · расширения и навыки — в вашем браузере, на вашей машине</sub>
 </p>
+<p align="center">
+  <a href="../README.md">English</a> · <a href="../README-CN.md">中文</a> · <strong><a href="README.ru-RU.md">Русский</a></strong>
+</p>
 </div>
 
 ## Что такое PiHub

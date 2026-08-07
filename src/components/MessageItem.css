@@ -208,6 +208,25 @@
   color: var(--primary);
 }
 
+/* P1-12 C / P1-13 C: one-line human summary of the tool call; long bash
+ * lines fade out to transparent on the right (mask over the full width —
+ * short summaries stay fully visible). */
+.toolcall-summary {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, black 0%, black 78%, transparent 100%);
+  mask-image: linear-gradient(to right, black 0%, black 78%, transparent 100%);
+}
+
+.toolcall-meta {
+  font-size: 0.72rem;
+  color: var(--text-placeholder);
+  margin-bottom: var(--space-1);
+}
+
 .toolcall-chevron {
   font-size: 0.75rem;
   color: var(--text-placeholder);
@@ -278,4 +297,12 @@
 .message-image {
   max-width: 100%;
   border: var(--border-thin) solid var(--border-subtle);
+}
+
+/* P1-12 B: live reasoning body while streaming (lab option). */
+.thinking-body-live {
+  padding-top: var(--space-2);
+  max-height: 300px;
+  overflow: auto;
+  border-top: 1px dashed var(--border);
 }

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
-import { archiveSession } from '../sessions/sessionActions.js';
 import { api } from '../api/client.js';
+import type { AgentMessage } from '../../shared/types.js';
 import './ChatPage.css';
 
 /** One user prompt and everything that followed it until the next prompt. */
@@ -45,6 +46,99 @@ function formatDuration(ms: number, locale: Locale): string {
     return `${pad(hours)}时${pad(minutes)}分${pad(seconds)}秒`;
   }
   return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+}
+
+/** Extracts the assistant reply as plain markdown text (copy primitive). */
+function extractAssistantMarkdown(message: AgentMessage): string {
+  if (message.role !== 'assistant') {
+    return '';
+  }
+  return message.content
+    .map((block) => (block.type === 'text' ? block.text : ''))
+    .join('\n')
+    .trim();
+}
+
+/** Extracts the user prompt text (copy + edit primitives, P1-13 D/E). */
+function extractUserPrompt(message: ChatMessage | null): string {
+  if (message === null || message.message.role !== 'user') {
+    return '';
+  }
+  const content = message.message.content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content
+    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .join('\n')
+    .trim();
+}
+
+/** Items that belong in the collapsed tool cluster only.
+ *  Assistant messages that also carry text/thinking must stay in the main
+ *  stream — otherwise the moment a toolCall block is appended mid-stream the
+ *  whole reply vanishes into the (default-collapsed) cluster, which looks
+ *  like flickering "text appears then disappears until the run finishes". */
+function isToolMessage(item: ChatMessage): boolean {
+  if (item.message.role === 'toolResult' || item.message.role === 'bashExecution') {
+    return true;
+  }
+  if (item.message.role === 'assistant') {
+    const { content } = item.message;
+    return content.length > 0 && content.every((block) => block.type === 'toolCall');
+  }
+  return false;
+}
+
+/** Tool-cluster collapse (P1-10 C3): all tool blocks of one prompt run fold
+ *  into a single set with a tool-name list header. */
+function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const names = [
+    ...new Set(
+      items
+        .map((item) => {
+          if (item.message.role === 'toolResult') {
+            return item.message.toolName;
+          }
+          if (item.message.role === 'bashExecution') {
+            return 'bash';
+          }
+          if (item.message.role === 'assistant') {
+            const call = item.message.content.find((block) => block.type === 'toolCall');
+            return call?.type === 'toolCall' && typeof call.name === 'string' ? call.name : '';
+          }
+          return '';
+        })
+        .filter((name) => name.length > 0),
+    ),
+  ];
+  return (
+    <div className="tool-cluster" data-expanded={expanded}>
+      <button
+        type="button"
+        className="tool-cluster-header mono"
+        onClick={() => {
+          setExpanded(!expanded);
+        }}
+        aria-expanded={expanded}
+      >
+        <span className="hico hico-rectangle-stack" aria-hidden="true" />
+        <span>{t('workflow.tools', { names: names.join(' / ') })}</span>
+        <span className="tool-cluster-chevron" aria-hidden="true">
+          {expanded ? '−' : '+'}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="tool-cluster-body">
+          {items.map((item) => (
+            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 interface ChatPageProps {
@@ -140,42 +234,121 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     });
   };
 
+  // Branch at the bottom of an agent reply (P1-10 B): pi's fork RPC splits
+  // before a user message, so forking the *next* user message after this
+  // reply yields a branch that ends exactly at this reply. If no next user
+  // message exists (this reply is the session leaf), clone forks at the leaf
+  // — the same break point.
+  const forkAtReply = async (entryId: string): Promise<void> => {
+    try {
+      const index = chat.messages.findIndex((item) => item.entryId === entryId);
+      const nextUser = chat.messages
+        .slice(index + 1)
+        .find((item) => item.message.role === 'user' && item.entryId !== undefined);
+      const response =
+        nextUser?.entryId !== undefined
+          ? await api.forkSession(nextUser.entryId)
+          : await api.cloneSession();
+      if (!response.success) {
+        return;
+      }
+      // P1-13 B: the new branch gets the traditional alias prefix
+      // 新支源自{旧 alias}（旧 alias = session name or last cwd folder）。
+      const branchName = await resolveBranchAlias();
+      if (branchName === null) {
+        onSessionChanged();
+        return;
+      }
+      const sessions = await api.sessions().catch(() => null);
+      const duplicate = sessions?.sessions.some((session) => session.name === branchName) ?? false;
+      if (duplicate) {
+        setBranchConfirm({ entryId, name: branchName });
+        return;
+      }
+      await api.renameSession(branchName);
+      onSessionChanged();
+    } catch {
+      // chat state surfaces backend errors
+    }
+  };
+
+  /** 新支源自{旧 alias}；旧 alias 取当前会话名，缺省用 cwd 最后文件夹名。 */
+  const resolveBranchAlias = async (): Promise<string | null> => {
+    const sessionName = chat.rpcState?.sessionName;
+    if (sessionName !== undefined && sessionName.length > 0) {
+      return t('session.branchPrefix', { name: sessionName });
+    }
+    const file = chat.rpcState?.sessionFile;
+    if (file === undefined || file.length === 0) {
+      return null;
+    }
+    const sessions = await api.sessions().catch(() => null);
+    const current = sessions?.sessions.find((session) => session.fileName === file);
+    const alias =
+      current?.name !== undefined && current.name.length > 0
+        ? current.name
+        : current?.cwd.split('/').filter((part) => part.length > 0).pop() ?? null;
+    return alias === null ? null : t('session.branchPrefix', { name: alias });
+  };
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // P1-13 B: branch alias duplicates need a second confirmation.
+  const [branchConfirm, setBranchConfirm] = useState<{ entryId: string; name: string } | null>(
+    null,
+  );
+  // P1-13 D: last-prompt edit-and-resend (double confirmation).
+  const [editingUnitKey, setEditingUnitKey] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [confirmResend, setConfirmResend] = useState(false);
+  // Live elapsed timer for the running unit (1s tick; renders only while a
+  // run is active so idle pages never pay the interval cost).
+  const [, setNowTick] = useState(0);
+
+  useEffect(() => {
+    if (!chat.isAgentRunning) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setNowTick((prev) => prev + 1);
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [chat.isAgentRunning]);
+
+  const runningElapsed =
+    chat.isAgentRunning && chat.runStartedAt !== null ? Date.now() - chat.runStartedAt : 0;
+
+  const copyReplyAsMarkdown = async (item: ChatMessage): Promise<void> => {
+    try {
+      const text = extractAssistantMarkdown(item.message);
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(item.key);
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === item.key ? null : current));
+      }, 1500);
+    } catch {
+      // clipboard unavailable; ignore
+    }
+  };
+
+  const copyUserPrompt = async (item: ChatMessage | null): Promise<void> => {
+    if (item === null) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(extractUserPrompt(item));
+      setCopiedKey(item.key);
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === item.key ? null : current));
+      }, 1500);
+    } catch {
+      // clipboard unavailable; ignore
+    }
+  };
+
   return (
     <section className="chatpage">
-      <div className="chatpage-toolbar">
-        <div className="chatpage-toolbar-spacer" />
-        <div className="chatpage-toolbar-actions">
-          <IconButton
-            icon="hico-square-grid"
-            label={t('sidebar.newBranch')}
-            placement="bottom"
-            onClick={() => {
-              void api
-                .cloneSession()
-                .then((response) => {
-                  if (response.success) {
-                    onSessionChanged();
-                  }
-                })
-                .catch(() => {
-                  // chat state surfaces backend errors
-                });
-            }}
-          />
-          <IconButton
-            icon="hico-rectangle-stack"
-            label={t('sidebar.archive')}
-            placement="bottom"
-            onClick={() => {
-              const file = chat.rpcState?.sessionFile;
-              if (file !== undefined && file.length > 0) {
-                archiveSession(file);
-                onSessionChanged();
-              }
-            }}
-          />
-        </div>
-      </div>
       <div className="chatpage-scroll scroll-area" ref={scrollRef}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
@@ -224,23 +397,150 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                   {!collapsed ? (
                     <div className="chat-unit-body">
                       {unit.user !== null ? (
-                        <MessageItem
-                          message={unit.user.message}
-                          isStreaming={false}
-                        />
+                        editingUnitKey === unit.key ? (
+                          <div className="chat-unit-edit">
+                            <textarea
+                              className="chat-unit-edit-text mono"
+                              value={editText}
+                              spellCheck={false}
+                              onChange={(event) => {
+                                setEditText(event.target.value);
+                                setConfirmResend(false);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  setEditingUnitKey(null);
+                                  setConfirmResend(false);
+                                }
+                              }}
+                            />
+                            <div className="chat-unit-edit-actions">
+                              <button
+                                type="button"
+                                className="btn-secondary mono chat-unit-edit-btn"
+                                onClick={() => {
+                                  setEditingUnitKey(null);
+                                  setConfirmResend(false);
+                                }}
+                              >
+                                {t('chat.cancelEdit')}
+                              </button>
+                              <button
+                                type="button"
+                                className={confirmResend ? 'btn-danger mono chat-unit-edit-btn' : 'btn-primary mono chat-unit-edit-btn'}
+                                disabled={editText.trim().length === 0}
+                                onClick={() => {
+                                  if (!confirmResend) {
+                                    setConfirmResend(true);
+                                    return;
+                                  }
+                                  // Second confirmation overwrites: drop
+                                  // everything from this prompt onward and
+                                  // resend the edited text (P1-13 D).
+                                  const key = unit.key;
+                                  chat.clearAfter(key);
+                                  setEditingUnitKey(null);
+                                  setConfirmResend(false);
+                                  void chat.sendPrompt(editText.trim());
+                                }}
+                              >
+                                {confirmResend ? t('chat.confirmResend') : t('chat.editPrompt')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <MessageItem
+                              message={unit.user.message}
+                              isStreaming={false}
+                            />
+                            <div className="chat-unit-user-footer">
+                              <IconButton
+                                icon="hico-square-on-square-fill"
+                                label={t('chat.copyPrompt')}
+                                placement="top"
+                                onClick={() => {
+                                  void copyUserPrompt(unit.user);
+                                }}
+                              />
+                              {isLast ? (
+                                <IconButton
+                                  icon="hico-square-and-pencil"
+                                  label={t('chat.editPrompt')}
+                                  placement="top"
+                                  onClick={() => {
+                                    setEditingUnitKey(unit.key);
+                                    setEditText(extractUserPrompt(unit.user));
+                                    setConfirmResend(false);
+                                  }}
+                                />
+                              ) : null}
+                            </div>
+                          </>
+                        )
                       ) : null}
-                      {unit.rest.map((item) => (
-                        <MessageItem
-                          key={item.key}
-                          message={item.message}
-                          isStreaming={item.isStreaming}
-                          thinkingStatus={
-                            unitIndex === units.length - 1 ? thinkingStatus : 'done'
-                          }
-                        />
-                      ))}
+                      {(() => {
+                        // Tool blocks of this run collapse into one set
+                        // (P1-10 C3); thinking/text messages render inline.
+                        const toolItems = unit.rest.filter(isToolMessage);
+                        const nonToolItems = unit.rest.filter((item) => !isToolMessage(item));
+                        return (
+                          <>
+                            {nonToolItems.map((item) => (
+                              <MessageItem
+                                key={item.key}
+                                message={item.message}
+                                isStreaming={item.isStreaming}
+                                thinkingStatus={
+                                  unitIndex === units.length - 1 ? thinkingStatus : 'done'
+                                }
+                              />
+                            ))}
+                            {toolItems.length > 0 ? <ToolCluster items={toolItems} /> : null}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : null}
+                  {(() => {
+                    // Reply footer (P1-10 B / P1-11 B): branch at this reply's
+                    // tree node + copy as markdown. Hidden until hover; pure
+                    // icons with IconButton's hover tooltip labels.
+                    const lastAssistant = [...unit.rest].reverse().find(
+                      (item) => item.message.role === 'assistant',
+                    );
+                    const branchEntryId = lastAssistant?.entryId;
+                    if (lastAssistant === undefined) {
+                      return null;
+                    }
+                    return (
+                      <div className="chat-unit-footer">
+                        <IconButton
+                          icon="hico-arrow-triangle-divide"
+                          label={t('sidebar.newBranch')}
+                          placement="top"
+                          disabled={branchEntryId === undefined}
+                          onClick={() => {
+                            if (branchEntryId !== undefined) {
+                              void forkAtReply(branchEntryId);
+                            }
+                          }}
+                        />
+                        <IconButton
+                          icon="hico-square-on-square-fill"
+                          label={
+                            copiedKey === lastAssistant.key
+                              ? t('chat.copied')
+                              : t('chat.copyResult')
+                          }
+                          placement="top"
+                          onClick={() => {
+                            void copyReplyAsMarkdown(lastAssistant);
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
                   {showSummary ? (
                     <div className="chat-unit-summary">
                       <button
@@ -255,7 +555,11 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                         {isRunningUnit ? (
                           <>
                             <span className="hico hico-waveform chat-unit-running" aria-hidden="true" />
-                            <span>{t('workflow.running')}</span>
+                            <span>
+                              {t('workflow.elapsed', {
+                                time: formatDuration(runningElapsed, locale),
+                              })}
+                            </span>
                           </>
                         ) : runSummary !== null && runSummary.aborted ? (
                           <>
@@ -276,7 +580,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                           {collapsed ? '>' : '>'}
                         </span>
                       </button>
-                      {isSettledUnit ? (
+                      {isSettledUnit || isRunningUnit ? (
                         <>
                           {/* Full-width divider line closing the workflow */}
                           <div className="chat-unit-divider" aria-hidden="true" />
@@ -327,6 +631,30 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
           }}
         />
       </div>
+
+      {branchConfirm !== null ? (
+        <ConfirmDialog
+          title={t('sidebar.newBranch')}
+          message={t('session.branchConfirm', { name: branchConfirm.name })}
+          danger={false}
+          confirmLabel={t('sidebar.newBranch')}
+          onConfirm={() => {
+            void (async (): Promise<void> => {
+              try {
+                await api.renameSession(branchConfirm.name);
+              } catch {
+                // chat state surfaces backend errors
+              }
+              setBranchConfirm(null);
+              onSessionChanged();
+            })();
+          }}
+          onCancel={() => {
+            setBranchConfirm(null);
+            onSessionChanged();
+          }}
+        />
+      ) : null}
     </section>
   );
 }

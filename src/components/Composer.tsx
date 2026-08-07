@@ -12,10 +12,18 @@ interface PendingImage extends PromptImage {
   previewUrl: string;
 }
 
+import { ModelPicker } from './ModelPicker.js';
+
 interface ModelOption {
   provider: string;
   modelId: string;
   label: string;
+  /** First-level picker name: channel alias ?? provider key (P1-14). */
+  alias: string;
+  /** User-defined display name (italic in the picker). */
+  customName: boolean;
+  /** Channel without an API key. */
+  locked: boolean;
 }
 
 interface ComposerProps {
@@ -72,23 +80,66 @@ export function Composer({
   }, []);
 
   // Load model options once for the inline model selector (phase-3: the
-  // model/thinking controls moved down next to the send button).
+  // model/thinking controls moved down next to the send button). Merges the
+  // pi model store with the panel's custom channels (models.json) so
+  // configured providers are switchable from the chat (P1-13 A).
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const response = await api.models();
+        const [storeRes, configRes] = await Promise.all([
+          api.models(),
+          api.modelsConfig().catch(() => null),
+        ]);
         if (cancelled) {
           return;
         }
         const flat: ModelOption[] = [];
-        for (const entry of response.providers) {
+        for (const entry of storeRes.providers) {
           for (const model of entry.models) {
             flat.push({
               provider: entry.provider,
+              alias: entry.provider,
               modelId: model.id,
               label: model.name,
+              customName: false,
+              locked: false,
             });
+          }
+        }
+        const config = configRes as
+          | {
+              providers?: Record<
+                string,
+                {
+                  name?: string;
+                  alias?: string;
+                  apiKey?: string;
+                  models?: Array<{ id: string; name?: string }>;
+                }
+              >;
+            }
+          | null
+          | undefined;
+        const providers = config?.providers;
+        if (providers !== undefined) {
+          for (const [key, provider] of Object.entries(providers)) {
+            const hasKey = typeof provider.apiKey === 'string' && provider.apiKey.length > 0;
+            const alias =
+              typeof provider.alias === 'string' && provider.alias.length > 0
+                ? provider.alias
+                : key;
+            for (const model of provider.models ?? []) {
+              const display = model.name ?? model.id;
+              flat.push({
+                provider: key,
+                alias,
+                modelId: model.id,
+                label: display,
+                customName: model.name !== undefined && model.name !== model.id,
+                locked: !hasKey,
+              });
+            }
           }
         }
         setModelOptions(flat);
@@ -329,23 +380,14 @@ export function Composer({
           <span className="composer-model-fields">
             <label className="modelbar-field">
               <span className="modelbar-label mono">{t('modelbar.model')}</span>
-              <select
-                className="modelbar-select"
+              <ModelPicker
+                options={modelOptions}
                 value={`${rpcState.model?.provider ?? ''}/${rpcState.model?.id ?? ''}`}
-                onChange={(event) => {
-                  modelChanged(event.target.value);
+                onSelect={(provider, modelId) => {
+                  modelChanged(`${provider}/${modelId}`);
                 }}
-                aria-label={t('modelbar.model')}
-              >
-                <option value="/" disabled>
-                  {rpcState.model?.name ?? 'model'}
-                </option>
-                {modelOptions.map((option) => (
-                  <option key={`${option.provider}/${option.modelId}`} value={`${option.provider}/${option.modelId}`}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                label={rpcState.model?.name ?? 'model'}
+              />
             </label>
             <label className="modelbar-field">
               <span className="modelbar-label mono">{t('modelbar.thinking')}</span>

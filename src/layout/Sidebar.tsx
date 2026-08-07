@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
@@ -26,7 +26,6 @@ interface SidebarProps {
   sessionStatus: SessionStatus;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
-  onOpenCommands: () => void;
 }
 
 /** Settings modal tree: shown in the global sidebar while the settings
@@ -37,7 +36,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: 'general', icon: 'hico-gearshape' },
   { id: 'personal', icon: 'hico-sliders' },
-  { id: 'models', icon: 'hico-square-grid' },
+  { id: 'models', icon: 'hico-cross-store' },
   { id: 'sessions', icon: 'hico-rectangle-stack' },
   { id: 'permissions', icon: 'hico-lock' },
   { id: 'favorites', icon: 'hico-bookmark' },
@@ -73,12 +72,10 @@ function formatTime(iso: string, intlTag: string): string {
   }).format(date);
 }
 
+/** Session alias (P1-13 B): traditional style — the last folder name. */
 function shortCwd(cwd: string): string {
   const parts = cwd.split('/').filter((part) => part.length > 0);
-  if (parts.length <= 2) {
-    return cwd;
-  }
-  return `${parts[0] ?? ''}/…/${parts[parts.length - 1] ?? ''}`;
+  return parts[parts.length - 1] ?? cwd;
 }
 
 function loadJson(key: string, fallback: string): string {
@@ -178,7 +175,6 @@ export function Sidebar({
   sessionStatus,
   onViewChange,
   onSessionChanged,
-  onOpenCommands,
 }: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -239,6 +235,39 @@ export function Sidebar({
       cancelled = true;
     };
   }, []);
+
+  // P1-13 B: new sessions auto-join a collection named after their cwd
+  // folder (created on demand). Existing sessions are left untouched — only
+  // sessions that appear after the initial load are grouped.
+  const knownSessionsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ids = new Set(sessions.map((session) => session.fileName));
+    const known = knownSessionsRef.current;
+    if (known === null) {
+      knownSessionsRef.current = ids;
+      return;
+    }
+    setCollections((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const session of sessions) {
+        if (known.has(session.fileName)) {
+          continue;
+        }
+        const folder = session.cwd.split('/').filter((part) => part.length > 0).pop();
+        if (folder === undefined || folder.length === 0) {
+          continue;
+        }
+        const list = next[folder] ?? [];
+        if (!list.includes(session.fileName)) {
+          next[folder] = [...list, session.fileName];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    knownSessionsRef.current = ids;
+  }, [sessions]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -537,7 +566,7 @@ export function Sidebar({
     <nav className="sidebar" aria-label="Primary">
       <div className="sidebar-top">
         <button type="button" className="sidebar-new" onClick={() => { void handleNewSession(); }}>
-          <span className="hico hico-plus" aria-hidden="true" />
+          <span className="hico hico-plus-square-fill" aria-hidden="true" />
           <span>{t('sidebar.new')}</span>
         </button>
         <div className="sidebar-search-wrap">
@@ -557,11 +586,12 @@ export function Sidebar({
           type="button"
           className="sidebar-feature"
           title={t('sidebar.features')}
-          onClick={onOpenCommands}
+          data-active={view === 'automation'}
+          onClick={() => {
+            onViewChange('automation');
+          }}
         >
-          <span className="hico hico-bolt" aria-hidden="true" />
-          <span className="hico hico-wand-stars" aria-hidden="true" />
-          <span className="hico hico-rectangle-stack" aria-hidden="true" />
+          <span className="hico hico-mind-map" aria-hidden="true" />
           <span>{t('sidebar.features')}</span>
         </button>
         {error !== null ? (
@@ -577,7 +607,7 @@ export function Sidebar({
         <div className="sidebar-section-row">
           <span className="sidebar-section-label swiss-section-label">{t('sidebar.sessions')}</span>
           <IconButton
-            icon="hico-plus"
+            icon="hico-folder-badge-plus"
             label={t('sidebar.addCollection')}
             placement="bottom"
             onClick={addCollection}
@@ -700,7 +730,7 @@ export function Sidebar({
             disabled
           />
           <IconButton
-            icon="hico-clock"
+            icon="hico-arrow-counterclockwise-clock"
             label={t('sidebar.history')}
             placement="bottom"
             dataActive={view === 'sessions'}
@@ -709,7 +739,7 @@ export function Sidebar({
             }}
           />
           <IconButton
-            icon="hico-square-grid"
+            icon="hico-yuansign-coupon-fill"
             label={t('sidebar.stats')}
             placement="bottom"
             dataActive={view === 'stats'}

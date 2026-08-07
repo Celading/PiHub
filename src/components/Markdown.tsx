@@ -37,6 +37,8 @@ function getHighlighter(): Promise<Highlighter> {
   return highlighterPromise;
 }
 
+import { DiffBlock, looksLikeDiff } from './DiffBlock.js';
+
 function currentTheme(): 'light' | 'dark' {
   return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 }
@@ -84,6 +86,12 @@ function CodeBlock({ code, lang }: { code: string; lang: string | undefined }): 
       cancelled = true;
     };
   }, [code, lang, theme]);
+
+  // Rich diff rendering (P1-12 D): diff-tagged fences or marker-heavy code
+  // get the colored line view instead of plain shiki output.
+  if (lang === 'diff' || (lang === undefined && looksLikeDiff(code))) {
+    return <DiffBlock code={code} />;
+  }
 
   if (html === null) {
     return (

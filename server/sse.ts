@@ -25,6 +25,11 @@ export class SseHub {
     }
   }
 
+  /** Number of connected SSE clients (debug channel). */
+  clientCount(): number {
+    return this.clients.size;
+  }
+
   broadcast(event: RpcStreamEvent): void {
     if (this.clients.size === 0) {
       return;
@@ -39,10 +44,6 @@ export class SseHub {
     for (const client of this.clients) {
       client.write(': keep-alive\n\n');
     }
-  }
-
-  clientCount(): number {
-    return this.clients.size;
   }
 
   close(): void {
