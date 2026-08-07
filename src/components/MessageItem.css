@@ -279,3 +279,11 @@
   max-width: 100%;
   border: var(--border-thin) solid var(--border-subtle);
 }
+
+/* P1-12 B: live reasoning body while streaming (lab option). */
+.thinking-body-live {
+  padding-top: var(--space-2);
+  max-height: 300px;
+  overflow: auto;
+  border-top: 1px dashed var(--border);
+}

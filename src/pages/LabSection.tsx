@@ -13,12 +13,14 @@ const LAB_SWITCHES: ReadonlyArray<{
     | 'lab.streamAnimation'
     | 'lab.compactTools'
     | 'lab.settledNotify'
-    | 'lab.simplifiedOutput';
+    | 'lab.simplifiedOutput'
+    | 'lab.showThinkingLive';
   hintKey:
     | 'lab.streamAnimationHint'
     | 'lab.compactToolsHint'
     | 'lab.settledNotifyHint'
-    | 'lab.simplifiedOutputHint';
+    | 'lab.simplifiedOutputHint'
+    | 'lab.showThinkingLiveHint';
 }> = [
   {
     flag: 'streamAnimation',
@@ -39,6 +41,11 @@ const LAB_SWITCHES: ReadonlyArray<{
     flag: 'simplifiedOutput',
     labelKey: 'lab.simplifiedOutput',
     hintKey: 'lab.simplifiedOutputHint',
+  },
+  {
+    flag: 'showThinkingLive',
+    labelKey: 'lab.showThinkingLive',
+    hintKey: 'lab.showThinkingLiveHint',
   },
 ];
 

@@ -50,6 +50,9 @@ function ThinkingBlock({
 }): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  // L005 owner spec keeps the reasoning body collapsed while streaming; the
+  // lab option reveals it live until the run settles.
+  const showLive = useLabFlag('showThinkingLive');
 
   const label =
     status === 'active'
@@ -61,11 +64,8 @@ function ThinkingBlock({
     status === 'interrupted' ? 'hico-exclamationmark' : 'hico-waveform';
 
   if (status === 'active') {
-    // During streaming the thinking body stays collapsed: only the
-    // transition animation is shown — the label characters fade in/out
-    // one by one (owner spec).
     return (
-      <div className="thinking thinking-active" data-anim={animate} data-expanded={false}>
+      <div className="thinking thinking-active" data-anim={animate} data-expanded={showLive}>
         <div className="thinking-toggle" aria-live="polite">
           <span className={`hico ${iconClass} thinking-icon`} aria-hidden="true" />
           <span className="thinking-label mono" aria-hidden="true">
@@ -81,6 +81,9 @@ function ThinkingBlock({
           </span>
           <span className="thinking-label mono thinking-sr">{label}</span>
         </div>
+        {showLive && text.trim().length > 0 ? (
+          <div className="thinking-body thinking-body-live">{text}</div>
+        ) : null}
       </div>
     );
   }

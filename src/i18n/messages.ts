@@ -345,6 +345,8 @@ export const zhMessages = {
   'lab.settledNotifyHint': 'agent 运行完成时发送浏览器通知',
   'lab.simplifiedOutput': '简化输出',
   'lab.simplifiedOutputHint': '完成的会话自动折叠为结算摘要，并用 ..... 标记被省略的后续内容',
+  'lab.showThinkingLive': '推理过程完整展示',
+  'lab.showThinkingLiveHint': '推理进行时实时展示思考正文，推理完成自动收起',
 
   // command palette
   'palette.title': '自动化 / 技能 / 工程流',
@@ -685,6 +687,8 @@ export const enMessages: Record<MessageKey, string> = {
   'lab.settledNotifyHint': 'Browser notification when the agent finishes a run',
   'lab.simplifiedOutput': 'Simplified output',
   'lab.simplifiedOutputHint': 'Settled conversations auto-collapse to a settlement summary; ..... marks folded content',
+  'lab.showThinkingLive': 'Show reasoning live',
+  'lab.showThinkingLiveHint': 'Reveal the reasoning text while streaming; it collapses automatically once settled',
 
   'palette.title': 'Automation / Skills / Workflows',
   'palette.search': 'Search commands…',
