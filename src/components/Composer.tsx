@@ -375,40 +375,7 @@ export function Composer({
         </span>
         {/* Model / thinking shown as quiet inline text on the action row
             (owner: static display, small font, 0.7 opacity; selection takes
-            effect immediately — no save button). P1-15: bar sits at the FAR
-            RIGHT of the bottom row, following the composer bottom. */}
-        <button
-          type="button"
-          className="composer-favorite"
-          title={t('composer.favorite')}
-          aria-label={t('composer.favorite')}
-          disabled={text.trim().length === 0}
-          onClick={() => {
-            addFavorite(text);
-            setFavoriteNotice(true);
-            window.setTimeout(() => {
-              setFavoriteNotice(false);
-            }, 1800);
-          }}
-        >
-          <span className="hico hico-bookmark" aria-hidden="true" />
-          {favoriteNotice ? (
-            <span className="composer-favorite-notice mono">{t('composer.favoriteAdded')}</span>
-          ) : null}
-        </button>
-        {isAgentRunning ? (
-          <button type="button" className="composer-abort" onClick={onAbort}>
-            {t('composer.abort')}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="composer-send"
-          onClick={submit}
-          disabled={text.trim().length === 0 && images.length === 0}
-        >
-          {isAgentRunning ? t('composer.steer') : t('composer.send')}
-        </button>
+            effect immediately — no save button). */}
         {rpcState !== undefined && rpcState !== null && onSetModel !== undefined && onSetThinking !== undefined ? (
           <span className="composer-model-fields">
             <label className="modelbar-field">
@@ -441,6 +408,38 @@ export function Composer({
             </label>
           </span>
         ) : null}
+        <button
+          type="button"
+          className="composer-favorite"
+          title={t('composer.favorite')}
+          aria-label={t('composer.favorite')}
+          disabled={text.trim().length === 0}
+          onClick={() => {
+            addFavorite(text);
+            setFavoriteNotice(true);
+            window.setTimeout(() => {
+              setFavoriteNotice(false);
+            }, 1800);
+          }}
+        >
+          <span className="hico hico-bookmark" aria-hidden="true" />
+          {favoriteNotice ? (
+            <span className="composer-favorite-notice mono">{t('composer.favoriteAdded')}</span>
+          ) : null}
+        </button>
+        {isAgentRunning ? (
+          <button type="button" className="composer-abort" onClick={onAbort}>
+            {t('composer.abort')}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="composer-send"
+          onClick={submit}
+          disabled={text.trim().length === 0 && images.length === 0}
+        >
+          {isAgentRunning ? t('composer.steer') : t('composer.send')}
+        </button>
       </div>
     </div>
   );

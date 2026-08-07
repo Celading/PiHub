@@ -29,6 +29,29 @@
   color: inherit;
 }
 
+/* P1-16 D: long prompts cap at 12 lines with an expand/collapse toggle.
+ * The max-height is measured in JS (cap/full px) so the transition animates
+ * both directions; 18rem is the pre-measure fallback. */
+.user-bubble-collapse {
+  max-height: 18rem;
+  overflow: hidden;
+  transition: max-height var(--duration-base) var(--ease-out);
+}
+
+.user-bubble-toggle {
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-placeholder);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.user-bubble-toggle:hover {
+  color: var(--primary);
+}
+
 .assistant-body {
   display: flex;
   flex-direction: column;
@@ -190,21 +213,31 @@
   animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
+/* P1-16 C: tool call header denoised — smaller, more transparent, indented
+ * a few chars to the right so the row reads as part of the preceding
+ * content (reveals to full opacity on hover/focus). */
 .toolcall-header {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-1) 0;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
   border: 0;
   background-color: transparent;
   color: var(--text-primary);
   text-align: left;
+  opacity: 0.6;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.toolcall-header:hover,
+.toolcall-header:focus-visible {
+  opacity: 1;
 }
 
 .toolcall-name {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--primary);
 }
 
@@ -212,7 +245,7 @@
  * lines fade out to transparent on the right (mask over the full width —
  * short summaries stay fully visible). */
 .toolcall-summary {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   overflow: hidden;
   white-space: nowrap;

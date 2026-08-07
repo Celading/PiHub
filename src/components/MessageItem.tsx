@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
 import { useI18n } from '../i18n/I18nProvider.js';
@@ -188,19 +188,75 @@ function ContentBlocks({
   );
 }
 
+/**
+ * P1-16 D: long user prompts collapse to the first 12 lines with an
+ * expand/collapse toggle; the copy path always uses the full original text.
+ * The cap and the expanded height are measured in layout effects so the
+ * max-height transition animates both directions.
+ */
+function CollapsibleUserBubble({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const [capPx, setCapPx] = useState<string | null>(null);
+  const [fullPx, setFullPx] = useState<string | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const el = innerRef.current;
+    if (el === null) {
+      return;
+    }
+    // scrollHeight reports the full content height even when max-height caps
+    // the box (overflow hidden) — no DOM mutation needed, so the effect can
+    // never fight React's style prop for the expand/collapse animation.
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 24;
+    const cap = Math.round(lineHeight * 12);
+    const full = el.scrollHeight;
+    setCapPx(`${String(cap)}px`);
+    setFullPx(`${String(full)}px`);
+    setOverflowing(full > cap);
+  }, [children]);
+
+  return (
+    <div className="user-bubble">
+      <div
+        ref={innerRef}
+        className="user-bubble-collapse"
+        data-expanded={expanded}
+        style={{ maxHeight: expanded ? (fullPx ?? 'none') : (capPx ?? '18rem') }}
+      >
+        {children}
+      </div>
+      {overflowing ? (
+        <button
+          type="button"
+          className="user-bubble-toggle mono"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded(!expanded);
+          }}
+        >
+          {expanded ? t('chat.collapse') : t('chat.expand')}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function UserMessageView({ message }: { message: Extract<AgentMessage, { role: 'user' }> }): React.JSX.Element {
   const content = message.content;
   if (typeof content === 'string') {
     return (
-      <div className="user-bubble">
+      <CollapsibleUserBubble>
         <Markdown text={content} />
-      </div>
+      </CollapsibleUserBubble>
     );
   }
   return (
-    <div className="user-bubble">
+    <CollapsibleUserBubble>
       <ContentBlocks blocks={content} thinkingStatus="done" animate={false} />
-    </div>
+    </CollapsibleUserBubble>
   );
 }
 
@@ -273,12 +329,16 @@ interface MessageItemProps {
   message: AgentMessage;
   isStreaming: boolean;
   thinkingStatus?: ThinkingStatus;
+  /** P1-16 B: action row rendered INSIDE the user message container so the
+   *  bubble + footer form one unit (footer right-aligned via CSS). */
+  footer?: React.ReactNode;
 }
 
 export function MessageItem({
   message,
   isStreaming,
   thinkingStatus = 'done',
+  footer,
 }: MessageItemProps): React.JSX.Element {
   const streamAnimation = useLabFlag('streamAnimation');
   switch (message.role) {
@@ -286,6 +346,7 @@ export function MessageItem({
       return (
         <div className="message message-user">
           <UserMessageView message={message} />
+          {footer !== undefined ? <div className="chat-unit-user-footer">{footer}</div> : null}
         </div>
       );
     case 'assistant':

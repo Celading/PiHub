@@ -265,14 +265,14 @@
   border-top: 1px dashed var(--border);
 }
 
-/* P1-13 D/E: user prompt footer + edit-and-resend. */
-
+/* P1-13 D/E + P1-16 B: user prompt footer — one unit with the bubble
+ * (rendered inside `.message-user`), right-aligned, revealed on hover. */
 .chat-unit-user-footer {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   align-items: center;
   gap: 2px;
-  padding: 0 0 6px;
+  padding: 4px 4px 0 0;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -280,6 +280,41 @@
 .chat-unit:hover .chat-unit-user-footer,
 .chat-unit-user-footer:focus-within {
   opacity: 1;
+}
+
+/* P1-16 E: folded earlier assistant messages of a settled prompt run. */
+.assistant-process {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.assistant-process-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 2px 6px;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  opacity: 0.75;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.assistant-process-toggle:hover {
+  opacity: 1;
+  color: var(--primary);
+}
+
+.assistant-process-chevron {
+  font-size: 0.7rem;
 }
 
 .chat-unit-edit {

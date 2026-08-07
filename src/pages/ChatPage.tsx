@@ -141,6 +141,40 @@ function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
   );
 }
 
+/**
+ * P1-16 E: a settled prompt run can leave several `.message message-assistant`
+ * entries — only the LAST one is kept fully visible; the earlier ones fold
+ * behind a process toggle (animated via the collapse-region grid rows).
+ */
+function AssistantProcessCollapse({ items }: { items: ChatMessage[] }): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="assistant-process">
+      <button
+        type="button"
+        className="assistant-process-toggle mono"
+        aria-expanded={expanded}
+        onClick={() => {
+          setExpanded(!expanded);
+        }}
+      >
+        <span className="assistant-process-chevron" aria-hidden="true">
+          {expanded ? '−' : '>'}
+        </span>
+        <span>{t('chat.processPrefix', { count: String(items.length) })}</span>
+      </button>
+      <div className="collapse-region" data-collapsed={!expanded}>
+        <div className="collapse-region-inner">
+          {items.map((item) => (
+            <MessageItem key={item.key} message={item.message} isStreaming={false} thinkingStatus="done" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface ChatPageProps {
   onSessionChanged: () => void;
 }
@@ -453,40 +487,49 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                             <MessageItem
                               message={unit.user.message}
                               isStreaming={false}
+                              footer={
+                                <>
+                                  <IconButton
+                                    icon="hico-square-on-square-fill"
+                                    label={t('chat.copyPrompt')}
+                                    placement="top"
+                                    onClick={() => {
+                                      void copyUserPrompt(unit.user);
+                                    }}
+                                  />
+                                  {isLast ? (
+                                    <IconButton
+                                      icon="hico-square-and-pencil"
+                                      label={t('chat.editPrompt')}
+                                      placement="top"
+                                      onClick={() => {
+                                        setEditingUnitKey(unit.key);
+                                        setEditText(extractUserPrompt(unit.user));
+                                        setConfirmResend(false);
+                                      }}
+                                    />
+                                  ) : null}
+                                </>
+                              }
                             />
-                            <div className="chat-unit-user-footer">
-                              <IconButton
-                                icon="hico-square-on-square-fill"
-                                label={t('chat.copyPrompt')}
-                                placement="top"
-                                onClick={() => {
-                                  void copyUserPrompt(unit.user);
-                                }}
-                              />
-                              {isLast ? (
-                                <IconButton
-                                  icon="hico-square-and-pencil"
-                                  label={t('chat.editPrompt')}
-                                  placement="top"
-                                  onClick={() => {
-                                    setEditingUnitKey(unit.key);
-                                    setEditText(extractUserPrompt(unit.user));
-                                    setConfirmResend(false);
-                                  }}
-                                />
-                              ) : null}
-                            </div>
                           </>
                         )
                       ) : null}
                       {(() => {
                         // Tool blocks of this run collapse into one set
                         // (P1-10 C3); thinking/text messages render inline.
+                        // P1-16 E: once the run settles, multiple assistant
+                        // messages fold — only the last stays visible.
                         const toolItems = unit.rest.filter(isToolMessage);
                         const nonToolItems = unit.rest.filter((item) => !isToolMessage(item));
+                        const canFoldProcess =
+                          nonToolItems.length > 1 && nonToolItems.every((item) => !item.isStreaming);
+                        const processItems = canFoldProcess ? nonToolItems.slice(0, -1) : [];
+                        const keptItems = canFoldProcess ? nonToolItems.slice(-1) : nonToolItems;
                         return (
                           <>
-                            {nonToolItems.map((item) => (
+                            {canFoldProcess ? <AssistantProcessCollapse items={processItems} /> : null}
+                            {keptItems.map((item) => (
                               <MessageItem
                                 key={item.key}
                                 message={item.message}
