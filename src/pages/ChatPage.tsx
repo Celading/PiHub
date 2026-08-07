@@ -261,7 +261,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   const resolveBranchAlias = async (): Promise<string | null> => {
     const sessionName = chat.rpcState?.sessionName;
     if (sessionName !== undefined && sessionName.length > 0) {
-      return `${t('session.branchPrefix', { name: sessionName })}`;
+      return t('session.branchPrefix', { name: sessionName });
     }
     const file = chat.rpcState?.sessionFile;
     if (file === undefined || file.length === 0) {
