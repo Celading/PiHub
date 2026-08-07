@@ -109,6 +109,42 @@ A peek at the panel in showcase mode (synthetic, desensitized data):
 | ![Pipelines](docs/screenshots/demo-pipelines.png) | |
 | PiHub-exclusive Pipelines: skill import (hard/soft convert) and run timeline | |
 
+## Interactive showcase video
+
+Instead of screen-recording, PiHub can render a walkthrough video of the
+showcase (demo) mode directly: a script drives the real panel in headless
+Chrome, clicks land at absolute viewport coordinates with a ripple wave at the
+touch point, and a single mp4 is exported ready for editing.
+
+Requirements: Google Chrome (or `CHROME_PATH`) and `ffmpeg` on PATH.
+
+```sh
+npm run showcase:record
+# output: out/showcase-<timestamp>.mp4 (h264, 1280×800, 30fps)
+```
+
+How it works:
+
+- **Component anchors** — key views carry `data-shot` identifiers; the
+  recorder reads each anchor's dynamic state (visibility, absolute rect, text)
+  after every step.
+- **Change-driven key frames** — a frame is captured only when the tracked
+  components actually changed (view switch, folding, layout shift); identical
+  holds just extend the previous key frame's duration. The run prints the
+  per-frame anchor diff, so every UI change is verified without decoding the
+  video (a typical walkthrough records ~12 key frames instead of hundreds of
+  redundant screenshots).
+- **Absolute-position clicks with ripples** — the click lands at the exact
+  viewport coordinates of the target component (resolved from its current
+  rect), and a ripple wave animates at that point, so the video reads as a
+  real interaction.
+- **Demo-only** — recording always runs the synthetic demo dataset (write
+  routes 503); it never touches real sessions or credentials.
+
+The walkthrough steps live in `scripts/record-showcase.mjs` as a declarative
+timeline (`clickSel` / `type` / `press` / `wait` / `shot`) — edit the steps to
+produce a different demo.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

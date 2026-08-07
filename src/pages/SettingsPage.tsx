@@ -214,7 +214,8 @@ export function SettingsPage({
         setDeleteError(response.error ?? 'delete failed');
         return;
       }
-      removeArchived(target.fileName);
+      // Archived markers are keyed by session id, not file name.
+      removeArchived(target.id);
       setDeleteTarget(null);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : String(err));
@@ -284,7 +285,7 @@ export function SettingsPage({
                 : t('settings.nav.lab');
 
   return (
-    <section className="settings-page">
+    <section className="settings-page" data-shot="settings">
       <div className="settings-head">
         <h1 className="panel-title">{title}</h1>
         <p className="settings-head-hint mono">{t('settings.readonly')}</p>

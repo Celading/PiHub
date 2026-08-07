@@ -3,6 +3,7 @@ import type { SessionStats } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { LoadingHint } from '../components/LoadingHint.js';
+import { CostShareChart, DayTrendChart } from '../components/SvgCharts.js';
 import './StatsPage.css';
 
 function formatCost(cost: number): string {
@@ -92,7 +93,7 @@ export function StatsPage(): React.JSX.Element {
 
   if (error !== null) {
     return (
-      <section className="stats-page">
+      <section className="stats-page" data-shot="stats">
         <h1 className="panel-title">{t('stats.title')}</h1>
         <div className="stats-error mono">{error}</div>
       </section>
@@ -101,7 +102,7 @@ export function StatsPage(): React.JSX.Element {
 
   if (stats === null) {
     return (
-      <section className="stats-page">
+      <section className="stats-page" data-shot="stats">
         <h1 className="panel-title">{t('stats.title')}</h1>
         <p className="stats-hint">
           <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
@@ -110,8 +111,10 @@ export function StatsPage(): React.JSX.Element {
     );
   }
 
+  const noData = t('stats.noData');
+
   return (
-    <section className="stats-page">
+    <section className="stats-page" data-shot="stats">
       <div className="stats-head">
         <h1 className="panel-title">{t('stats.title')}</h1>
         <p className="stats-head-hint mono">~/.pi/agent/sessions</p>
@@ -131,6 +134,58 @@ export function StatsPage(): React.JSX.Element {
           sub={`${formatTokens(stats.totals.total)} ${t('sessions.tokens')}`}
         />
       </div>
+
+      <section className="stats-section">
+        <h2 className="stats-section-title mono">{t('stats.costShare')}</h2>
+        <div className="chart-grid">
+          <div className="chart-card">
+            <h3 className="chart-card-title mono">{t('stats.byProvider')}</h3>
+            <CostShareChart
+              rows={stats.byProvider.map((row) => ({ label: row.provider, value: row.cost }))}
+              total={stats.totalCost}
+              formatValue={formatCost}
+              emptyText={noData}
+            />
+          </div>
+          <div className="chart-card">
+            <h3 className="chart-card-title mono">{t('stats.byDirectory')}</h3>
+            <CostShareChart
+              rows={stats.byDirectory.map((row) => ({ label: row.cwd, value: row.cost }))}
+              total={stats.totalCost}
+              formatValue={formatCost}
+              emptyText={noData}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="stats-section">
+        <h2 className="stats-section-title mono">{t('stats.byDay')}</h2>
+        <div className="chart-card">
+          <DayTrendChart
+            days={stats.byDay}
+            formatCost={formatCost}
+            formatTokens={formatTokens}
+            emptyText={noData}
+          />
+        </div>
+      </section>
+
+      <section className="stats-section">
+        <h2 className="stats-section-title mono">{t('stats.topSessions')}</h2>
+        <DataTable
+          headers={[t('stats.lastActivity'), t('stats.cwd'), t('stats.messages'), t('stats.tokens'), t('stats.cost')]}
+          rows={stats.topSessions.map((row) => ({
+            cells: [
+              row.lastActivityAt.slice(0, 16).replace('T', ' '),
+              row.cwd,
+              String(row.messages),
+              formatTokens(row.tokens.total),
+              formatCost(row.cost),
+            ],
+          }))}
+        />
+      </section>
 
       <section className="stats-section">
         <h2 className="stats-section-title mono">{t('stats.byModel')}</h2>
@@ -168,9 +223,15 @@ export function StatsPage(): React.JSX.Element {
       <section className="stats-section">
         <h2 className="stats-section-title mono">{t('stats.byDirectory')}</h2>
         <DataTable
-          headers={['directory', t('stats.sessions'), t('stats.messages'), 'cost']}
+          headers={['directory', t('stats.sessions'), t('stats.messages'), t('sessions.tokens'), 'cost']}
           rows={stats.byDirectory.map((row) => ({
-            cells: [row.cwd, String(row.sessions), String(row.messages), formatCost(row.cost)],
+            cells: [
+              row.cwd,
+              String(row.sessions),
+              String(row.messages),
+              formatTokens(row.tokens.total),
+              formatCost(row.cost),
+            ],
           }))}
         />
       </section>

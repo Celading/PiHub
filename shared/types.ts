@@ -120,6 +120,10 @@ export interface SessionStats {
   byModel: ModelStatRow[];
   byProvider: ProviderStatRow[];
   byDirectory: DirectoryStatRow[];
+  /** P1-04: daily usage series bucketed by the session's last activity date. */
+  byDay: DayStatRow[];
+  /** P1-04: most expensive sessions, sorted by cost descending. */
+  topSessions: SessionCostRow[];
 }
 
 export interface ModelStatRow {
@@ -143,6 +147,27 @@ export interface DirectoryStatRow {
   cwd: string;
   sessions: number;
   messages: number;
+  tokens: TokenTotals;
+  cost: number;
+}
+
+/** P1-04: one day of usage, bucketed by last activity date (UTC). */
+export interface DayStatRow {
+  day: string;
+  sessions: number;
+  messages: number;
+  tokens: TokenTotals;
+  cost: number;
+}
+
+/** P1-04: per-session cost row for the top-cost drill-down. */
+export interface SessionCostRow {
+  fileName: string;
+  cwd: string;
+  startedAt: string;
+  lastActivityAt: string;
+  messages: number;
+  tokens: TokenTotals;
   cost: number;
 }
 
@@ -182,6 +207,12 @@ export interface EntryItem {
 export interface EntriesResponse {
   entries: EntryItem[];
   leafId?: string;
+}
+
+/** P1-05: session tree DAG of the current RPC session (get_tree passthrough). */
+export interface SessionTreeResponse {
+  tree: SessionTreeNode[];
+  leafId: string | null;
 }
 
 export interface PiCommand {

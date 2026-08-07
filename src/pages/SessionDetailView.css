@@ -77,6 +77,13 @@
   color: var(--text-primary);
 }
 
+/* P1-05: tree-view toggle active state matches the filter-button pattern. */
+.session-action-btn[data-active='true'] {
+  border-color: var(--primary);
+  color: var(--primary);
+  background-color: var(--primary-subtle);
+}
+
 .session-name-input {
   padding: var(--space-1) var(--space-2);
   border: var(--border-thin) solid var(--primary);
