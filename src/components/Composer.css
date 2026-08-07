@@ -313,3 +313,52 @@
     transform: scale(0.2) translateY(0);
   }
 }
+
+/* ---- P1-18: compact composer — morphs into a slim bottom bar when the
+   chat is scrolled away from the bottom (grid-rows collapse animation) ---- */
+
+.composer {
+  transition: padding var(--duration-base) var(--ease-out);
+}
+
+.composer-compact-bar {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.composer-compact-bar:hover {
+  color: var(--primary);
+  background-color: var(--surface-hover);
+}
+
+.composer-compact-arrow {
+  font-size: 1.1em;
+}
+
+.composer[data-compact='true'] {
+  padding: 0;
+}
+
+.composer[data-compact='true'] .composer-compact-bar {
+  display: flex;
+}
+
+.composer[data-compact='true'] .composer-collapse {
+  opacity: 0;
+}
+
+.composer-collapse {
+  transition: opacity var(--duration-base) var(--ease-out);
+}

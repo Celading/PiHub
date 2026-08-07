@@ -31,6 +31,10 @@ interface ComposerProps {
   /** Optional: when absent (e.g. session detail resume composer) the
    *  model/thinking row is not rendered. */
   rpcState?: RpcState | null;
+  /** P1-18: chat scrolled away from the bottom — the composer morphs into
+   *  a slim bottom bar; click or Cmd/Ctrl+R expands it. */
+  compact?: boolean;
+  onToggleCompact?: () => void;
   onSendPrompt: (text: string, images?: PromptImage[]) => void;
   onSendSteer: (text: string) => void;
   onAbort: () => void;
@@ -41,6 +45,8 @@ interface ComposerProps {
 export function Composer({
   isAgentRunning,
   rpcState,
+  compact = false,
+  onToggleCompact,
   onSendPrompt,
   onSendSteer,
   onAbort,
@@ -304,21 +310,31 @@ export function Composer({
     }
   };
 
+  // navigator.platform is deprecated; macOS detection via userAgentData falls
+  // back to the user agent string (P1-18 shortcut hint).
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    ((navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform === 'macOS' ||
+      /Mac|iPhone|iPad/i.test(navigator.userAgent));
+  const shortcut = isMac ? '⌘R' : 'Ctrl+R';
+
   return (
-    <div className="composer">
-      {/* P1-17 D: Windows-Phone-style progress — staggered squares across
-          the composer's top edge while the agent is running. */}
-      {isAgentRunning ? (
-        <div className="composer-progress" aria-hidden="true">
-          {[0, 1, 2, 3, 4].map((index) => (
-            <span
-              key={index}
-              className="composer-progress-square"
-              style={{ animationDelay: `${String(index * 0.12)}s` }}
-            />
-          ))}
-        </div>
-      ) : null}
+    <div className="composer" data-compact={compact}>
+      {/* P1-18: slim bottom bar while the chat is scrolled away from the
+          bottom; click or Cmd/Ctrl+R expands the composer back. */}
+      <button
+        type="button"
+        className="composer-compact-bar mono"
+        aria-expanded={!compact}
+        onClick={() => {
+          onToggleCompact?.();
+        }}
+      >
+        <span className="composer-compact-arrow" aria-hidden="true">
+          ↑
+        </span>
+        <span>{t('composer.compactHint', { shortcut })}</span>
+      </button>
       {slashOpen && slashSuggestions.length > 0 ? (
         <div className="composer-slash" role="listbox" aria-label={t('sidebar.features')}>
           {slashSuggestions.map((suggestion, index) => (
@@ -344,48 +360,63 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      {images.length > 0 ? (
-        <div className="composer-images">
-          {images.map((image, index) => (
-            <div key={index} className="composer-image-wrap">
-              <img className="composer-image" src={image.previewUrl} alt={`pasted ${String(index + 1)}`} />
-              <button
-                type="button"
-                className="composer-image-remove"
-                aria-label="remove image"
-                onClick={() => {
-                  setImages((prev) => prev.filter((_, i) => i !== index));
-                }}
-              >
-                ×
-              </button>
+      {/* P1-18: the composer body collapses into the bar via the grid-rows
+          animation when the chat is scrolled away from the bottom. */}
+      <div className="composer-collapse collapse-region" data-collapsed={compact}>
+        <div className="collapse-region-inner">
+          {isAgentRunning ? (
+            <div className="composer-progress" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((index) => (
+                <span
+                  key={index}
+                  className="composer-progress-square"
+                  style={{ animationDelay: `${String(index * 0.12)}s` }}
+                />
+              ))}
             </div>
-          ))}
-        </div>
-      ) : null}
-      <textarea
-        ref={textareaRef}
-        className="composer-input"
-        value={text}
-        placeholder={isAgentRunning ? t('composer.placeholder.steer') : t('composer.placeholder')}
-        onChange={(event) => {
-          handleTextChange(event.target.value);
-        }}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        rows={3}
-        aria-label={t('composer.placeholder')}
-      />
-      <div className="composer-actions">
-        <span className="composer-hint mono">
-          {isAgentRunning
-            ? t('composer.hint.steer')
-            : sendMode === 'cmd-enter'
-              ? t('composer.hint.cmdEnter')
-              : sendMode === 'ctrl-enter'
-                ? t('composer.hint.ctrlEnter')
-                : t('composer.hint')}
-        </span>
+          ) : null}
+          {images.length > 0 ? (
+            <div className="composer-images">
+              {images.map((image, index) => (
+                <div key={index} className="composer-image-wrap">
+                  <img className="composer-image" src={image.previewUrl} alt={`pasted ${String(index + 1)}`} />
+                  <button
+                    type="button"
+                    className="composer-image-remove"
+                    aria-label="remove image"
+                    onClick={() => {
+                      setImages((prev) => prev.filter((_, i) => i !== index));
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <textarea
+            ref={textareaRef}
+            className="composer-input"
+            value={text}
+            placeholder={isAgentRunning ? t('composer.placeholder.steer') : t('composer.placeholder')}
+            onChange={(event) => {
+              handleTextChange(event.target.value);
+            }}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            rows={3}
+            aria-label={t('composer.placeholder')}
+          />
+          <div className="composer-actions">
+            <span className="composer-hint mono">
+              {isAgentRunning
+                ? t('composer.hint.steer')
+                : sendMode === 'cmd-enter'
+                  ? t('composer.hint.cmdEnter')
+                  : sendMode === 'ctrl-enter'
+                    ? t('composer.hint.ctrlEnter')
+                    : t('composer.hint')}
+            </span>
         {/* Model / thinking shown as quiet inline text on the action row
             (owner: static display, small font, 0.7 opacity; selection takes
             effect immediately — no save button). */}
@@ -453,6 +484,8 @@ export function Composer({
         >
           {isAgentRunning ? t('composer.steer') : t('composer.send')}
         </button>
+          </div>
+        </div>
       </div>
     </div>
   );

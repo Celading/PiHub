@@ -235,7 +235,8 @@ function CollapsibleUserBubble({ children }: { children: React.ReactNode }): Rea
           }}
         >
           <span className="user-bubble-strip-chevron" aria-hidden="true">
-            {expanded ? '‹' : '›'}
+            {/* P1-18: folded state = up arrow, expanded = down arrow. */}
+            {expanded ? '↓' : '↑'}
           </span>
         </button>
       ) : null}

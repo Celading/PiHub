@@ -403,3 +403,99 @@
     background-position: -200% 0;
   }
 }
+
+/* ---- P1-18: float bar + floating input when the chat scroll is up ---- */
+
+.chatpage {
+  position: relative;
+}
+
+.chat-float-bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% - 3.5rem);
+  width: min(36rem, calc(100% - 2rem));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-thin) solid var(--border-strong);
+  border-radius: var(--radius-none);
+  background-color: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.18);
+  z-index: 30;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.chat-float-bar:hover {
+  background-color: var(--surface-hover);
+  color: var(--primary);
+}
+
+.chat-float-bar-arrow {
+  font-size: 1.1em;
+}
+
+.chat-float-input {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% - 3.5rem);
+  width: min(44rem, calc(100% - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-thick) solid var(--primary);
+  background-color: var(--surface);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.25);
+  z-index: 31;
+  animation: float-input-rise var(--duration-base) var(--ease-out) 1;
+}
+
+@keyframes float-input-rise {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.chat-float-input-text {
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-none);
+  background-color: var(--surface-subtle);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.chat-float-input-text:focus {
+  outline: var(--border-thick) solid var(--focus);
+  outline-offset: 0;
+}
+
+.chat-float-input-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.chat-float-btn {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+}

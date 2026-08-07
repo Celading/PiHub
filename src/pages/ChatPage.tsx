@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
@@ -218,6 +218,10 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  // P1-18: composer morphs into a bottom bar while the chat scroll is not
+  // at the bottom; clicking the bar or Cmd/Ctrl+R expands it (forced).
+  const [atBottom, setAtBottom] = useState(true);
+  const [composerForced, setComposerForced] = useState(false);
   const [collapsedUnits, setCollapsedUnits] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -227,12 +231,41 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     () => new Set(),
   );
 
+  const updateAtBottom = useCallback((): void => {
+    const element = scrollRef.current;
+    if (element === null) {
+      return;
+    }
+    // Within ~96px of the bottom counts as "at the bottom".
+    const near = element.scrollHeight - element.scrollTop - element.clientHeight <= 96;
+    setAtBottom(near);
+    if (near) {
+      setComposerForced(false);
+    }
+  }, []);
+
   useEffect(() => {
     const element = scrollRef.current;
     if (element !== null) {
       element.scrollTop = element.scrollHeight;
+      updateAtBottom();
     }
-  }, [chat.messages.length, chat.isAgentRunning]);
+  }, [chat.messages.length, chat.isAgentRunning, updateAtBottom]);
+
+  // P1-18: Cmd/Ctrl+R toggles the compact composer bar.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        setComposerForced((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   // Refresh the model display when the model is cycled via Ctrl+Shift+L.
   useEffect(() => {
@@ -414,7 +447,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
 
   return (
     <section className="chatpage">
-      <div className="chatpage-scroll scroll-area" ref={scrollRef}>
+      <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
             {chat.error}
@@ -711,6 +744,10 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
         <Composer
           isAgentRunning={chat.isAgentRunning}
           rpcState={chat.rpcState}
+          compact={!atBottom && !composerForced}
+          onToggleCompact={() => {
+            setComposerForced((prev) => !prev);
+          }}
           onSendPrompt={(text, images) => {
             void chat.sendPrompt(text, images);
           }}

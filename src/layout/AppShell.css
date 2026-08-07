@@ -77,6 +77,8 @@
 /* P1-17 F: view switch — 3D entry (perspective rotateY) + rise from below
  * with fade, replaying on every view change (keyed wrapper). */
 .shell-page-enter {
+  height: 100%;
+  min-height: 0;
   animation: page-enter-3d var(--duration-base) var(--ease-out) 1;
   transform-origin: center bottom;
 }

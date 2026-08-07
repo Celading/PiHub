@@ -145,6 +145,7 @@ export const zhMessages = {
 
   // composer
   'composer.placeholder': '给 pi 发送消息…',
+  'composer.compactHint': '点击 或 {shortcut} 唤起输入框',
   'composer.placeholder.steer': '引导运行中的 agent…',
   'composer.hint': '回车发送 · Shift+回车换行',
   'composer.hint.steer': '引导模式 · 运行中',
@@ -554,6 +555,7 @@ export const enMessages: Record<MessageKey, string> = {
   'sidebar.emptyArchived': 'No archived sessions',
 
   'composer.placeholder': 'Message pi…',
+  'composer.compactHint': 'Click or {shortcut} to open input',
   'composer.placeholder.steer': 'Steer the running agent…',
   'composer.hint': 'enter to send · shift+enter for newline',
   'composer.hint.steer': 'steer mode · running',
