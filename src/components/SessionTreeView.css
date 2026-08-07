@@ -1,0 +1,77 @@
+/* P1-05: session tree visualization (branch timeline / node labels / fork). */
+
+.session-tree {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-sm);
+}
+
+.tree-node {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-left: var(--border-thin) solid var(--border-subtle);
+  margin-left: var(--space-2);
+  /* depth indentation applied inline via paddingLeft (unbounded depth) */
+}
+
+.tree-node:hover {
+  background-color: var(--surface-hover);
+}
+
+/* off-mainline branches get a quieter tone; mainline keeps full contrast */
+.tree-node[data-offbranch='true'] {
+  opacity: 0.62;
+}
+
+.tree-node-glyph {
+  flex: none;
+  width: 1.4em;
+  text-align: center;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--primary);
+  border: var(--border-thin) solid var(--primary-subtle);
+  background-color: var(--primary-subtle);
+  border-radius: 2px;
+}
+
+.tree-node-time {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.tree-node-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
+.tree-node-fork {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.tree-node-fork:hover {
+  color: var(--primary);
+}
+
+.tree-empty {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}

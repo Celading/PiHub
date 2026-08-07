@@ -184,6 +184,12 @@ export interface EntriesResponse {
   leafId?: string;
 }
 
+/** P1-05: session tree DAG of the current RPC session (get_tree passthrough). */
+export interface SessionTreeResponse {
+  tree: SessionTreeNode[];
+  leafId: string | null;
+}
+
 export interface PiCommand {
   name: string;
   description?: string;
