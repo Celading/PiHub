@@ -319,7 +319,7 @@ export function Composer({
   const shortcut = isMac ? '⌘R' : 'Ctrl+R';
 
   return (
-    <div className="composer" data-compact={compact}>
+    <div className="composer" data-compact={compact} data-shot="composer">
       {/* P1-18: slim bottom bar while the chat is scrolled away from the
           bottom; click or Cmd/Ctrl+R expands the composer back. */}
       <button

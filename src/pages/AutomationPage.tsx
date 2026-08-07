@@ -221,7 +221,7 @@ export function AutomationPage({ onRunCommand }: { onRunCommand: (name: string) 
   }, [commands, query]);
 
   return (
-    <section className="automation-page">
+    <section className="automation-page" data-shot="automation">
       <div className="automation-head">
         <h1 className="panel-title">{t('automation.title')}</h1>
         <div className="automation-tabs mono" role="tablist" aria-label={t('automation.title')}>

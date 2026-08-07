@@ -119,7 +119,7 @@ export function SessionsPage({
   }
 
   return (
-    <section className="sessions-page">
+    <section className="sessions-page" data-shot="sessions">
       <div className="sessions-head">
         <h1 className="panel-title">{t('sessions.title')}</h1>
         <div className="sessions-head-actions">

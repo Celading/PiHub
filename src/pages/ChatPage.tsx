@@ -170,6 +170,7 @@ function AssistantProcessCollapse({
       <button
         type="button"
         className="assistant-process-toggle mono"
+        data-shot="process"
         aria-expanded={expanded}
         onClick={() => {
           setExpanded(!expanded);
@@ -501,7 +502,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   };
 
   return (
-    <section className="chatpage">
+    <section className="chatpage" data-shot="chat">
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">

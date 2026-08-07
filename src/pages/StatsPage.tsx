@@ -93,7 +93,7 @@ export function StatsPage(): React.JSX.Element {
 
   if (error !== null) {
     return (
-      <section className="stats-page">
+      <section className="stats-page" data-shot="stats">
         <h1 className="panel-title">{t('stats.title')}</h1>
         <div className="stats-error mono">{error}</div>
       </section>
@@ -102,7 +102,7 @@ export function StatsPage(): React.JSX.Element {
 
   if (stats === null) {
     return (
-      <section className="stats-page">
+      <section className="stats-page" data-shot="stats">
         <h1 className="panel-title">{t('stats.title')}</h1>
         <p className="stats-hint">
           <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
@@ -114,7 +114,7 @@ export function StatsPage(): React.JSX.Element {
   const noData = t('stats.noData');
 
   return (
-    <section className="stats-page">
+    <section className="stats-page" data-shot="stats">
       <div className="stats-head">
         <h1 className="panel-title">{t('stats.title')}</h1>
         <p className="stats-head-hint mono">~/.pi/agent/sessions</p>

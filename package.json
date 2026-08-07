@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "build": "npm run typecheck && npm run lint && vite build && tsc -p tsconfig.server.json",
     "test": "vitest run",
-    "start": "node dist-server/server/index.js"
+    "start": "node dist-server/server/index.js",
+    "showcase:record": "node scripts/record-showcase.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.6",
@@ -35,6 +36,7 @@
     "eslint": "^9.28.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "puppeteer-core": "^25.5.0",
     "tsx": "^4.20.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.35.0",

@@ -9,3 +9,6 @@ coverage/
 
 # session HTML exports (user data)
 pi-session-*.html
+
+# showcase video exports (generated)
+out/

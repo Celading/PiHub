@@ -285,7 +285,7 @@ export function SettingsPage({
                 : t('settings.nav.lab');
 
   return (
-    <section className="settings-page">
+    <section className="settings-page" data-shot="settings">
       <div className="settings-head">
         <h1 className="panel-title">{title}</h1>
         <p className="settings-head-hint mono">{t('settings.readonly')}</p>
