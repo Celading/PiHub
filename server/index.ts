@@ -32,7 +32,36 @@ const sessions =
 const hub = new SseHub();
 const bridge = new RpcBridge(PI_BINARY, AGENT_CWD);
 
+// P1-15: track agent runs so a channel-config save can restart pi when idle
+// (models.json is loaded once at process start) or defer the restart to the
+// next settle. The panel re-switches to the session file before every prompt,
+// so respawning pi does not detach the active session.
+let agentRunning = false;
+let modelReloadRequested = false;
+const requestModelReload = (): 'reloaded' | 'deferred' => {
+  if (mode === 'demo') {
+    return 'reloaded';
+  }
+  if (agentRunning) {
+    modelReloadRequested = true;
+    return 'deferred';
+  }
+  if (bridge.isRunning()) {
+    bridge.restart();
+  }
+  return 'reloaded';
+};
+
 bridge.on('event', (event) => {
+  if (event.type === 'agent_start') {
+    agentRunning = true;
+  } else if (event.type === 'agent_end' || event.type === 'agent_settled') {
+    agentRunning = false;
+    if (modelReloadRequested) {
+      modelReloadRequested = false;
+      bridge.restart();
+    }
+  }
   hub.broadcast(event);
 });
 bridge.on('ui-request', (request) => {
@@ -81,6 +110,7 @@ app.use(
     mode,
     demoMachine,
     pipelines: { store: pipelineStore, engine: pipelineEngine },
+    reloadModels: requestModelReload,
     ...(mode === 'debug'
       ? {
           debugState: (): Record<string, unknown> => ({

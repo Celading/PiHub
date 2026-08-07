@@ -138,6 +138,13 @@ export interface RouterModeOptions {
     store: PipelineStore;
     engine: PipelineEngine | null;
   };
+  /**
+   * P1-15: restart the pi child after a channel-config save so the new
+   * models.json is composed (pi loads it once per process). Returns
+   * 'reloaded' when the runtime was (or will be by next spawn) fresh, or
+   * 'deferred' when the reload waits for the current agent run to settle.
+   */
+  reloadModels?: () => 'reloaded' | 'deferred';
 }
 
 export function createRouter(
@@ -268,6 +275,43 @@ export function createRouter(
       models: entry.models,
     }));
     res.json({ providers });
+  });
+
+  /* ---- official model catalog (P1-15 C) ----
+   * pi.dev serves per-provider model catalogs at
+   * GET https://pi.dev/api/models/providers/<id> (the same public endpoint
+   * pi itself refreshes into models-store.json every 4h). Custom channel
+   * keys (e.g. volcengine-ark) return 404 — surfaced honestly. Read-only;
+   * never touches ~/.pi or auth.json. Small TTL cache to stay polite. */
+  const catalogCache = new Map<string, { at: number; status: number; body: unknown }>();
+  const CATALOG_TTL_MS = 10 * 60 * 1000;
+  router.get('/api/models/catalog/:provider', async (req, res) => {
+    const provider = req.params['provider'];
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(provider)) {
+      res.status(400).json({ error: 'invalid provider id' });
+      return;
+    }
+    const cached = catalogCache.get(provider);
+    if (cached !== undefined && Date.now() - cached.at < CATALOG_TTL_MS) {
+      res.status(cached.status).json(cached.body);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `https://pi.dev/api/models/providers/${encodeURIComponent(provider)}`,
+        {
+          headers: { accept: 'application/json', 'User-Agent': 'pihub/1.0' },
+          signal: AbortSignal.timeout(12000),
+        },
+      );
+      const body: unknown = await response.json().catch(() => null);
+      catalogCache.set(provider, { at: Date.now(), status: response.status, body });
+      res.status(response.status).json(body);
+    } catch (error) {
+      res
+        .status(502)
+        .json({ error: `catalog fetch failed: ${error instanceof Error ? error.message : String(error)}` });
+    }
   });
 
   router.post('/api/rpc/prompt', async (req, res) => {
@@ -635,6 +679,11 @@ export function createRouter(
   });
 
   router.post('/api/models-config', async (req, res) => {
+    if (mode === 'demo') {
+      // kMode write guard: demo never mutates ~/.pi.
+      res.status(503).json({ error: 'demo mode is read-only' });
+      return;
+    }
     const raw: unknown = req.body;
     if (typeof raw !== 'object' || raw === null) {
       res.status(400).json({ error: 'invalid models config' });
@@ -648,7 +697,8 @@ export function createRouter(
     try {
       const configPath = path.join(AGENT_DIR, 'models.json');
       await writeFile(configPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
-      res.json({ success: true });
+      const reload = options?.reloadModels?.() ?? 'reloaded';
+      res.json({ success: true, reload });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }

@@ -37,6 +37,22 @@ export interface ModelsResponse {
   providers: Array<{ provider: string; models: ModelInfo[] }>;
 }
 
+/** One entry of the pi.dev official model catalog (P1-15 C). */
+export interface CatalogModel {
+  id: string;
+  name?: string;
+  api?: string;
+  baseUrl?: string;
+  provider?: string;
+  reasoning?: boolean;
+  input?: string[];
+  cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  contextWindow?: number;
+  maxTokens?: number;
+  compat?: Record<string, unknown>;
+  thinkingLevelMap?: Record<string, string | null>;
+}
+
 export interface MessagesResponse {
   messages: unknown[];
 }
@@ -227,11 +243,22 @@ export const api = {
     return request<Record<string, unknown>>('/api/models-config');
   },
 
-  saveModelsConfig(config: Record<string, unknown>): Promise<{ success: boolean }> {
-    return request<{ success: boolean }>('/api/models-config', {
+  saveModelsConfig(config: Record<string, unknown>): Promise<{ success: boolean; reload?: 'reloaded' | 'deferred' }> {
+    return request<{ success: boolean; reload?: 'reloaded' | 'deferred' }>('/api/models-config', {
       method: 'POST',
       body: JSON.stringify(config),
     });
+  },
+
+  /** pi.dev official per-provider model catalog (P1-15 C). */
+  catalogModels(provider: string): Promise<CatalogModel[]> {
+    return request<Record<string, unknown>>(`/api/models/catalog/${encodeURIComponent(provider)}`).then(
+      (data) =>
+        Object.values(data).filter(
+          (value): value is CatalogModel =>
+            typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'string',
+        ),
+    );
   },
 
   commands(): Promise<PiCommand[]> {

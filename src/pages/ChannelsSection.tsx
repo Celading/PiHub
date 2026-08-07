@@ -1,16 +1,28 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client.js';
+import { api, type CatalogModel } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { LoadingHint } from '../components/LoadingHint.js';
+import type { ModelInfo } from '../../shared/types.js';
 import './ChannelsSection.css';
 
 interface ModelForm {
   id: string;
   name: string;
   reasoning: boolean;
+  /**
+   * True once the user, a template, or the official catalog explicitly set
+   * reasoning — the store auto-fill (P1-15 C) then leaves it alone. False
+   * only for models that were never reasoned about (manual adds / entries
+   * saved without a reasoning key).
+   */
+  reasoningTouched: boolean;
   contextWindow: string;
   maxTokens: string;
   inputTypes: string;
+  /** thinkingLevelMap as JSON text (details accordion). */
+  thinkingLevelMap: string;
+  /** compat as JSON text (details accordion). */
+  compat: string;
   detailsOpen: boolean;
 }
 
@@ -31,9 +43,12 @@ function emptyModel(): ModelForm {
     id: '',
     name: '',
     reasoning: false,
+    reasoningTouched: false,
     contextWindow: '',
     maxTokens: '',
     inputTypes: 'text',
+    thinkingLevelMap: '',
+    compat: '',
     detailsOpen: false,
   };
 }
@@ -51,18 +66,58 @@ function emptyProvider(): ProviderForm {
   };
 }
 
+/** JSON text → plain object, or null when invalid. */
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  if (text.trim().length === 0) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** JSON text → thinking level map (all values string | null), or null. */
+function parseJsonStringMap(text: string): Record<string, string | null> | null {
+  const parsed = parseJsonObject(text);
+  if (parsed === null) {
+    return null;
+  }
+  for (const value of Object.values(parsed)) {
+    if (typeof value !== 'string' && value !== null) {
+      return null;
+    }
+  }
+  return parsed as Record<string, string | null>;
+}
+
 /**
  * One-click mainstream provider templates (P1-12 E). `api` values follow the
  * pi provider contract (openai-completions covers OpenAI-compatible hosts
  * incl. Volcengine Ark; anthropic / gemini for their native APIs). Model ids
- * are current public examples — users adjust to their accounts.
+ * are current public examples — users adjust to their accounts. P1-15: model
+ * entries carry reasoning/thinkingLevelMap/contextWindow/maxTokens defaults
+ * so applied templates produce working thinking levels immediately.
  */
 interface ChannelTemplate {
   key: string;
   name: string;
   baseUrl: string;
   api: string;
-  models: Array<{ id: string; name: string; reasoning: boolean }>;
+  models: Array<{
+    id: string;
+    name: string;
+    reasoning: boolean;
+    thinkingLevelMap?: Record<string, string | null>;
+    contextWindow?: number;
+    maxTokens?: number;
+    compat?: Record<string, unknown>;
+  }>;
 }
 
 const CHANNEL_TEMPLATES: ChannelTemplate[] = [
@@ -74,6 +129,21 @@ const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     models: [
       { id: 'doubao-seed-1-6-250615', name: 'Doubao Seed 1.6', reasoning: false },
       { id: 'doubao-1-5-pro-32k-250115', name: 'Doubao 1.5 Pro 32K', reasoning: false },
+      {
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        reasoning: true,
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        // Same family as the official DeepSeek entry (store deepseek-v4-flash).
+        thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' },
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          requiresReasoningContentOnAssistantMessages: true,
+          thinkingFormat: 'deepseek',
+        },
+      },
     ],
   },
   {
@@ -83,7 +153,18 @@ const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     api: 'openai-completions',
     models: [
       { id: 'deepseek-chat', name: 'DeepSeek Chat', reasoning: false },
-      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', reasoning: true },
+      {
+        id: 'deepseek-reasoner',
+        name: 'DeepSeek Reasoner',
+        reasoning: true,
+        thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' },
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          requiresReasoningContentOnAssistantMessages: true,
+          thinkingFormat: 'deepseek',
+        },
+      },
     ],
   },
   {
@@ -169,8 +250,10 @@ function toConfig(providers: ProviderForm[]): Record<string, unknown> {
         if (model.name.trim().length > 0) {
           modelEntry['name'] = model.name.trim();
         }
-        if (model.reasoning) {
-          modelEntry['reasoning'] = true;
+        // Explicit false persists too (touched) — otherwise the store
+        // auto-fill would re-fill reasoning on the next save.
+        if (model.reasoning || model.reasoningTouched) {
+          modelEntry['reasoning'] = model.reasoning;
         }
         const context = Number(model.contextWindow);
         if (model.contextWindow.trim().length > 0 && Number.isFinite(context) && context > 0) {
@@ -187,6 +270,14 @@ function toConfig(providers: ProviderForm[]): Record<string, unknown> {
         if (input.length > 0) {
           modelEntry['input'] = input;
         }
+        const levelMap = parseJsonStringMap(model.thinkingLevelMap);
+        if (levelMap !== null) {
+          modelEntry['thinkingLevelMap'] = levelMap;
+        }
+        const compat = parseJsonObject(model.compat);
+        if (compat !== null) {
+          modelEntry['compat'] = compat;
+        }
         return modelEntry;
       });
     if (models.length > 0) {
@@ -198,13 +289,40 @@ function toConfig(providers: ProviderForm[]): Record<string, unknown> {
   return out;
 }
 
+/** Official catalog entry → form model (P1-15 C). */
+function catalogToForm(model: CatalogModel): ModelForm {
+  return {
+    id: model.id,
+    name: model.name ?? '',
+    reasoning: model.reasoning === true,
+    reasoningTouched: true,
+    contextWindow: model.contextWindow !== undefined ? String(model.contextWindow) : '',
+    maxTokens: model.maxTokens !== undefined ? String(model.maxTokens) : '',
+    inputTypes: Array.isArray(model.input) && model.input.length > 0 ? model.input.join(',') : 'text',
+    thinkingLevelMap: model.thinkingLevelMap !== undefined ? JSON.stringify(model.thinkingLevelMap) : '',
+    compat: model.compat !== undefined ? JSON.stringify(model.compat) : '',
+    detailsOpen: false,
+  };
+}
+
+interface CatalogState {
+  providerIndex: number;
+  models: CatalogModel[];
+  checked: string[];
+  loading: boolean;
+  error: string | null;
+}
+
 export function ChannelsSection(): React.JSX.Element {
   const { t } = useI18n();
   const [providers, setProviders] = useState<ProviderForm[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [catalog, setCatalog] = useState<CatalogState | null>(null);
+  const [storeModels, setStoreModels] = useState<ModelInfo[]>([]);
 
   const applyTemplate = (): void => {
     const template = CHANNEL_TEMPLATES.find((entry) => entry.key === selectedTemplate);
@@ -222,9 +340,13 @@ export function ChannelsSection(): React.JSX.Element {
         id: model.id,
         name: model.name,
         reasoning: model.reasoning,
-        contextWindow: '',
-        maxTokens: '',
+        reasoningTouched: true,
+        contextWindow: model.contextWindow !== undefined ? String(model.contextWindow) : '',
+        maxTokens: model.maxTokens !== undefined ? String(model.maxTokens) : '',
         inputTypes: 'text',
+        thinkingLevelMap:
+          model.thinkingLevelMap !== undefined ? JSON.stringify(model.thinkingLevelMap) : '',
+        compat: model.compat !== undefined ? JSON.stringify(model.compat) : '',
         detailsOpen: false,
       })),
       detailsOpen: false,
@@ -238,6 +360,7 @@ export function ChannelsSection(): React.JSX.Element {
     const load = async (): Promise<void> => {
       try {
         const config = await api.modelsConfig();
+        const store = await api.models();
         if (cancelled) {
           return;
         }
@@ -248,14 +371,27 @@ export function ChannelsSection(): React.JSX.Element {
           const models: ModelForm[] = rawModels.map((raw) => {
             const model = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
             const input = Array.isArray(model['input']) ? (model['input'] as string[]).join(',') : 'text';
+            const levelMap =
+              typeof model['thinkingLevelMap'] === 'object' && model['thinkingLevelMap'] !== null
+                ? JSON.stringify(model['thinkingLevelMap'])
+                : '';
+            const compat =
+              typeof model['compat'] === 'object' && model['compat'] !== null
+                ? JSON.stringify(model['compat'])
+                : '';
             return {
               id: typeof model['id'] === 'string' ? model['id'] : '',
               name: typeof model['name'] === 'string' ? model['name'] : '',
               reasoning: model['reasoning'] === true,
+              // Explicit key means the user/template/catalog decided — store
+              // auto-fill must not override it (P1-15 C).
+              reasoningTouched: 'reasoning' in model,
               contextWindow:
                 typeof model['contextWindow'] === 'number' ? String(model['contextWindow']) : '',
               maxTokens: typeof model['maxTokens'] === 'number' ? String(model['maxTokens']) : '',
               inputTypes: input,
+              thinkingLevelMap: levelMap,
+              compat,
               detailsOpen: false,
             };
           });
@@ -271,6 +407,7 @@ export function ChannelsSection(): React.JSX.Element {
           };
         });
         setProviders(forms);
+        setStoreModels(store.providers.flatMap((entry) => entry.models));
         setLoaded(true);
       } catch (err) {
         if (!cancelled) {
@@ -304,14 +441,127 @@ export function ChannelsSection(): React.JSX.Element {
     );
   };
 
+  const openCatalog = async (providerIndex: number): Promise<void> => {
+    const provider = providers[providerIndex];
+    if (provider === undefined) {
+      return;
+    }
+    const key = provider.key.trim() || provider.name.trim();
+    if (key.length === 0) {
+      setCatalog({ providerIndex, models: [], checked: [], loading: false, error: t('channels.catalog.needKey') });
+      return;
+    }
+    setCatalog({ providerIndex, models: [], checked: [], loading: true, error: null });
+    try {
+      const models = await api.catalogModels(key);
+      setCatalog({ providerIndex, models, checked: models.map((model) => model.id), loading: false, error: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const unavailable = /not found/i.test(message);
+      setCatalog({
+        providerIndex,
+        models: [],
+        checked: [],
+        loading: false,
+        error: unavailable ? t('channels.catalog.unavailable') : t('channels.catalog.failed', { error: message }),
+      });
+    }
+  };
+
+  const toggleCatalog = (modelId: string): void => {
+    setCatalog((prev) => {
+      if (prev === null) {
+        return prev;
+      }
+      const checked = prev.checked.includes(modelId)
+        ? prev.checked.filter((id) => id !== modelId)
+        : [...prev.checked, modelId];
+      return { ...prev, checked };
+    });
+  };
+
+  const applyCatalog = (providerIndex: number): void => {
+    if (catalog === null) {
+      return;
+    }
+    const existing = new Set(providers[providerIndex]?.models.map((model) => model.id) ?? []);
+    const added = catalog.models.filter(
+      (model) => catalog.checked.includes(model.id) && !existing.has(model.id),
+    );
+    const skipped = catalog.checked.length - added.length;
+    if (added.length > 0) {
+      setProviders((prev) =>
+        prev.map((provider, i) =>
+          i === providerIndex
+            ? { ...provider, models: [...provider.models, ...added.map(catalogToForm)] }
+            : provider,
+        ),
+      );
+    }
+    if (skipped > 0) {
+      setNotice(t('channels.catalog.skipped', { count: String(skipped) }));
+    }
+    setCatalog(null);
+  };
+
   const save = async (): Promise<void> => {
     setError(null);
     try {
-      await api.saveModelsConfig(toConfig(providers));
-      setSavedNotice(true);
-      window.setTimeout(() => {
-        setSavedNotice(false);
-      }, 2500);
+      // P1-15 C: fill empty model fields from the model store before saving.
+      // Exact provider+id match inherits full params (incl. thinkingLevelMap
+      // and compat); an id-only cross-provider match inherits only generic
+      // model-family params (reasoning/contextWindow/maxTokens/input) — never
+      // provider-specific thinking maps. Explicit user/template/catalog
+      // values always win (fill only what is empty/untouched).
+      let filled = 0;
+      const next = providers.map((provider) => {
+        const key = provider.key.trim() || provider.name.trim();
+        const models = provider.models.map((model) => {
+          const exact = storeModels.find((entry) => entry.provider === key && entry.id === model.id);
+          const anyId = exact ?? storeModels.find((entry) => entry.id === model.id);
+          if (anyId === undefined) {
+            return { model, changed: false };
+          }
+          const patch: Partial<ModelForm> = {};
+          if (model.contextWindow === '' && anyId.contextWindow !== undefined) {
+            patch['contextWindow'] = String(anyId.contextWindow);
+          }
+          if (model.maxTokens === '' && anyId.maxTokens !== undefined) {
+            patch['maxTokens'] = String(anyId.maxTokens);
+          }
+          if (model.inputTypes === '' && anyId.input !== undefined && anyId.input.length > 0) {
+            patch['inputTypes'] = anyId.input.join(',');
+          }
+          if (!model.reasoningTouched && anyId.reasoning !== undefined) {
+            patch['reasoning'] = anyId.reasoning;
+            patch['reasoningTouched'] = true;
+          }
+          if (exact !== undefined) {
+            if (model.thinkingLevelMap === '' && exact.thinkingLevelMap !== undefined) {
+              patch['thinkingLevelMap'] = JSON.stringify(exact.thinkingLevelMap);
+            }
+            if (model.compat === '' && exact.compat !== undefined) {
+              patch['compat'] = JSON.stringify(exact.compat);
+            }
+          }
+          return Object.keys(patch).length > 0 ? { model: { ...model, ...patch }, changed: true } : { model, changed: false };
+        });
+        return { provider: { ...provider, models: models.map((entry) => entry.model) }, changed: models.some((entry) => entry.changed) };
+      });
+      const providersNext = next.map((entry) => entry.provider);
+      filled = next.filter((entry) => entry.changed).reduce((acc, entry) => acc + entry.provider.models.length, 0);
+      setProviders(providersNext);
+      const saved = await api.saveModelsConfig(toConfig(providersNext));
+      if (saved.reload === 'deferred') {
+        setNotice(t('channels.reloadPending'));
+      } else if (filled > 0) {
+        setNotice(t('channels.fillNotice', { count: String(filled) }));
+      } else {
+        setSavedNotice(true);
+        window.setTimeout(() => {
+          setSavedNotice(false);
+        }, 2500);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -325,6 +575,7 @@ export function ChannelsSection(): React.JSX.Element {
       </div>
 
       {error !== null ? <div className="settings-error mono">{error}</div> : null}
+      {notice !== null ? <div className="channel-notice mono">{notice}</div> : null}
 
       {!loaded ? (
         <p className="settings-hint">
@@ -427,6 +678,22 @@ export function ChannelsSection(): React.JSX.Element {
                         }}
                       />
                     </label>
+                    {/* P1-15 B: reasoning surfaced on the main row (was hidden
+                        in the details accordion — the dsv4f thinking complaint
+                        traced to a missing reasoning flag). */}
+                    <label className="channel-field channel-field-small channel-field-inline">
+                      <span className="channel-label mono">{t('model.reasoning')}</span>
+                      <input
+                        type="checkbox"
+                        checked={model.reasoning}
+                        onChange={(event) => {
+                          updateModel(providerIndex, modelIndex, {
+                            reasoning: event.target.checked,
+                            reasoningTouched: true,
+                          });
+                        }}
+                      />
+                    </label>
                     <label className="channel-field channel-field-small">
                       <span className="channel-label mono">{t('model.contextWindow')}</span>
                       <input
@@ -485,19 +752,7 @@ export function ChannelsSection(): React.JSX.Element {
                   </button>
                   {model.detailsOpen ? (
                     <div className="channel-model-details">
-                      <label className="channel-field channel-field-small">
-                        <span className="channel-label mono">{t('model.reasoning')}</span>
-                        <input
-                          type="checkbox"
-                          checked={model.reasoning}
-                          onChange={(event) => {
-                            updateModel(providerIndex, modelIndex, {
-                              reasoning: event.target.checked,
-                            });
-                          }}
-                        />
-                      </label>
-                      <label className="channel-field channel-field-small">
+                      <label className="channel-field channel-field-wide">
                         <span className="channel-label mono">{t('model.inputTypes')}</span>
                         <input
                           className="channel-input mono"
@@ -507,6 +762,33 @@ export function ChannelsSection(): React.JSX.Element {
                             updateModel(providerIndex, modelIndex, {
                               inputTypes: event.target.value,
                             });
+                          }}
+                        />
+                      </label>
+                      <label className="channel-field channel-field-wide">
+                        <span className="channel-label mono">{t('model.thinkingLevelMap')}</span>
+                        <textarea
+                          className="channel-input mono channel-json-input"
+                          rows={2}
+                          value={model.thinkingLevelMap}
+                          placeholder='{"high":"high","max":"max"}'
+                          spellCheck={false}
+                          onChange={(event) => {
+                            updateModel(providerIndex, modelIndex, {
+                              thinkingLevelMap: event.target.value,
+                            });
+                          }}
+                        />
+                      </label>
+                      <label className="channel-field channel-field-wide">
+                        <span className="channel-label mono">{t('model.compat')}</span>
+                        <textarea
+                          className="channel-input mono channel-json-input"
+                          rows={2}
+                          value={model.compat}
+                          spellCheck={false}
+                          onChange={(event) => {
+                            updateModel(providerIndex, modelIndex, { compat: event.target.value });
                           }}
                         />
                       </label>
@@ -525,7 +807,78 @@ export function ChannelsSection(): React.JSX.Element {
               >
                 ＋ {t('channels.addModel')}
               </button>
+              <button
+                type="button"
+                className="channel-add-model"
+                disabled={catalog !== null}
+                onClick={() => {
+                  void openCatalog(providerIndex);
+                }}
+              >
+                ⬇ {t('channels.catalog.import')}
+              </button>
             </div>
+
+            {catalog !== null && catalog.providerIndex === providerIndex ? (
+              <div className="channel-catalog" aria-label={t('channels.catalog.heading')}>
+                <div className="channel-catalog-head">
+                  <span className="channel-catalog-title mono">{t('channels.catalog.heading')}</span>
+                  <span className="channel-catalog-hint mono">{t('channels.catalog.hint')}</span>
+                </div>
+                {catalog.loading ? (
+                  <p className="settings-hint">
+                    <LoadingHint>{t('settings.loading')}</LoadingHint>
+                  </p>
+                ) : catalog.error !== null ? (
+                  <p className="channel-catalog-error mono">{catalog.error}</p>
+                ) : catalog.models.length === 0 ? (
+                  <p className="settings-hint">{t('channels.catalog.empty')}</p>
+                ) : (
+                  <div className="channel-catalog-list">
+                    {catalog.models.map((model) => {
+                      const checked = catalog.checked.includes(model.id);
+                      return (
+                        <label key={model.id} className="channel-catalog-item" data-checked={checked}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              toggleCatalog(model.id);
+                            }}
+                          />
+                          <span className="channel-catalog-name mono">{model.name ?? model.id}</span>
+                          <span className="channel-catalog-id mono">{model.id}</span>
+                          {model.reasoning === true ? (
+                            <span className="channel-catalog-badge mono">reasoning</span>
+                          ) : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="channel-catalog-actions">
+                  <button
+                    type="button"
+                    className="channel-catalog-confirm"
+                    disabled={catalog.loading || catalog.checked.length === 0}
+                    onClick={() => {
+                      applyCatalog(providerIndex);
+                    }}
+                  >
+                    {t('channels.catalog.confirm', { count: String(catalog.checked.length) })}
+                  </button>
+                  <button
+                    type="button"
+                    className="channel-catalog-cancel"
+                    onClick={() => {
+                      setCatalog(null);
+                    }}
+                  >
+                    {t('channels.catalog.cancel')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ))
       )}

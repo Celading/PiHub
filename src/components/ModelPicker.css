@@ -38,7 +38,9 @@
 .model-picker-menu {
   position: absolute;
   z-index: 50;
-  left: 0;
+  /* Right-aligned with the trigger: the bar sits at the far right of the
+     composer bottom row (P1-15), so the menu grows leftward into the chat. */
+  right: 0;
   bottom: calc(100% + 4px);
   min-width: 240px;
   max-width: 320px;

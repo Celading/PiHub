@@ -375,39 +375,8 @@ export function Composer({
         </span>
         {/* Model / thinking shown as quiet inline text on the action row
             (owner: static display, small font, 0.7 opacity; selection takes
-            effect immediately — no save button). */}
-        {rpcState !== undefined && rpcState !== null && onSetModel !== undefined && onSetThinking !== undefined ? (
-          <span className="composer-model-fields">
-            <label className="modelbar-field">
-              <span className="modelbar-label mono">{t('modelbar.model')}</span>
-              <ModelPicker
-                options={modelOptions}
-                value={`${rpcState.model?.provider ?? ''}/${rpcState.model?.id ?? ''}`}
-                onSelect={(provider, modelId) => {
-                  modelChanged(`${provider}/${modelId}`);
-                }}
-                label={rpcState.model?.name ?? 'model'}
-              />
-            </label>
-            <label className="modelbar-field">
-              <span className="modelbar-label mono">{t('modelbar.thinking')}</span>
-              <select
-                className="modelbar-select"
-                value={rpcState.thinkingLevel}
-                onChange={(event) => {
-                  onSetThinking(event.target.value);
-                }}
-                aria-label={t('modelbar.thinking')}
-              >
-                {THINKING_LEVELS.map((level) => (
-                  <option key={level} value={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </span>
-        ) : null}
+            effect immediately — no save button). P1-15: bar sits at the FAR
+            RIGHT of the bottom row, following the composer bottom. */}
         <button
           type="button"
           className="composer-favorite"
@@ -440,6 +409,38 @@ export function Composer({
         >
           {isAgentRunning ? t('composer.steer') : t('composer.send')}
         </button>
+        {rpcState !== undefined && rpcState !== null && onSetModel !== undefined && onSetThinking !== undefined ? (
+          <span className="composer-model-fields">
+            <label className="modelbar-field">
+              <span className="modelbar-label mono">{t('modelbar.model')}</span>
+              <ModelPicker
+                options={modelOptions}
+                value={`${rpcState.model?.provider ?? ''}/${rpcState.model?.id ?? ''}`}
+                onSelect={(provider, modelId) => {
+                  modelChanged(`${provider}/${modelId}`);
+                }}
+                label={rpcState.model?.name ?? 'model'}
+              />
+            </label>
+            <label className="modelbar-field">
+              <span className="modelbar-label mono">{t('modelbar.thinking')}</span>
+              <select
+                className="modelbar-select"
+                value={rpcState.thinkingLevel}
+                onChange={(event) => {
+                  onSetThinking(event.target.value);
+                }}
+                aria-label={t('modelbar.thinking')}
+              >
+                {THINKING_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </span>
+        ) : null}
       </div>
     </div>
   );

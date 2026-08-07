@@ -212,6 +212,8 @@ export const modelInfoSchema = z
     contextWindow: z.number().optional(),
     maxTokens: z.number().optional(),
     cost: costBreakdownSchema.optional(),
+    thinkingLevelMap: z.record(z.string(), z.string().nullable()).optional(),
+    compat: z.record(z.string(), z.unknown()).optional(),
   })
   
 
@@ -336,6 +338,8 @@ export const modelStoreEntrySchema = z
       .optional(),
     contextWindow: z.number().optional(),
     maxTokens: z.number().optional(),
+    thinkingLevelMap: z.record(z.string(), z.string().nullable()).optional(),
+    compat: z.record(z.string(), z.unknown()).optional(),
   })
 
 export const modelStoreFileSchema = z.record(

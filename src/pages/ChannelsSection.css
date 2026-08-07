@@ -165,6 +165,145 @@
   gap: var(--space-2);
 }
 
+/* P1-15 B: reasoning checkbox sits inline on the model main row. */
+.channel-field-inline {
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: end;
+  padding-bottom: var(--space-2);
+}
+
+/* P1-15 B: JSON fields span the details row. */
+.channel-model-details .channel-field-wide {
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1 1 100%;
+}
+
+.channel-json-input {
+  resize: vertical;
+  font-size: var(--text-xs);
+}
+
+/* P1-15 C: store auto-fill notice. */
+.channel-notice {
+  padding: var(--space-2) var(--space-3);
+  border-left: var(--border-thick) solid var(--primary);
+  background-color: var(--primary-subtle, var(--surface-subtle));
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
+/* P1-15 C: official catalog import panel. */
+.channel-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-thin) solid var(--primary);
+  background-color: var(--surface);
+}
+
+.channel-catalog-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.channel-catalog-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.channel-catalog-hint {
+  font-size: var(--text-xs);
+  color: var(--text-placeholder);
+}
+
+.channel-catalog-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 14rem;
+  overflow-y: auto;
+  border: var(--border-thin) solid var(--border-subtle);
+}
+
+.channel-catalog-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.channel-catalog-item[data-checked='true'] {
+  background-color: var(--primary-subtle, var(--surface-subtle));
+}
+
+.channel-catalog-name {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-catalog-id {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.channel-catalog-badge {
+  font-size: var(--text-xs);
+  color: var(--primary);
+  border: var(--border-thin) solid var(--primary);
+  padding: 0 var(--space-1);
+}
+
+.channel-catalog-error {
+  font-size: var(--text-xs);
+  color: var(--red-60);
+}
+
+.channel-catalog-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.channel-catalog-confirm,
+.channel-catalog-cancel {
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-thin) solid var(--primary);
+  border-radius: var(--radius-none);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.channel-catalog-confirm {
+  background-color: var(--primary);
+  color: #ffffff;
+}
+
+.channel-catalog-confirm:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.channel-catalog-cancel {
+  background-color: transparent;
+  color: var(--text-secondary);
+}
+
+.channel-add-model:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .channels-actions {
   display: flex;
   align-items: center;
