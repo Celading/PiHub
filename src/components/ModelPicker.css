@@ -1,0 +1,104 @@
+/* Model picker (P1-14): two-level channel → model menu. */
+
+.model-picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  padding: 1px 2px;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.model-picker-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker-chevron {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.model-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.model-picker-menu {
+  position: absolute;
+  z-index: 50;
+  left: 0;
+  bottom: calc(100% + 4px);
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 32px rgb(0 0 0 / 0.25);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-picker-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-picker-group-head {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.7;
+  padding: 4px 8px 2px;
+}
+
+.model-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.model-picker-item:hover {
+  background: var(--bg-subtle);
+}
+
+.model-picker-item[data-selected='true'] {
+  background: var(--bg-subtle);
+  color: var(--primary);
+}
+
+/* User-defined display names render in italic (P1-14). */
+.model-picker-item[data-custom='true'] .model-picker-item-label {
+  font-style: italic;
+}
+
+.model-picker-item-label[data-locked='true'] {
+  opacity: 0.65;
+}
+
+.model-picker-check {
+  color: var(--primary);
+}

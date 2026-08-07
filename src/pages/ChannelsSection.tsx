@@ -16,6 +16,8 @@ interface ModelForm {
 
 interface ProviderForm {
   key: string;
+  /** Short channel alias shown as the first-level picker name (P1-14). */
+  alias: string;
   name: string;
   baseUrl: string;
   apiKey: string;
@@ -39,6 +41,7 @@ function emptyModel(): ModelForm {
 function emptyProvider(): ProviderForm {
   return {
     key: '',
+    alias: '',
     name: '',
     baseUrl: '',
     apiKey: '',
@@ -144,6 +147,9 @@ function toConfig(providers: ProviderForm[]): Record<string, unknown> {
       continue;
     }
     const entry: Record<string, unknown> = {};
+    if (provider.alias.trim().length > 0) {
+      entry['alias'] = provider.alias.trim();
+    }
     if (provider.name.trim().length > 0) {
       entry['name'] = provider.name.trim();
     }
@@ -207,6 +213,7 @@ export function ChannelsSection(): React.JSX.Element {
     }
     const provider: ProviderForm = {
       key: template.key,
+      alias: '',
       name: template.name,
       baseUrl: template.baseUrl,
       apiKey: '',
@@ -254,6 +261,7 @@ export function ChannelsSection(): React.JSX.Element {
           });
           return {
             key,
+            alias: typeof entry['alias'] === 'string' ? entry['alias'] : '',
             name: typeof entry['name'] === 'string' ? entry['name'] : '',
             baseUrl: typeof entry['baseUrl'] === 'string' ? entry['baseUrl'] : '',
             apiKey: typeof entry['apiKey'] === 'string' ? entry['apiKey'] : '',
@@ -335,6 +343,15 @@ export function ChannelsSection(): React.JSX.Element {
                 placeholder={t('provider.name')}
                 onChange={(event) => {
                   updateProvider(providerIndex, { key: event.target.value });
+                }}
+              />
+              <input
+                className="channel-input channel-key mono"
+                value={provider.alias}
+                aria-label={t('provider.alias')}
+                placeholder={t('provider.alias')}
+                onChange={(event) => {
+                  updateProvider(providerIndex, { alias: event.target.value });
                 }}
               />
               <button
