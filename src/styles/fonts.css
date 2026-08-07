@@ -119,3 +119,8 @@
   font-family: 'HMSymbols Extra';
   content: '\F0608';
 }
+
+.hico-square-and-pencil::before {
+  font-family: 'HMSymbols Extra';
+  content: '\F0609';
+}

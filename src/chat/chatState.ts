@@ -46,7 +46,8 @@ type ChatAction =
   | { type: 'error'; error: string }
   | { type: 'runSettled'; at: number }
   | { type: 'runAborted' }
-  | { type: 'retrying'; retrying: boolean };
+  | { type: 'retrying'; retrying: boolean }
+  | { type: 'clearAfter'; key: string };
 
 let nextKey = 0;
 
@@ -175,6 +176,23 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, rpcState: action.rpcState };
     case 'error':
       return { ...state, error: action.error };
+    case 'clearAfter': {
+      // P1-13 D: resending an edited prompt drops everything from that
+      // message onward (panel-side display; the pi session file is not
+      // rewritten).
+      const index = state.messages.findIndex((message) => message.key === action.key);
+      if (index === -1) {
+        return state;
+      }
+      return {
+        ...state,
+        messages: state.messages.slice(0, index),
+        isAgentRunning: false,
+        runStartedAt: null,
+        lastRun: null,
+        runAbortedFlag: false,
+      };
+    }
   }
 }
 
@@ -256,6 +274,8 @@ export interface ChatSession {
   setModel: (provider: string, modelId: string) => Promise<void>;
   setThinkingLevel: (level: string) => Promise<void>;
   refreshState: () => Promise<void>;
+  /** Drops all messages from `key` onward (edited-prompt resend). */
+  clearAfter: (key: string) => void;
 }
 
 export function useChatSession(): ChatSession {
@@ -428,5 +448,8 @@ export function useChatSession(): ChatSession {
     setModel,
     setThinkingLevel,
     refreshState,
+    clearAfter: (key: string) => {
+      dispatch({ type: 'clearAfter', key });
+    },
   };
 }

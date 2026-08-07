@@ -59,6 +59,21 @@ function extractAssistantMarkdown(message: AgentMessage): string {
     .trim();
 }
 
+/** Extracts the user prompt text (copy + edit primitives, P1-13 D/E). */
+function extractUserPrompt(message: ChatMessage | null): string {
+  if (message === null || message.message.role !== 'user') {
+    return '';
+  }
+  const content = message.message.content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content
+    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .join('\n')
+    .trim();
+}
+
 /** Items that belong in the collapsed tool cluster only.
  *  Assistant messages that also carry text/thinking must stay in the main
  *  stream — otherwise the moment a toolCall block is appended mid-stream the
@@ -281,6 +296,10 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   const [branchConfirm, setBranchConfirm] = useState<{ entryId: string; name: string } | null>(
     null,
   );
+  // P1-13 D: last-prompt edit-and-resend (double confirmation).
+  const [editingUnitKey, setEditingUnitKey] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [confirmResend, setConfirmResend] = useState(false);
   // Live elapsed timer for the running unit (1s tick; renders only while a
   // run is active so idle pages never pay the interval cost).
   const [, setNowTick] = useState(0);
@@ -304,6 +323,21 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     try {
       const text = extractAssistantMarkdown(item.message);
       await navigator.clipboard.writeText(text);
+      setCopiedKey(item.key);
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === item.key ? null : current));
+      }, 1500);
+    } catch {
+      // clipboard unavailable; ignore
+    }
+  };
+
+  const copyUserPrompt = async (item: ChatMessage | null): Promise<void> => {
+    if (item === null) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(extractUserPrompt(item));
       setCopiedKey(item.key);
       window.setTimeout(() => {
         setCopiedKey((current) => (current === item.key ? null : current));
@@ -363,10 +397,87 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                   {!collapsed ? (
                     <div className="chat-unit-body">
                       {unit.user !== null ? (
-                        <MessageItem
-                          message={unit.user.message}
-                          isStreaming={false}
-                        />
+                        editingUnitKey === unit.key ? (
+                          <div className="chat-unit-edit">
+                            <textarea
+                              className="chat-unit-edit-text mono"
+                              value={editText}
+                              spellCheck={false}
+                              onChange={(event) => {
+                                setEditText(event.target.value);
+                                setConfirmResend(false);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  setEditingUnitKey(null);
+                                  setConfirmResend(false);
+                                }
+                              }}
+                            />
+                            <div className="chat-unit-edit-actions">
+                              <button
+                                type="button"
+                                className="btn-secondary mono chat-unit-edit-btn"
+                                onClick={() => {
+                                  setEditingUnitKey(null);
+                                  setConfirmResend(false);
+                                }}
+                              >
+                                {t('chat.cancelEdit')}
+                              </button>
+                              <button
+                                type="button"
+                                className={confirmResend ? 'btn-danger mono chat-unit-edit-btn' : 'btn-primary mono chat-unit-edit-btn'}
+                                disabled={editText.trim().length === 0}
+                                onClick={() => {
+                                  if (!confirmResend) {
+                                    setConfirmResend(true);
+                                    return;
+                                  }
+                                  // Second confirmation overwrites: drop
+                                  // everything from this prompt onward and
+                                  // resend the edited text (P1-13 D).
+                                  const key = unit.key;
+                                  chat.clearAfter(key);
+                                  setEditingUnitKey(null);
+                                  setConfirmResend(false);
+                                  void chat.sendPrompt(editText.trim());
+                                }}
+                              >
+                                {confirmResend ? t('chat.confirmResend') : t('chat.editPrompt')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <MessageItem
+                              message={unit.user.message}
+                              isStreaming={false}
+                            />
+                            <div className="chat-unit-user-footer">
+                              <IconButton
+                                icon="hico-square-on-square-fill"
+                                label={t('chat.copyPrompt')}
+                                placement="top"
+                                onClick={() => {
+                                  void copyUserPrompt(unit.user);
+                                }}
+                              />
+                              {isLast ? (
+                                <IconButton
+                                  icon="hico-square-and-pencil"
+                                  label={t('chat.editPrompt')}
+                                  placement="top"
+                                  onClick={() => {
+                                    setEditingUnitKey(unit.key);
+                                    setEditText(extractUserPrompt(unit.user));
+                                    setConfirmResend(false);
+                                  }}
+                                />
+                              ) : null}
+                            </div>
+                          </>
+                        )
                       ) : null}
                       {(() => {
                         // Tool blocks of this run collapse into one set
