@@ -242,3 +242,42 @@ describe('rpc stream event schema', () => {
     expect(rpcStreamEventSchema.safeParse({ type: 42 }).success).toBe(false);
   });
 });
+
+describe('provider-tolerant content blocks (P1-12 E)', () => {
+  it('keeps unknown block types without failing the message', () => {
+    const result = agentMessageSchema.safeParse({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'visible answer' },
+        { type: 'reasoning', content: 'volcengine-style hidden reasoning' },
+      ],
+      timestamp: Date.now(),
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.role === 'assistant') {
+      const blocks = result.data.content;
+      expect(Array.isArray(blocks)).toBe(true);
+      if (Array.isArray(blocks)) {
+        const texts = blocks.filter(
+          (block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text',
+        );
+        expect(texts).toHaveLength(1);
+        // unknown block survives as a generic object
+        expect(
+          blocks.some((block) => (block as { type?: string }).type === 'reasoning'),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('degrades malformed known blocks instead of dropping the message', () => {
+    const result = agentMessageSchema.safeParse({
+      role: 'assistant',
+      content: [{ type: 'text', text: 42 }],
+      timestamp: Date.now(),
+    });
+    // The loose union keeps the message alive; the renderer guards the
+    // block shape at runtime (P1-12 E).
+    expect(result.success).toBe(true);
+  });
+});

@@ -91,7 +91,7 @@ function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
           }
           if (item.message.role === 'assistant') {
             const call = item.message.content.find((block) => block.type === 'toolCall');
-            return call?.type === 'toolCall' ? call.name : '';
+            return call?.type === 'toolCall' && typeof call.name === 'string' ? call.name : '';
           }
           return '';
         })

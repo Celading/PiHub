@@ -129,34 +129,59 @@ function ImageBlock({
   return <img className="message-image" src={src} alt="attachment" />;
 }
 
+/** Renderable block: known ContentBlock or a provider-extension generic
+ *  object (P1-12 E) that is skipped by the switch. */
+type RenderBlock = ContentBlock | Record<string, unknown>;
+
 function ContentBlocks({
   blocks,
   thinkingStatus,
   animate,
 }: {
-  blocks: ContentBlock[];
+  blocks: RenderBlock[];
   thinkingStatus: ThinkingStatus;
   animate: boolean;
 }): React.JSX.Element {
   return (
     <>
       {blocks.map((block, index) => {
-        switch (block.type) {
-          case 'text':
-            return <Markdown key={index} text={block.text} />;
-          case 'thinking':
-            return (
+        // Unknown provider blocks (e.g. Volcengine reasoning_content) are
+        // preserved in the data but render nothing here. The runtime guard
+        // goes through `unknown` because the static type cannot express the
+        // loose schema output.
+        const raw: unknown = block;
+        if (raw === null || typeof raw !== 'object' || !('type' in raw)) {
+          return null;
+        }
+        const typeValue: unknown = (raw as { type?: unknown }).type;
+        if (typeof typeValue !== 'string') {
+          return null;
+        }
+        const known = block as ContentBlock;
+        switch (known.type) {
+          case 'text': {
+            // Runtime guard: the loose provider-tolerant schema can keep a
+            // malformed block alive; never crash the stream on it.
+            const textValue: unknown = (known as { text?: unknown }).text;
+            return typeof textValue === 'string' ? (
+              <Markdown key={index} text={textValue} />
+            ) : null;
+          }
+          case 'thinking': {
+            const thinkingValue: unknown = (known as { thinking?: unknown }).thinking;
+            return typeof thinkingValue === 'string' ? (
               <ThinkingBlock
                 key={index}
-                text={block.thinking}
+                text={thinkingValue}
                 status={thinkingStatus}
                 animate={animate}
               />
-            );
+            ) : null;
+          }
           case 'toolCall':
-            return <ToolCallBlock key={index} block={block} />;
+            return <ToolCallBlock key={index} block={known} />;
           case 'image':
-            return <ImageBlock key={index} block={block} />;
+            return <ImageBlock key={index} block={known} />;
         }
       })}
     </>

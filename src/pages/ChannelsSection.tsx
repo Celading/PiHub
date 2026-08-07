@@ -48,6 +48,93 @@ function emptyProvider(): ProviderForm {
   };
 }
 
+/**
+ * One-click mainstream provider templates (P1-12 E). `api` values follow the
+ * pi provider contract (openai-completions covers OpenAI-compatible hosts
+ * incl. Volcengine Ark; anthropic / gemini for their native APIs). Model ids
+ * are current public examples — users adjust to their accounts.
+ */
+interface ChannelTemplate {
+  key: string;
+  name: string;
+  baseUrl: string;
+  api: string;
+  models: Array<{ id: string; name: string; reasoning: boolean }>;
+}
+
+const CHANNEL_TEMPLATES: ChannelTemplate[] = [
+  {
+    key: 'volcengine-ark',
+    name: '火山方舟 Volcengine Ark',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    api: 'openai-completions',
+    models: [
+      { id: 'doubao-seed-1-6-250615', name: 'Doubao Seed 1.6', reasoning: false },
+      { id: 'doubao-1-5-pro-32k-250115', name: 'Doubao 1.5 Pro 32K', reasoning: false },
+    ],
+  },
+  {
+    key: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    api: 'openai-completions',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek Chat', reasoning: false },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', reasoning: true },
+    ],
+  },
+  {
+    key: 'openai',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    api: 'openai-completions',
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o', reasoning: false },
+      { id: 'gpt-4o-mini', name: 'GPT-4o mini', reasoning: false },
+    ],
+  },
+  {
+    key: 'anthropic',
+    name: 'Anthropic Claude',
+    baseUrl: 'https://api.anthropic.com',
+    api: 'anthropic',
+    models: [
+      { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', reasoning: false },
+      { id: 'claude-opus-4-5', name: 'Claude Opus 4.5', reasoning: false },
+    ],
+  },
+  {
+    key: 'google-gemini',
+    name: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    api: 'gemini',
+    models: [
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', reasoning: true },
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', reasoning: true },
+    ],
+  },
+  {
+    key: 'ollama',
+    name: 'Ollama（本地）',
+    baseUrl: 'http://localhost:11434/v1',
+    api: 'openai-completions',
+    models: [
+      { id: 'llama3.1', name: 'Llama 3.1', reasoning: false },
+      { id: 'qwen2.5', name: 'Qwen 2.5', reasoning: false },
+    ],
+  },
+  {
+    key: 'openrouter',
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    api: 'openai-completions',
+    models: [
+      { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', reasoning: false },
+      { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', reasoning: false },
+    ],
+  },
+];
+
 function toConfig(providers: ProviderForm[]): Record<string, unknown> {
   const out: Record<string, unknown> = { providers: {} };
   const providersOut: Record<string, unknown> = {};
@@ -111,6 +198,33 @@ export function ChannelsSection(): React.JSX.Element {
   const [loaded, setLoaded] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+
+  const applyTemplate = (): void => {
+    const template = CHANNEL_TEMPLATES.find((entry) => entry.key === selectedTemplate);
+    if (template === undefined) {
+      return;
+    }
+    const provider: ProviderForm = {
+      key: template.key,
+      name: template.name,
+      baseUrl: template.baseUrl,
+      apiKey: '',
+      api: template.api,
+      models: template.models.map((model) => ({
+        id: model.id,
+        name: model.name,
+        reasoning: model.reasoning,
+        contextWindow: '',
+        maxTokens: '',
+        inputTypes: 'text',
+        detailsOpen: false,
+      })),
+      detailsOpen: false,
+    };
+    setProviders((prev) => [...prev, provider]);
+    setSelectedTemplate('');
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -400,6 +514,29 @@ export function ChannelsSection(): React.JSX.Element {
       )}
 
       <div className="channels-actions">
+        <select
+          className="channels-template-select mono"
+          value={selectedTemplate}
+          onChange={(event) => {
+            setSelectedTemplate(event.target.value);
+          }}
+          aria-label={t('channels.template.select')}
+        >
+          <option value="">{t('channels.template.select')}</option>
+          {CHANNEL_TEMPLATES.map((template) => (
+            <option key={template.key} value={template.key}>
+              {template.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="channel-add-provider"
+          disabled={selectedTemplate.length === 0}
+          onClick={applyTemplate}
+        >
+          ＋ {t('channels.template.apply')}
+        </button>
         <button
           type="button"
           className="channel-add-provider"

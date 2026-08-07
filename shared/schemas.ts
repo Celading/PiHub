@@ -71,7 +71,16 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
   imageContentSchema,
 ]);
 
-export const contentSchema = z.union([z.string(), z.array(contentBlockSchema)]);
+/**
+ * Assistant/user content blocks. Provider extensions (e.g. Volcengine
+ * reasoning_content or future block types) must not kill the whole message:
+ * unknown blocks are preserved as generic objects and skipped by the UI
+ * renderer (ContentBlocks switch has no match → renders nothing).
+ */
+export const contentSchema = z.union([
+  z.string(),
+  z.array(z.union([contentBlockSchema, z.record(z.string(), z.unknown())])),
+]);
 
 export const userMessageSchema = z
   .object({
@@ -85,7 +94,7 @@ export const userMessageSchema = z
 export const assistantMessageSchema = z
   .object({
     role: z.literal('assistant'),
-    content: z.array(contentBlockSchema),
+    content: z.array(z.union([contentBlockSchema, z.record(z.string(), z.unknown())])),
     api: z.string().optional(),
     provider: z.string().optional(),
     model: z.string().optional(),
@@ -100,7 +109,7 @@ export const toolResultMessageSchema = z
     role: z.literal('toolResult'),
     toolCallId: z.string(),
     toolName: z.string(),
-    content: z.array(contentBlockSchema),
+    content: z.array(z.union([contentBlockSchema, z.record(z.string(), z.unknown())])),
     usage: tokenUsageSchema.optional(),
     isError: z.boolean().default(false),
     timestamp: z.number(),
