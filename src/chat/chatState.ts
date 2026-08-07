@@ -113,19 +113,24 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       const messages = [...state.messages];
       const last = messages[messages.length - 1];
-      if (last === undefined || last.message.role !== 'assistant') {
-        messages.push({
-          key: makeKey(),
-          message: action.message,
-          isStreaming: state.isAgentRunning,
-          ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
-        });
-      } else {
+      // Same-role → replace in place (covers user message_end after
+      // message_start, and assistant streaming updates). Different role →
+      // append. Previously only assistant was updated, so user message_end
+      // pushed a duplicate of the just-started user turn.
+      if (last !== undefined && last.message.role === action.message.role) {
         messages[messages.length - 1] = {
           ...last,
           message: action.message,
+          isStreaming: state.isAgentRunning && action.message.role === 'assistant',
           ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
         };
+      } else {
+        messages.push({
+          key: makeKey(),
+          message: action.message,
+          isStreaming: state.isAgentRunning && action.message.role === 'assistant',
+          ...(action.entryId === undefined ? {} : { entryId: action.entryId }),
+        });
       }
       return { ...state, messages };
     }
