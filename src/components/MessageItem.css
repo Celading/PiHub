@@ -208,6 +208,18 @@
   color: var(--primary);
 }
 
+/* P1-12 C: one-line human summary of the tool call. */
+.toolcall-summary {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.toolcall-meta {
+  font-size: 0.72rem;
+  color: var(--text-placeholder);
+  margin-bottom: var(--space-1);
+}
+
 .toolcall-chevron {
   font-size: 0.75rem;
   color: var(--text-placeholder);

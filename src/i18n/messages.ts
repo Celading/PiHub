@@ -147,6 +147,12 @@ export const zhMessages = {
   'chat.retrying': '运行出错，自动重试中…',
   'chat.copyResult': '复制结果',
   'chat.copied': '已复制',
+  'tool.summary.read': '读取了 {target}',
+  'tool.summary.write': '改动了 {target}',
+  'tool.summary.exec': '执行了 {target}',
+  'tool.summary.search': '搜索了 {target}',
+  'tool.summary.fetch': '请求了 {target}',
+  'tool.summary.call': '调用了 {name}：{target}',
 
   // thinking + workflow (phase-3)
   'thinking.active': '思考中…',
@@ -497,6 +503,12 @@ export const enMessages: Record<MessageKey, string> = {
   'chat.retrying': 'Run failed — auto retrying…',
   'chat.copyResult': 'Copy result',
   'chat.copied': 'Copied',
+  'tool.summary.read': 'Read {target}',
+  'tool.summary.write': 'Modified {target}',
+  'tool.summary.exec': 'Ran {target}',
+  'tool.summary.search': 'Searched {target}',
+  'tool.summary.fetch': 'Fetched {target}',
+  'tool.summary.call': 'Called {name}: {target}',
 
   // thinking + workflow (phase-3)
   'thinking.active': 'Thinking…',

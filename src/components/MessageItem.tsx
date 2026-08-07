@@ -3,6 +3,7 @@ import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
+import { summarizeToolCall } from './toolSummary.js';
 import './MessageItem.css';
 
 export type ThinkingStatus = 'active' | 'done' | 'interrupted';
@@ -12,8 +13,10 @@ function ToolCallBlock({
 }: {
   block: Extract<ContentBlock, { type: 'toolCall' }>;
 }): React.JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const argumentsText = JSON.stringify(block.arguments, null, 2);
+  const summary = summarizeToolCall(block.name, block.arguments);
 
   return (
     <div className="toolcall">
@@ -25,13 +28,16 @@ function ToolCallBlock({
         }}
         aria-expanded={expanded}
       >
-        <span className="toolcall-name mono">{block.name}</span>
+        <span className="toolcall-summary">
+          {t(summary.key, summary.params)}
+        </span>
         <span className="toolcall-chevron" aria-hidden="true">
           {expanded ? '−' : '+'}
         </span>
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>
         <div className="collapse-region-inner">
+          <div className="toolcall-meta mono">{block.name}</div>
           <pre className="toolcall-args">{argumentsText}</pre>
         </div>
       </div>
@@ -212,7 +218,9 @@ function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 't
         aria-expanded={expanded}
       >
         <span className="toolresult-name mono">{message.toolName}</span>
-        <span className="toolresult-status mono">{message.isError ? 'error' : 'ok'}</span>
+        <span className="toolresult-status mono" aria-label={message.isError ? 'error' : 'ok'}>
+          {message.isError ? '❌' : '✅'}
+        </span>
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>
