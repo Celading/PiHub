@@ -478,6 +478,24 @@ export function createRouter(
     await withBridge(res, () => bridge.send({ type: 'get_entries' }));
   });
 
+  // Session tree DAG of the current RPC session (P1-05 session-tree viz).
+  // Pass-through of the official pi `get_tree` command; the frontend renders
+  // the DAG (branch timeline / node labels) from the returned shape.
+  router.get('/api/rpc/tree', async (_req, res) => {
+    if (mode === 'demo') {
+      // kMode: demo has no live pi; serve the mock session's parsed tree so
+      // the tree view keeps the same API shape.
+      const detail = await sessions.get(DEMO_RUNNING_ID);
+      if (detail === null) {
+        res.status(404).json({ error: 'no demo session' });
+        return;
+      }
+      res.json({ tree: detail.tree, leafId: detail.leafId });
+      return;
+    }
+    await withBridge(res, () => bridge.send({ type: 'get_tree' }));
+  });
+
   router.post('/api/rpc/switch_session', async (req, res) => {
     if (writeDenied(res)) {
       return;

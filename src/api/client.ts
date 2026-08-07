@@ -11,6 +11,7 @@ import type {
   SessionDetail,
   SessionStats,
   SessionSummary,
+  SessionTreeResponse,
 } from '../../shared/types.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -94,6 +95,11 @@ export const api = {
 
   rpcEntries(): Promise<EntriesResponse> {
     return request<EntriesResponse>('/api/rpc/entries');
+  },
+
+  // P1-05: session tree DAG of the current RPC session (get_tree passthrough).
+  rpcTree(): Promise<SessionTreeResponse> {
+    return request<SessionTreeResponse>('/api/rpc/tree');
   },
 
   // Extension UI protocol (P1-01)

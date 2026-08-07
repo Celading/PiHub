@@ -5,6 +5,7 @@ import { useSessionComposer } from '../chat/sessionComposer.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
 import { LoadingHint } from '../components/LoadingHint.js';
+import { SessionTreeView } from '../components/SessionTreeView.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import './SessionDetailView.css';
 
@@ -50,6 +51,8 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
   const [filter, setFilter] = useState<'all' | 'mainline' | 'no-tools' | 'user' | 'labeled'>(
     'all',
   );
+  /** P1-05: stream view vs session-tree view (branch timeline / one-click fork). */
+  const [viewMode, setViewMode] = useState<'stream' | 'tree'>('stream');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [statsOpen, setStatsOpen] = useState(false);
@@ -358,38 +361,57 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
               </button>
             ))}
           </span>
+          <button
+            type="button"
+            className="session-action-btn"
+            data-active={viewMode === 'tree'}
+            onClick={() => {
+              setViewMode(viewMode === 'tree' ? 'stream' : 'tree');
+            }}
+          >
+            {t('session.tree')}
+          </button>
         </div>
       </div>
 
       <div className="session-stream">
-        {visible.map((entry) =>
-          entry.type === 'message' && entry.message !== undefined ? (
-            <div key={entry.id} data-offbranch={!mainlineIds.has(entry.id)}>
-              {entry.message.role === 'user' && mainlineIds.has(entry.id) ? (
-                <div className="session-message-fork">
-                  <button
-                    type="button"
-                    className="session-fork-btn"
-                    onClick={() => {
-                      void handleFork(entry.id);
-                    }}
-                  >
-                    <span className="hico hico-square-grid" aria-hidden="true" />
-                    {t('session.fork')}
-                  </button>
-                </div>
-              ) : null}
-              <MessageItem message={entry.message} isStreaming={false} />
-            </div>
-          ) : (
-            <div key={entry.id} className="session-event mono">
-              {entry.type === 'model_change' && entry.provider !== undefined
-                ? `model → ${entry.provider}/${entry.modelId ?? ''}`
-                : entry.type === 'thinking_level_change'
-                  ? `thinking → ${entry.thinkingLevel ?? ''}`
-                  : entry.type}
-            </div>
-          ),
+        {viewMode === 'tree' ? (
+          <SessionTreeView
+            detail={detail}
+            onFork={(entryId) => {
+              void handleFork(entryId);
+            }}
+          />
+        ) : (
+          visible.map((entry) =>
+            entry.type === 'message' && entry.message !== undefined ? (
+              <div key={entry.id} data-offbranch={!mainlineIds.has(entry.id)}>
+                {entry.message.role === 'user' && mainlineIds.has(entry.id) ? (
+                  <div className="session-message-fork">
+                    <button
+                      type="button"
+                      className="session-fork-btn"
+                      onClick={() => {
+                        void handleFork(entry.id);
+                      }}
+                    >
+                      <span className="hico hico-square-grid" aria-hidden="true" />
+                      {t('session.fork')}
+                    </button>
+                  </div>
+                ) : null}
+                <MessageItem message={entry.message} isStreaming={false} />
+              </div>
+            ) : (
+              <div key={entry.id} className="session-event mono">
+                {entry.type === 'model_change' && entry.provider !== undefined
+                  ? `model → ${entry.provider}/${entry.modelId ?? ''}`
+                  : entry.type === 'thinking_level_change'
+                    ? `thinking → ${entry.thinkingLevel ?? ''}`
+                    : entry.type}
+              </div>
+            ),
+          )
         )}
       </div>
 
