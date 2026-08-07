@@ -23,6 +23,7 @@ export type RpcCommand =
   | { type: 'abort_bash' }
   | { type: 'compact' }
   | { type: 'set_auto_compaction'; enabled: boolean }
+  | { type: 'set_auto_retry'; enabled: boolean }
   | { type: 'get_session_stats' }
   | { type: 'export_html'; outputPath?: string }
   | { type: 'get_commands' }

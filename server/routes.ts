@@ -670,6 +670,27 @@ export function createRouter(
     }
   });
 
+  /* ---- P1-02 S2: auto-retry toggle (pi set_auto_retry {enabled}). ---- */
+  router.post('/api/rpc/auto-retry', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = autoCompactionBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid auto-retry body' });
+      return;
+    }
+    try {
+      const response = await bridge.send({
+        type: 'set_auto_retry',
+        enabled: body.data.enabled,
+      });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   router.get('/api/rpc/session-stats', async (_req, res) => {
     await withBridge(res, () => bridge.send({ type: 'get_session_stats' }));
   });

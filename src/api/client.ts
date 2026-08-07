@@ -224,6 +224,14 @@ export const api = {
     });
   },
 
+  /** P1-02 S2: auto-retry toggle (pi set_auto_retry). */
+  setAutoRetry(enabled: boolean): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/auto-retry', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
   sessionStats(): Promise<unknown> {
     return request<unknown>('/api/rpc/session-stats');
   },
