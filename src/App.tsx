@@ -223,6 +223,7 @@ export function App(): React.JSX.Element {
       }}
       sessionFile={sessionWatch.sessionFile}
       sessionStatus={sessionWatch.status}
+      requestPending={extensionUi.dialogs.length > 0}
       onViewChange={setView}
       onSessionChanged={() => {
         setChatSessionKey(chatSessionKey + 1);
@@ -231,7 +232,11 @@ export function App(): React.JSX.Element {
         setTheme(theme === 'light' ? 'dark' : 'light');
       }}
     >
-      {renderPage()}
+      {/* P1-17 F: each view switch replays the 3D entry (perspective
+          rotateY) + rise-from-below with fade. */}
+      <div key={view} className="shell-page-enter">
+        {renderPage()}
+      </div>
       <ExtensionUiHost ui={extensionUi} />
       <CommandPalette
         open={commandOpen}

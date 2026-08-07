@@ -261,6 +261,18 @@ export const api = {
     );
   },
 
+  /** P1-17 C: fetch the channel's OWN model list (`{baseUrl}/models`). */
+  fetchChannelModels(params: {
+    baseUrl: string;
+    apiKey: string;
+    api: string;
+  }): Promise<CatalogModel[]> {
+    return request<{ models: CatalogModel[] }>('/api/models/fetch', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }).then((response) => response.models);
+  },
+
   commands(): Promise<PiCommand[]> {
     return request<{ commands: PiCommand[] }>('/api/rpc/commands').then((response) => response.commands);
   },

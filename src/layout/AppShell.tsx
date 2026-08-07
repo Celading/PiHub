@@ -20,6 +20,8 @@ interface AppShellProps {
   onToggleCollapsed: () => void;
   sessionFile: string | null;
   sessionStatus: SessionStatus;
+  /** P1-17 E: agent request pending → active session dot blinks. */
+  requestPending: boolean;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
   onThemeToggle: () => void;
@@ -50,6 +52,7 @@ export function AppShell({
   onToggleCollapsed,
   sessionFile,
   sessionStatus,
+  requestPending,
   onViewChange,
   onSessionChanged,
   onThemeToggle,
@@ -146,6 +149,7 @@ export function AppShell({
           onToggleCollapsed={onToggleCollapsed}
           sessionFile={sessionFile}
           sessionStatus={sessionStatus}
+          requestPending={requestPending}
           onViewChange={onViewChange}
           onSessionChanged={onSessionChanged}
         />

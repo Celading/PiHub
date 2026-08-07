@@ -311,6 +311,8 @@ interface CatalogState {
   checked: string[];
   loading: boolean;
   error: string | null;
+  /** P1-17 C: where the entries came from (panel copy only). */
+  source: 'official' | 'channel';
 }
 
 export function ChannelsSection(): React.JSX.Element {
@@ -448,13 +450,13 @@ export function ChannelsSection(): React.JSX.Element {
     }
     const key = provider.key.trim() || provider.name.trim();
     if (key.length === 0) {
-      setCatalog({ providerIndex, models: [], checked: [], loading: false, error: t('channels.catalog.needKey') });
+      setCatalog({ providerIndex, models: [], checked: [], loading: false, error: t('channels.catalog.needKey'), source: 'official' });
       return;
     }
-    setCatalog({ providerIndex, models: [], checked: [], loading: true, error: null });
+    setCatalog({ providerIndex, models: [], checked: [], loading: true, error: null, source: 'official' });
     try {
       const models = await api.catalogModels(key);
-      setCatalog({ providerIndex, models, checked: models.map((model) => model.id), loading: false, error: null });
+      setCatalog({ providerIndex, models, checked: models.map((model) => model.id), loading: false, error: null, source: 'official' });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const unavailable = /not found/i.test(message);
@@ -464,6 +466,40 @@ export function ChannelsSection(): React.JSX.Element {
         checked: [],
         loading: false,
         error: unavailable ? t('channels.catalog.unavailable') : t('channels.catalog.failed', { error: message }),
+        source: 'official',
+      });
+    }
+  };
+
+  /** P1-17 C: pull the channel's own model list via `{baseUrl}/models`. */
+  const openChannelCatalog = async (providerIndex: number): Promise<void> => {
+    const provider = providers[providerIndex];
+    if (provider === undefined) {
+      return;
+    }
+    const key = provider.key.trim() || provider.name.trim();
+    if (key.length === 0) {
+      setCatalog({ providerIndex, models: [], checked: [], loading: false, error: t('channels.catalog.needKey'), source: 'channel' });
+      return;
+    }
+    const baseUrl = provider.baseUrl.trim();
+    const apiKey = provider.apiKey.trim();
+    if (baseUrl.length === 0 || apiKey.length === 0) {
+      setCatalog({ providerIndex, models: [], checked: [], loading: false, error: t('channels.catalog.needToken'), source: 'channel' });
+      return;
+    }
+    setCatalog({ providerIndex, models: [], checked: [], loading: true, error: null, source: 'channel' });
+    try {
+      const models = await api.fetchChannelModels({ baseUrl, apiKey, api: provider.api });
+      setCatalog({ providerIndex, models, checked: models.map((model) => model.id), loading: false, error: null, source: 'channel' });
+    } catch (err) {
+      setCatalog({
+        providerIndex,
+        models: [],
+        checked: [],
+        loading: false,
+        error: t('channels.catalog.failed', { error: err instanceof Error ? err.message : String(err) }),
+        source: 'channel',
       });
     }
   };
@@ -817,13 +853,27 @@ export function ChannelsSection(): React.JSX.Element {
               >
                 ⬇ {t('channels.catalog.import')}
               </button>
+              <button
+                type="button"
+                className="channel-add-model"
+                disabled={catalog !== null}
+                onClick={() => {
+                  void openChannelCatalog(providerIndex);
+                }}
+              >
+                ⬇ {t('channels.catalog.fetch')}
+              </button>
             </div>
 
             {catalog !== null && catalog.providerIndex === providerIndex ? (
               <div className="channel-catalog" aria-label={t('channels.catalog.heading')}>
                 <div className="channel-catalog-head">
                   <span className="channel-catalog-title mono">{t('channels.catalog.heading')}</span>
-                  <span className="channel-catalog-hint mono">{t('channels.catalog.hint')}</span>
+                  <span className="channel-catalog-hint mono">
+                    {catalog.source === 'channel'
+                      ? t('channels.catalog.fetchHint')
+                      : t('channels.catalog.hint')}
+                  </span>
                 </div>
                 {catalog.loading ? (
                   <p className="settings-hint">

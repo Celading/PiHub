@@ -20,36 +20,57 @@
 
 .user-bubble {
   max-width: 80%;
-  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: stretch;
   background-color: var(--chat-user-bubble);
   color: var(--chat-user-text);
+}
+
+/* P1-17 A: full-height collapse strip on the left edge of the bubble. */
+.user-bubble-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--chat-user-text);
+  opacity: 0.45;
+  cursor: pointer;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.user-bubble-strip:hover,
+.user-bubble-strip:focus-visible {
+  opacity: 1;
+  background-color: rgb(0 0 0 / 0.08);
+}
+
+.user-bubble-strip-chevron {
+  font-size: 0.7rem;
+}
+
+.user-bubble-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
 }
 
 .user-bubble .markdown p {
   color: inherit;
 }
 
-/* P1-16 D: long prompts cap at 12 lines with an expand/collapse toggle.
+/* P1-16 D: long prompts cap at 12 lines with the left strip toggle.
  * The max-height is measured in JS (cap/full px) so the transition animates
  * both directions; 18rem is the pre-measure fallback. */
 .user-bubble-collapse {
   max-height: 18rem;
   overflow: hidden;
   transition: max-height var(--duration-base) var(--ease-out);
-}
-
-.user-bubble-toggle {
-  margin-top: var(--space-1);
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  color: var(--text-placeholder);
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.user-bubble-toggle:hover {
-  color: var(--primary);
 }
 
 .assistant-body {

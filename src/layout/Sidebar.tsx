@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionSummary } from '../../shared/types.js';
-import type { SettingsSectionId, View } from '../types/app.js';
+import { SETTINGS_SECTIONS, type SettingsSectionId, type View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
@@ -24,24 +24,12 @@ interface SidebarProps {
   onToggleCollapsed: () => void;
   sessionFile: string | null;
   sessionStatus: SessionStatus;
+  /** P1-17 E: an agent request (e.g. pending dialog) is waiting — the
+   *  active session's dot blinks even while it is the current session. */
+  requestPending: boolean;
   onViewChange: (view: View) => void;
   onSessionChanged: () => void;
 }
-
-/** Settings modal tree: shown in the global sidebar while the settings
- *  view is active (phase-3 modal switch). */
-const SETTINGS_SECTIONS: ReadonlyArray<{
-  id: SettingsSectionId;
-  icon: string;
-}> = [
-  { id: 'general', icon: 'hico-gearshape' },
-  { id: 'personal', icon: 'hico-sliders' },
-  { id: 'models', icon: 'hico-cross-store' },
-  { id: 'sessions', icon: 'hico-rectangle-stack' },
-  { id: 'permissions', icon: 'hico-lock' },
-  { id: 'favorites', icon: 'hico-bookmark' },
-  { id: 'lab', icon: 'hico-flask' },
-];
 
 type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
 
@@ -92,6 +80,10 @@ interface SessionRowProps {
   intlTag: string;
   active: boolean;
   status: SessionStatus;
+  /** P1-17 E: session has unseen activity (dot shown); read hides it. */
+  unread: boolean;
+  /** P1-17 E: the agent has a pending request for this session — blink. */
+  blink: boolean;
   onOpen: (session: SessionSummary) => void;
   onContextMenu: (event: React.MouseEvent, session: SessionSummary) => void;
   t: (key: Parameters<ReturnType<typeof useI18n>['t']>[0], params?: Record<string, string | number>) => string;
@@ -102,6 +94,8 @@ function SessionRow({
   intlTag,
   active,
   status,
+  unread,
+  blink,
   onOpen,
   onContextMenu,
   t,
@@ -116,6 +110,12 @@ function SessionRow({
         : status === 'pending'
           ? t('session.status.pending')
           : t('session.status.done');
+
+  // P1-17 E: dot shows for unseen sessions; the active session hides it
+  // unless it is busy or has a pending agent request (blink).
+  const showDot = active
+    ? status !== 'done' || blink
+    : unread || status === 'running';
 
   return (
     <div
@@ -144,12 +144,15 @@ function SessionRow({
         title={session.cwd}
       >
         <span className="sidebar-session-head">
-          <span
-            className="session-status-dot"
-            data-status={status}
-            title={statusLabel}
-            aria-label={statusLabel}
-          />
+          {showDot ? (
+            <span
+              className="session-status-dot"
+              data-status={status}
+              data-blink={blink}
+              title={blink ? t('session.status.request') : statusLabel}
+              aria-label={blink ? t('session.status.request') : statusLabel}
+            />
+          ) : null}
           <span className="sidebar-session-cwd mono">
             {session.name !== undefined && session.name.length > 0
               ? session.name
@@ -173,6 +176,7 @@ export function Sidebar({
   onToggleCollapsed,
   sessionFile,
   sessionStatus,
+  requestPending,
   onViewChange,
   onSessionChanged,
 }: SidebarProps): React.JSX.Element {
@@ -207,6 +211,37 @@ export function Sidebar({
   });
   const [editingCollection, setEditingCollection] = useState<string | null>(null);
   const [collectionDraft, setCollectionDraft] = useState('');
+  // P1-17 D: optimistic highlight while switch_session is in flight.
+  const [pendingActive, setPendingActive] = useState<string | null>(null);
+
+  // P1-17 E: per-session read watermark (localStorage), so the status dot
+  // shows unseen sessions and hides read ones.
+  const markRead = useCallback((fileName: string): void => {
+    try {
+      localStorage.setItem(`pi-panel:read-at:${fileName}`, new Date().toISOString());
+    } catch {
+      // storage unavailable — unread tracking degrades to always-visible
+    }
+  }, []);
+  const isUnread = useCallback((session: SessionSummary): boolean => {
+    try {
+      const raw = localStorage.getItem(`pi-panel:read-at:${session.fileName}`);
+      const read = raw === null ? 0 : Date.parse(raw);
+      const lastActivity = Date.parse(session.lastActivityAt);
+      return Number.isFinite(read) && Number.isFinite(lastActivity) && lastActivity > read;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Switching to a session marks it read; the optimistic highlight clears
+  // once the authoritative sessionFile catches up.
+  useEffect(() => {
+    if (sessionFile !== null) {
+      markRead(sessionFile);
+      setPendingActive((prev) => (prev !== null && prev === sessionFile ? null : prev));
+    }
+  }, [sessionFile, markRead]);
 
   useEffect(() => {
     localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify(collections));
@@ -234,7 +269,9 @@ export function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, []);
+    // P1-17 E: refresh on status transitions so lastActivityAt stays fresh
+    // enough for the unread watermark.
+  }, [sessionStatus]);
 
   // P1-13 B: new sessions auto-join a collection named after their cwd
   // folder (created on demand). Existing sessions are left untouched — only
@@ -334,6 +371,10 @@ export function Sidebar({
   const handleResume = useCallback(
     async (session: SessionSummary): Promise<void> => {
       setError(null);
+      // P1-17 D: highlight immediately — the RPC round-trip must not gate
+      // the visual feedback.
+      setPendingActive(session.fileName);
+      markRead(session.fileName);
       try {
         const response = await api.switchSession(session.fileName);
         if (!response.success) {
@@ -346,7 +387,7 @@ export function Sidebar({
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [onSessionChanged, onViewChange, t],
+    [markRead, onSessionChanged, onViewChange, t],
   );
 
   const handleArchive = useCallback((sessionId: string): void => {
@@ -502,6 +543,8 @@ export function Sidebar({
     }
     return sessionStatus;
   };
+
+  const isActive = (fileName: string): boolean => fileName === (pendingActive ?? sessionFile);
 
   if (collapsed) {
     return (
@@ -685,8 +728,10 @@ export function Sidebar({
                       <li key={session.id}>
                         <SessionRow
                           session={session}
-                          active={session.fileName === sessionFile}
+                          active={isActive(session.fileName)}
                           status={statusOf(session)}
+                          unread={isUnread(session)}
+                          blink={isActive(session.fileName) && requestPending}
                           {...sessionRowProps}
                         />
                       </li>
@@ -711,8 +756,10 @@ export function Sidebar({
               <li key={session.id}>
                 <SessionRow
                           session={session}
-                          active={session.fileName === sessionFile}
+                          active={isActive(session.fileName)}
                           status={statusOf(session)}
+                          unread={isUnread(session)}
+                          blink={isActive(session.fileName) && requestPending}
                           {...sessionRowProps}
                         />
               </li>

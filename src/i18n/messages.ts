@@ -107,6 +107,7 @@ export const zhMessages = {
   'session.status.running': '任务进行中',
   'session.status.aborted': '任务中断',
   'session.status.pending': '请求权限阻塞中',
+  'session.status.request': 'agent 请求待处理',
 
   // sidebar collections (phase-3 batch)
   'sidebar.collections': '集合',
@@ -282,6 +283,9 @@ export const zhMessages = {
   'channels.catalog.unavailable': '该渠道暂无官方目录（可手动添加模型或使用主流提供商模板）',
   'channels.catalog.failed': '目录获取失败：{error}',
   'channels.catalog.needKey': '请先填写渠道名称（provider key）',
+  'channels.catalog.needToken': '需要先填写 Base URL 与 API Token',
+  'channels.catalog.fetch': '从渠道拉取',
+  'channels.catalog.fetchHint': '来自该渠道的模型接口（/models）',
   'channels.catalog.skipped': '已跳过 {count} 个已存在模型',
   'channels.fillNotice': '已从模型仓库补全 {count} 个模型参数（可调整后重新保存）',
   'channels.reloadPending': '已保存；当前任务结束后将自动重载模型运行时',
@@ -493,6 +497,7 @@ export const enMessages: Record<MessageKey, string> = {
   'session.status.running': 'Running',
   'session.status.aborted': 'Interrupted',
   'session.status.pending': 'Waiting for permission',
+  'session.status.request': 'Agent request pending',
 
   'sidebar.collections': 'Collections',
   'sidebar.ungrouped': 'Ungrouped',
@@ -659,6 +664,9 @@ export const enMessages: Record<MessageKey, string> = {
   'channels.catalog.unavailable': 'No official catalog for this channel (add models manually or use a provider template)',
   'channels.catalog.failed': 'Catalog fetch failed: {error}',
   'channels.catalog.needKey': 'Enter a channel name (provider key) first',
+  'channels.catalog.needToken': 'Enter Base URL and API Token first',
+  'channels.catalog.fetch': 'Fetch from channel',
+  'channels.catalog.fetchHint': "From this channel's model endpoint (/models)",
   'channels.catalog.skipped': 'Skipped {count} existing models',
   'channels.fillNotice': 'Filled {count} models from the model store (adjust and re-save if needed)',
   'channels.reloadPending': 'Saved; the model runtime reloads when the current task finishes',

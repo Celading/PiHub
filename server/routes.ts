@@ -147,6 +147,43 @@ export interface RouterModeOptions {
   reloadModels?: () => 'reloaded' | 'deferred';
 }
 
+/** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
+ *  Anthropic `data[]` with display_name, Gemini `models[]` with
+ *  `models/…` names) into catalog-style entries. */
+function normalizeChannelModels(data: unknown): Array<{ id: string; name?: string }> {
+  if (typeof data !== 'object' || data === null) {
+    return [];
+  }
+  const record = data as Record<string, unknown>;
+  const list = Array.isArray(record['data'])
+    ? (record['data'] as unknown[])
+    : Array.isArray(record['models'])
+      ? (record['models'] as unknown[])
+      : [];
+  const out: Array<{ id: string; name?: string }> = [];
+  for (const raw of list) {
+    if (typeof raw !== 'object' || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry['id'] === 'string' && entry['id'].length > 0) {
+      const name =
+        typeof entry['display_name'] === 'string'
+          ? entry['display_name']
+          : typeof entry['displayName'] === 'string'
+            ? entry['displayName']
+            : undefined;
+      out.push({ id: entry['id'], ...(name !== undefined ? { name } : {}) });
+    } else if (typeof entry['name'] === 'string' && entry['name'].startsWith('models/')) {
+      out.push({
+        id: entry['name'].slice('models/'.length),
+        ...(typeof entry['displayName'] === 'string' ? { name: entry['displayName'] } : {}),
+      });
+    }
+  }
+  return out;
+}
+
 export function createRouter(
   bridge: RpcBridge,
   sessions: SessionStore,
@@ -718,6 +755,56 @@ export function createRouter(
       res.json({ success: true, reload });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /* ---- per-channel model fetch (P1-17 C) ----
+   * Query the channel's OWN model-list endpoint (`{baseUrl}/models`, shaped
+   * per api style) using the panel-configured key — the same surface pi
+   * itself talks to. Only the user-configured baseUrl/apiKey leave this
+   * machine; errors surface honestly. */
+  const fetchChannelModelsBodySchema = z.object({
+    baseUrl: z.string().min(1).max(512),
+    apiKey: z.string().min(1).max(4096),
+    api: z.string().min(1).max(64),
+  });
+  router.post('/api/models/fetch', async (req, res) => {
+    if (mode === 'demo') {
+      res.status(503).json({ error: 'demo mode is read-only' });
+      return;
+    }
+    const body = fetchChannelModelsBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid fetch body' });
+      return;
+    }
+    const { baseUrl, apiKey, api } = body.data;
+    const root = baseUrl.replace(/\/+$/u, '');
+    let url: string;
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (api === 'anthropic') {
+      url = `${root}/v1/models`;
+      headers['x-api-key'] = apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+    } else if (api === 'google-generative') {
+      url = `${root}/models`;
+      headers['x-goog-api-key'] = apiKey;
+    } else {
+      url = `${root}/models`;
+      headers['authorization'] = `Bearer ${apiKey}`;
+    }
+    try {
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) {
+        res.status(502).json({ error: `provider returned HTTP ${String(response.status)}` });
+        return;
+      }
+      const data: unknown = await response.json().catch(() => null);
+      res.json({ models: normalizeChannelModels(data) });
+    } catch (error) {
+      res
+        .status(502)
+        .json({ error: `model fetch failed: ${error instanceof Error ? error.message : String(error)}` });
     }
   });
 

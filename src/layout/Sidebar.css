@@ -571,3 +571,20 @@
 }
 
 /* (back button styling lives with the primary definition above) */
+
+/* P1-17 E: pending agent request — the session lamp blinks even while it
+ * is the current session. */
+.session-status-dot[data-blink='true'] {
+  background-color: var(--status-warning);
+  animation: status-blink 0.8s ease-in-out infinite;
+}
+
+@keyframes status-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}

@@ -220,26 +220,35 @@ function CollapsibleUserBubble({ children }: { children: React.ReactNode }): Rea
 
   return (
     <div className="user-bubble">
-      <div
-        ref={innerRef}
-        className="user-bubble-collapse"
-        data-expanded={expanded}
-        style={{ maxHeight: expanded ? (fullPx ?? 'none') : (capPx ?? '18rem') }}
-      >
-        {children}
-      </div>
       {overflowing ? (
+        // P1-17 A: the collapse control is a full-height strip on the LEFT
+        // edge, following the content height — a second tap instantly undoes
+        // a mis-triggered expand/collapse.
         <button
           type="button"
-          className="user-bubble-toggle mono"
+          className="user-bubble-strip"
           aria-expanded={expanded}
+          aria-label={expanded ? t('chat.collapse') : t('chat.expand')}
+          title={expanded ? t('chat.collapse') : t('chat.expand')}
           onClick={() => {
             setExpanded(!expanded);
           }}
         >
-          {expanded ? t('chat.collapse') : t('chat.expand')}
+          <span className="user-bubble-strip-chevron" aria-hidden="true">
+            {expanded ? '‹' : '›'}
+          </span>
         </button>
       ) : null}
+      <div className="user-bubble-body">
+        <div
+          ref={innerRef}
+          className="user-bubble-collapse"
+          data-expanded={expanded}
+          style={{ maxHeight: expanded ? (fullPx ?? 'none') : (capPx ?? '18rem') }}
+        >
+          {children}
+        </div>
+      </div>
     </div>
   );
 }

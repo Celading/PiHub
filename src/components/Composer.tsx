@@ -306,6 +306,19 @@ export function Composer({
 
   return (
     <div className="composer">
+      {/* P1-17 D: Windows-Phone-style progress — staggered squares across
+          the composer's top edge while the agent is running. */}
+      {isAgentRunning ? (
+        <div className="composer-progress" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((index) => (
+            <span
+              key={index}
+              className="composer-progress-square"
+              style={{ animationDelay: `${String(index * 0.12)}s` }}
+            />
+          ))}
+        </div>
+      ) : null}
       {slashOpen && slashSuggestions.length > 0 ? (
         <div className="composer-slash" role="listbox" aria-label={t('sidebar.features')}>
           {slashSuggestions.map((suggestion, index) => (

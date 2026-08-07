@@ -317,6 +317,14 @@
   font-size: 0.7rem;
 }
 
+/* P1-17 B: total working duration on the process toggle. */
+.assistant-process-duration {
+  margin-left: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+  color: var(--text-placeholder);
+}
+
 .chat-unit-edit {
   display: flex;
   flex-direction: column;
@@ -350,4 +358,48 @@
 .chat-unit-edit-btn {
   padding: 4px 12px;
   font-size: 12px;
+}
+
+/* P1-17 D: session-loading skeleton (shimmering message rows). */
+.chat-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-4);
+}
+
+.chat-skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.chat-skeleton-user {
+  align-items: flex-end;
+}
+
+.chat-skeleton-line {
+  height: 0.9rem;
+  background: linear-gradient(
+    90deg,
+    var(--surface-subtle) 25%,
+    var(--surface-hover) 50%,
+    var(--surface-subtle) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.chat-skeleton-assistant .chat-skeleton-line {
+  opacity: 0.65;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }

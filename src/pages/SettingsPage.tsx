@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ModelInfo, SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, Theme } from '../types/app.js';
 import { api } from '../api/client.js';
@@ -6,6 +6,7 @@ import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { removeArchived, restoreSession as restoreArchived } from '../sessions/sessionActions.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { LoadingHint } from '../components/LoadingHint.js';
+import { SETTINGS_SECTIONS } from '../types/app.js';
 import {
   getPrefs,
   PREF_CHANGED_EVENT,
@@ -253,6 +254,20 @@ export function SettingsPage({
     scrollTop();
   }, [section, scrollTop]);
 
+  // P1-17 F: settings sub-pages slide in from the direction matching the
+  // section order — 1→5 (ascending) enters from above sliding down, 5→1
+  // (descending) rises from below.
+  const sectionIndex = SETTINGS_SECTIONS.findIndex((entry) => entry.id === section);
+  const prevSectionIndexRef = useRef(sectionIndex);
+  const [slideDown, setSlideDown] = useState(true);
+  useEffect(() => {
+    const prev = prevSectionIndexRef.current;
+    if (prev !== sectionIndex && prev !== -1 && sectionIndex !== -1) {
+      setSlideDown(sectionIndex > prev);
+    }
+    prevSectionIndexRef.current = sectionIndex;
+  }, [sectionIndex]);
+
   const title =
     section === 'general'
       ? t('settings.nav.general')
@@ -277,7 +292,11 @@ export function SettingsPage({
 
       {error !== null ? <div className="settings-error mono">{error}</div> : null}
 
-      <div className="settings-content scroll-area" id="settings-content">
+      <div
+        key={section}
+        className={`settings-content scroll-area${slideDown ? ' settings-slide-down' : ' settings-slide-up'}`}
+        id="settings-content"
+      >
         {section === 'general' ? (
           <>
             <section className="settings-section">

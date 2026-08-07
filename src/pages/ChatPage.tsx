@@ -145,8 +145,15 @@ function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
  * P1-16 E: a settled prompt run can leave several `.message message-assistant`
  * entries — only the LAST one is kept fully visible; the earlier ones fold
  * behind a process toggle (animated via the collapse-region grid rows).
+ * P1-17 B: the toggle shows the run's total working duration.
  */
-function AssistantProcessCollapse({ items }: { items: ChatMessage[] }): React.JSX.Element {
+function AssistantProcessCollapse({
+  items,
+  durationLabel,
+}: {
+  items: ChatMessage[];
+  durationLabel: string | null;
+}): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   return (
@@ -163,6 +170,11 @@ function AssistantProcessCollapse({ items }: { items: ChatMessage[] }): React.JS
           {expanded ? '−' : '>'}
         </span>
         <span>{t('chat.processPrefix', { count: String(items.length) })}</span>
+        {durationLabel !== null ? (
+          <span className="assistant-process-duration" aria-label={durationLabel}>
+            {durationLabel}
+          </span>
+        ) : null}
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>
         <div className="collapse-region-inner">
@@ -173,6 +185,25 @@ function AssistantProcessCollapse({ items }: { items: ChatMessage[] }): React.JS
       </div>
     </div>
   );
+}
+
+/** P1-17 B: wall-clock span of a prompt run, from the first to the last
+ *  message of the unit (epoch-ms timestamps), or null when undeterminable. */
+function runDurationLabel(items: ChatMessage[]): string | null {
+  const times = items
+    .map((item) => item.message.timestamp)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (times.length < 2) {
+    return null;
+  }
+  const spanMs = Math.max(0, (times[times.length - 1] ?? 0) - (times[0] ?? 0));
+  const totalSeconds = Math.round(spanMs / 1000);
+  if (totalSeconds < 60) {
+    return `${String(totalSeconds)}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes)}m ${String(seconds).padStart(2, '0')}s`;
 }
 
 interface ChatPageProps {
@@ -403,7 +434,26 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
             })}
           </div>
         ) : null}
-        {chat.messages.length === 0 ? (
+        {/* P1-17 D: skeleton while the switched session's messages load. */}
+        {!chat.hasLoaded ? (
+          <div className="chat-skeleton" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((index) => (
+              <div
+                key={index}
+                className={`chat-skeleton-row ${index % 2 === 0 ? 'chat-skeleton-user' : 'chat-skeleton-assistant'}`}
+              >
+                <span
+                  className="chat-skeleton-line"
+                  style={{ width: `${String(58 + ((index * 13) % 35))}%` }}
+                />
+                <span
+                  className="chat-skeleton-line"
+                  style={{ width: `${String(36 + ((index * 17) % 30))}%` }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : chat.messages.length === 0 ? (
           <div className="chatpage-empty">
             <h2 className="panel-title">{t('chat.empty.title')}</h2>
             <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
@@ -528,7 +578,12 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                         const keptItems = canFoldProcess ? nonToolItems.slice(-1) : nonToolItems;
                         return (
                           <>
-                            {canFoldProcess ? <AssistantProcessCollapse items={processItems} /> : null}
+                            {canFoldProcess ? (
+                              <AssistantProcessCollapse
+                                items={processItems}
+                                durationLabel={runDurationLabel(unit.rest)}
+                              />
+                            ) : null}
                             {keptItems.map((item) => (
                               <MessageItem
                                 key={item.key}

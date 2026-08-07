@@ -33,6 +33,8 @@ interface ChatState {
   runAbortedFlag: boolean;
   /** True while pi is auto-retrying after a failure (banner). */
   retrying: boolean;
+  /** P1-17 D: initial session load finished (drives the chat skeleton). */
+  hasLoaded: boolean;
 }
 
 type ChatAction =
@@ -69,6 +71,7 @@ function initialState(): ChatState {
     lastRun: null,
     runAbortedFlag: false,
     retrying: false,
+    hasLoaded: false,
   };
 }
 
@@ -83,6 +86,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         runStartedAt: null,
         lastRun: null,
         runAbortedFlag: false,
+        hasLoaded: true,
       };
     case 'push': {
       const next: ChatMessage[] = [
@@ -175,7 +179,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'rpcState':
       return { ...state, rpcState: action.rpcState };
     case 'error':
-      return { ...state, error: action.error };
+      return { ...state, error: action.error, hasLoaded: true };
     case 'clearAfter': {
       // P1-13 D: resending an edited prompt drops everything from that
       // message onward (panel-side display; the pi session file is not
@@ -268,6 +272,8 @@ export interface ChatSession {
   runStartedAt: number | null;
   /** Duration + abort status of the most recent completed run. */
   lastRun: RunSummary | null;
+  /** P1-17 D: initial session load finished (drives the chat skeleton). */
+  hasLoaded: boolean;
   sendPrompt: (text: string, images?: PromptImage[]) => Promise<void>;
   sendSteer: (text: string) => Promise<void>;
   abort: () => Promise<void>;
@@ -440,6 +446,7 @@ export function useChatSession(): ChatSession {
     rpcState: state.rpcState,
     error: state.error,
     retrying: state.retrying,
+    hasLoaded: state.hasLoaded,
     runStartedAt: state.runStartedAt,
     lastRun: state.lastRun,
     sendPrompt,
