@@ -17,11 +17,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
+  const raw = await response.text();
+  const parsed = (raw.length === 0 ? null : (JSON.parse(raw) as unknown)) as
+    | T
+    | { error?: string }
+    | null;
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `HTTP ${String(response.status)} ${response.statusText}`);
+    const errBody = parsed as { error?: string } | null;
+    throw new Error(errBody?.error ?? `HTTP ${String(response.status)} ${response.statusText}`);
   }
-  return (await response.json()) as T;
+  return (parsed ?? {}) as T;
 }
 
 export interface SessionListResponse {

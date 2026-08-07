@@ -120,7 +120,9 @@ async function withBridge(
       res.status(502).json({ error: response.error ?? 'pi command failed' });
       return;
     }
-    res.json(response.data);
+    // pi often returns { success: true } with no data (e.g. prompt accept).
+    // Express res.json(undefined) writes an empty body → frontend JSON parse fails.
+    res.json(response.data ?? {});
   } catch (error) {
     res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
   }
