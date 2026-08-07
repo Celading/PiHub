@@ -17,6 +17,14 @@ const SAMPLE_JSONL = [
   '{"type":"message","id":"m5","parentId":"m4","timestamp":"2026-08-05T06:27:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"trailing"}],"model":"other-model","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1785911220000}}',
 ].join('\n');
 
+// P1-04: a second session on a later day and a different cwd, with a higher
+// cost so it ranks first in topSessions and adds a second byDay bucket.
+const SECOND_JSONL = [
+  '{"type":"session","version":3,"id":"sess-002","timestamp":"2026-08-06T10:00:00.000Z","cwd":"/work/proj-b"}',
+  '{"type":"message","id":"u1","parentId":null,"timestamp":"2026-08-06T10:00:10.000Z","message":{"role":"user","content":[{"type":"text","text":"second prompt"}],"timestamp":1786010410000}}',
+  '{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-08-06T10:00:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"provider":"deepseek","model":"deepseek-v4-pro","usage":{"input":1000,"output":500,"cacheRead":0,"cacheWrite":0,"totalTokens":1500,"cost":{"input":0.01,"output":0.005,"cacheRead":0,"cacheWrite":0,"total":0.015}},"timestamp":1786010430000}}',
+].join('\n');
+
 let tempDir: string | undefined;
 
 async function writeFixture(dirName: string): Promise<string> {
@@ -82,6 +90,36 @@ describe('session store', () => {
     expect(stats.totalCost).toBeCloseTo(0.0021, 6);
     expect(stats.byModel[0]?.model).toBe('deepseek-v4-pro');
     expect(stats.byDirectory[0]?.cwd).toBe('/work/proj-a');
+    // P1-04: directory rows carry token totals; byDay has one bucket from the
+    // last-activity date; topSessions lists the single session.
+    expect(stats.byDirectory[0]?.tokens.total).toBe(212);
+    expect(stats.byDay).toEqual([
+      expect.objectContaining({ day: '2026-08-05', sessions: 1, cost: 0.0021 }),
+    ]);
+    expect(stats.topSessions).toHaveLength(1);
+    expect(stats.topSessions[0]?.fileName).toBe('nested.jsonl');
+    expect(stats.topSessions[0]?.cost).toBeCloseTo(0.0021, 6);
+  });
+
+  it('buckets stats by last-activity day and ranks top-cost sessions', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-multiday-'));
+    await writeFile(path.join(tempDir, 'nested.jsonl'), SAMPLE_JSONL, 'utf8');
+    await writeFile(path.join(tempDir, 'second.jsonl'), SECOND_JSONL, 'utf8');
+    const store = createSessionStore(tempDir);
+    const stats = await store.stats();
+    expect(stats.totalSessions).toBe(2);
+    expect(stats.byDay.map((row) => row.day)).toEqual(['2026-08-05', '2026-08-06']);
+    expect(stats.byDay[1]?.sessions).toBe(1);
+    expect(stats.byDay[1]?.messages).toBe(2);
+    expect(stats.byDay[1]?.cost).toBeCloseTo(0.015, 6);
+    expect(stats.byDay[1]?.tokens.total).toBe(1500);
+    // Directory rows aggregate tokens per cwd.
+    const dirRow = stats.byDirectory.find((row) => row.cwd === '/work/proj-b');
+    expect(dirRow?.tokens.total).toBe(1500);
+    // topSessions sorted by cost descending.
+    expect(stats.topSessions[0]?.fileName).toBe('second.jsonl');
+    expect(stats.topSessions[0]?.cwd).toBe('/work/proj-b');
+    expect(stats.topSessions[1]?.fileName).toBe('nested.jsonl');
   });
 
   it('returns empty state when no session files exist', async () => {

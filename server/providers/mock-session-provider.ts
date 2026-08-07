@@ -1,6 +1,7 @@
 import type {
   AgentMessage,
   ContentBlock,
+  DayStatRow,
   DirectoryStatRow,
   ModelStatRow,
   ProviderStatRow,
@@ -309,6 +310,7 @@ function stats(): SessionStats {
   const byModelMap = new Map<string, ModelStatRow>();
   const byProviderMap = new Map<string, ProviderStatRow>();
   const byDirectoryMap = new Map<string, DirectoryStatRow>();
+  const byDayMap = new Map<string, DayStatRow>();
   let totalUser = 0;
   let totalAssistant = 0;
   let totalToolCalls = 0;
@@ -363,16 +365,54 @@ function stats(): SessionStats {
     const dirRow = byDirectoryMap.get(summary.cwd);
     if (dirRow !== undefined) {
       dirRow.sessions += 1;
+      dirRow.messages += summary.messageCount;
+      dirRow.tokens.input += summary.tokens.input;
+      dirRow.tokens.output += summary.tokens.output;
       dirRow.cost += summary.cost;
     } else {
       byDirectoryMap.set(summary.cwd, {
         cwd: summary.cwd,
         sessions: 1,
         messages: summary.messageCount,
+        tokens: { ...summary.tokens },
+        cost: summary.cost,
+      });
+    }
+
+    const day = summary.lastActivityAt.slice(0, 10);
+    const dayRow = byDayMap.get(day);
+    if (dayRow !== undefined) {
+      dayRow.sessions += 1;
+      dayRow.messages += summary.messageCount;
+      dayRow.tokens.input += summary.tokens.input;
+      dayRow.tokens.output += summary.tokens.output;
+      dayRow.cost += summary.cost;
+    } else {
+      byDayMap.set(day, {
+        day,
+        sessions: 1,
+        messages: summary.messageCount,
+        tokens: { ...summary.tokens },
         cost: summary.cost,
       });
     }
   }
+
+  const sortByCost = <T extends { cost: number }>(rows: T[]): T[] =>
+    [...rows].sort((a, b) => b.cost - a.cost);
+
+  const topSessions: SessionStats['topSessions'] = summaries
+    .map((summary) => ({
+      fileName: summary.fileName,
+      cwd: summary.cwd,
+      startedAt: summary.startedAt,
+      lastActivityAt: summary.lastActivityAt,
+      messages: summary.messageCount,
+      tokens: { ...summary.tokens },
+      cost: summary.cost,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 5);
 
   return {
     totalSessions: summaries.length,
@@ -381,9 +421,11 @@ function stats(): SessionStats {
     totalToolCalls,
     totals: totalsAcc,
     totalCost,
-    byModel: [...byModelMap.values()],
-    byProvider: [...byProviderMap.values()],
-    byDirectory: [...byDirectoryMap.values()],
+    byModel: sortByCost([...byModelMap.values()]),
+    byProvider: sortByCost([...byProviderMap.values()]),
+    byDirectory: sortByCost([...byDirectoryMap.values()]),
+    byDay: [...byDayMap.entries()].map(([, row]) => row).sort((a, b) => (a.day < b.day ? -1 : 1)),
+    topSessions,
   };
 }
 
