@@ -103,3 +103,77 @@
   padding: var(--space-3) var(--space-4);
   background-color: var(--code-background) !important;
 }
+
+/* P1-12 D: rich diff block. */
+.diffblock {
+  margin: var(--space-2) 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.diffblock-body {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.diffblock-line {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px;
+  line-height: 1.5;
+}
+
+.diffblock-gutter {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.diffblock-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+}
+
+.diffblock-add {
+  background: rgb(0 160 90 / 0.12);
+}
+
+.diffblock-add .diffblock-gutter {
+  color: var(--status-ok);
+}
+
+.diffblock-del {
+  background: rgb(220 50 47 / 0.1);
+}
+
+.diffblock-del .diffblock-gutter {
+  color: var(--status-error);
+}
+
+.diffblock-hunk {
+  background: var(--bg-subtle);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.diffblock-toggle {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 5px 8px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.diffblock-toggle:hover {
+  color: var(--text-primary);
+}
