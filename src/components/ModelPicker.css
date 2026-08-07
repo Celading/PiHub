@@ -66,6 +66,11 @@
   padding: 4px 8px 2px;
 }
 
+/* Custom channel aliases (alias ≠ provider key) render italic (P1-16). */
+.model-picker-group-head[data-custom='true'] {
+  font-style: italic;
+}
+
 .model-picker-item {
   display: flex;
   align-items: center;

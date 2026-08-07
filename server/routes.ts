@@ -1,4 +1,4 @@
-import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -138,6 +138,52 @@ export interface RouterModeOptions {
     store: PipelineStore;
     engine: PipelineEngine | null;
   };
+  /**
+   * P1-15: restart the pi child after a channel-config save so the new
+   * models.json is composed (pi loads it once per process). Returns
+   * 'reloaded' when the runtime was (or will be by next spawn) fresh, or
+   * 'deferred' when the reload waits for the current agent run to settle.
+   */
+  reloadModels?: () => 'reloaded' | 'deferred';
+  /** P1-03: workspace root the file preview may read from (cwd subtree). */
+  allowedRoot?: string;
+}
+
+/** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
+ *  Anthropic `data[]` with display_name, Gemini `models[]` with
+ *  `models/…` names) into catalog-style entries. */
+function normalizeChannelModels(data: unknown): Array<{ id: string; name?: string }> {
+  if (typeof data !== 'object' || data === null) {
+    return [];
+  }
+  const record = data as Record<string, unknown>;
+  const list = Array.isArray(record['data'])
+    ? (record['data'] as unknown[])
+    : Array.isArray(record['models'])
+      ? (record['models'] as unknown[])
+      : [];
+  const out: Array<{ id: string; name?: string }> = [];
+  for (const raw of list) {
+    if (typeof raw !== 'object' || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry['id'] === 'string' && entry['id'].length > 0) {
+      const name =
+        typeof entry['display_name'] === 'string'
+          ? entry['display_name']
+          : typeof entry['displayName'] === 'string'
+            ? entry['displayName']
+            : undefined;
+      out.push({ id: entry['id'], ...(name !== undefined ? { name } : {}) });
+    } else if (typeof entry['name'] === 'string' && entry['name'].startsWith('models/')) {
+      out.push({
+        id: entry['name'].slice('models/'.length),
+        ...(typeof entry['displayName'] === 'string' ? { name: entry['displayName'] } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 export function createRouter(
@@ -270,6 +316,60 @@ export function createRouter(
     res.json({ providers });
   });
 
+  /* ---- official model catalog (P1-15 C) ----
+   * pi.dev serves per-provider model catalogs at
+   * GET https://pi.dev/api/models/providers/<id> (the same public endpoint
+   * pi itself refreshes into models-store.json every 4h). Custom channel
+   * keys (e.g. volcengine-ark) return 404 — surfaced honestly. Read-only;
+   * never touches ~/.pi or auth.json. Small TTL cache to stay polite. */
+  const catalogCache = new Map<string, { at: number; status: number; body: unknown }>();
+  const CATALOG_TTL_MS = 10 * 60 * 1000;
+  router.get('/api/models/catalog/:provider', async (req, res) => {
+    const provider = req.params['provider'];
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(provider)) {
+      res.status(400).json({ error: 'invalid provider id' });
+      return;
+    }
+    const cached = catalogCache.get(provider);
+    if (cached !== undefined && Date.now() - cached.at < CATALOG_TTL_MS) {
+      res.status(cached.status).json(cached.body);
+      return;
+    }
+    try {
+      // pi.dev has intermittent connectivity from some networks — one retry
+      // before surfacing the honest 502.
+      let response: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          response = await fetch(
+            `https://pi.dev/api/models/providers/${encodeURIComponent(provider)}`,
+            {
+              headers: { accept: 'application/json', 'User-Agent': 'pihub/1.0' },
+              signal: AbortSignal.timeout(12000),
+            },
+          );
+          break;
+        } catch {
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            throw new Error('fetch failed after retry');
+          }
+        }
+      }
+      if (response === null) {
+        throw new Error('fetch failed');
+      }
+      const body: unknown = await response.json().catch(() => null);
+      catalogCache.set(provider, { at: Date.now(), status: response.status, body });
+      res.status(response.status).json(body);
+    } catch (error) {
+      res
+        .status(502)
+        .json({ error: `catalog fetch failed: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  });
+
   router.post('/api/rpc/prompt', async (req, res) => {
     if (writeDenied(res)) {
       return;
@@ -392,6 +492,10 @@ export function createRouter(
         type: 'switch_session',
         sessionPath: body.data.sessionPath,
       });
+      // P1-03: the file preview follows the ACTIVE session's cwd — resolve
+      // it from the session store (best-effort, keeps the previous root on
+      // failure).
+      void resolvePreviewRoot(body.data.sessionPath);
       res.json(response);
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
@@ -572,8 +676,80 @@ export function createRouter(
     }
   });
 
+  /* ---- P1-02 S2: auto-retry toggle (pi set_auto_retry {enabled}). ---- */
+  router.post('/api/rpc/auto-retry', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = autoCompactionBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid auto-retry body' });
+      return;
+    }
+    try {
+      const response = await bridge.send({
+        type: 'set_auto_retry',
+        enabled: body.data.enabled,
+      });
+      res.json(response);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   router.get('/api/rpc/session-stats', async (_req, res) => {
     await withBridge(res, () => bridge.send({ type: 'get_session_stats' }));
+  });
+
+  /* ---- P1-03: read-only file preview within the ACTIVE session's cwd ----
+   * The root follows the session the user switched to (resolvePreviewRoot),
+   * falling back to the panel workspace. Paths are normalized and must stay
+   * inside the root subtree; traversal or oversized files fail honestly. */
+  let previewRoot: string | undefined = options?.allowedRoot;
+  const resolvePreviewRoot = async (sessionPath: string): Promise<void> => {
+    try {
+      const all = await sessions.list();
+      const match = all.find((session) => session.fileName === sessionPath);
+      if (match !== undefined && match.cwd.length > 0) {
+        previewRoot = match.cwd;
+      }
+    } catch {
+      // keep the previous root — preview stays conservative
+    }
+  };
+  const MAX_PREVIEW_BYTES = 512 * 1024;
+  router.get('/api/file/preview', async (req, res) => {
+    const root = previewRoot;
+    if (root === undefined || root.length === 0) {
+      res.status(503).json({ error: 'file preview unavailable' });
+      return;
+    }
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    if (rawPath.length === 0 || rawPath.length > 1024) {
+      res.status(400).json({ error: 'invalid path' });
+      return;
+    }
+    const rootResolved = path.resolve(root);
+    const resolved = path.resolve(rootResolved, rawPath);
+    if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
+      res.status(400).json({ error: 'path outside workspace' });
+      return;
+    }
+    try {
+      const info = await stat(resolved);
+      if (!info.isFile()) {
+        res.status(400).json({ error: 'not a file' });
+        return;
+      }
+      if (info.size > MAX_PREVIEW_BYTES) {
+        res.status(413).json({ error: 'file too large for preview', size: info.size });
+        return;
+      }
+      const content = await readFile(resolved, 'utf8');
+      res.json({ path: resolved, size: info.size, content });
+    } catch (error) {
+      res.status(404).json({ error: `cannot read file: ${error instanceof Error ? error.message : String(error)}` });
+    }
   });
 
   // Extension UI protocol (P1-01): pending dialog requests + answering.
@@ -635,6 +811,11 @@ export function createRouter(
   });
 
   router.post('/api/models-config', async (req, res) => {
+    if (mode === 'demo') {
+      // kMode write guard: demo never mutates ~/.pi.
+      res.status(503).json({ error: 'demo mode is read-only' });
+      return;
+    }
     const raw: unknown = req.body;
     if (typeof raw !== 'object' || raw === null) {
       res.status(400).json({ error: 'invalid models config' });
@@ -648,9 +829,60 @@ export function createRouter(
     try {
       const configPath = path.join(AGENT_DIR, 'models.json');
       await writeFile(configPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
-      res.json({ success: true });
+      const reload = options?.reloadModels?.() ?? 'reloaded';
+      res.json({ success: true, reload });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /* ---- per-channel model fetch (P1-17 C) ----
+   * Query the channel's OWN model-list endpoint (`{baseUrl}/models`, shaped
+   * per api style) using the panel-configured key — the same surface pi
+   * itself talks to. Only the user-configured baseUrl/apiKey leave this
+   * machine; errors surface honestly. */
+  const fetchChannelModelsBodySchema = z.object({
+    baseUrl: z.string().min(1).max(512),
+    apiKey: z.string().min(1).max(4096),
+    api: z.string().min(1).max(64),
+  });
+  router.post('/api/models/fetch', async (req, res) => {
+    if (mode === 'demo') {
+      res.status(503).json({ error: 'demo mode is read-only' });
+      return;
+    }
+    const body = fetchChannelModelsBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid fetch body' });
+      return;
+    }
+    const { baseUrl, apiKey, api } = body.data;
+    const root = baseUrl.replace(/\/+$/u, '');
+    let url: string;
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (api === 'anthropic') {
+      url = `${root}/v1/models`;
+      headers['x-api-key'] = apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+    } else if (api === 'google-generative') {
+      url = `${root}/models`;
+      headers['x-goog-api-key'] = apiKey;
+    } else {
+      url = `${root}/models`;
+      headers['authorization'] = `Bearer ${apiKey}`;
+    }
+    try {
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) {
+        res.status(502).json({ error: `provider returned HTTP ${String(response.status)}` });
+        return;
+      }
+      const data: unknown = await response.json().catch(() => null);
+      res.json({ models: normalizeChannelModels(data) });
+    } catch (error) {
+      res
+        .status(502)
+        .json({ error: `model fetch failed: ${error instanceof Error ? error.message : String(error)}` });
     }
   });
 

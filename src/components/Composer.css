@@ -275,3 +275,90 @@
     display: none;
   }
 }
+
+/* P1-17 D: Windows-Phone-style progress — five squares bouncing in
+ * staggered rhythm along the composer's top edge while the agent runs. */
+.composer-progress {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 8px;
+  margin: calc(-1 * var(--space-2)) 0 0;
+}
+
+.composer-progress-square {
+  width: 5px;
+  height: 5px;
+  background-color: var(--primary);
+  opacity: 0;
+  transform: scale(0.2);
+  animation: wp-square-bounce 1.1s ease-in-out infinite;
+}
+
+@keyframes wp-square-bounce {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) translateY(0);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1) translateY(-1px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.2) translateY(0);
+  }
+}
+
+/* ---- P1-18: compact composer — morphs into a slim bottom bar when the
+   chat is scrolled away from the bottom (grid-rows collapse animation) ---- */
+
+.composer {
+  transition: padding var(--duration-base) var(--ease-out);
+}
+
+.composer-compact-bar {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.composer-compact-bar:hover {
+  color: var(--primary);
+  background-color: var(--surface-hover);
+}
+
+.composer-compact-arrow {
+  font-size: 1.1em;
+}
+
+.composer[data-compact='true'] {
+  padding: 0;
+}
+
+.composer[data-compact='true'] .composer-compact-bar {
+  display: flex;
+}
+
+.composer[data-compact='true'] .composer-collapse {
+  opacity: 0;
+}
+
+.composer-collapse {
+  transition: opacity var(--duration-base) var(--ease-out);
+}

@@ -20,13 +20,60 @@
 
 .user-bubble {
   max-width: 80%;
-  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: stretch;
   background-color: var(--chat-user-bubble);
   color: var(--chat-user-text);
 }
 
+/* P1-17 A / P1-18: full-height collapse strip on the left edge of the
+ * bubble; P1-18: #dcdcdc background, 1.2em vertical arrows — folded state
+ * shows the up arrow, expanded the down arrow. */
+.user-bubble-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  padding: 0;
+  border: 0;
+  background-color: #dcdcdc;
+  color: var(--text-secondary);
+  opacity: 0.8;
+  cursor: pointer;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    filter var(--duration-fast) var(--ease-out);
+}
+
+.user-bubble-strip:hover,
+.user-bubble-strip:focus-visible {
+  opacity: 1;
+  filter: brightness(0.96);
+}
+
+.user-bubble-strip-chevron {
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+.user-bubble-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
 .user-bubble .markdown p {
   color: inherit;
+}
+
+/* P1-16 D: long prompts cap at 12 lines with the left strip toggle.
+ * The max-height is measured in JS (cap/full px) so the transition animates
+ * both directions; 18rem is the pre-measure fallback. */
+.user-bubble-collapse {
+  max-height: 18rem;
+  overflow: hidden;
+  transition: max-height var(--duration-base) var(--ease-out);
 }
 
 .assistant-body {
@@ -190,21 +237,31 @@
   animation: appear-up var(--duration-base) var(--ease-out) 1;
 }
 
+/* P1-16 C: tool call header denoised — smaller, more transparent, indented
+ * a few chars to the right so the row reads as part of the preceding
+ * content (reveals to full opacity on hover/focus). */
 .toolcall-header {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-1) 0;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
   border: 0;
   background-color: transparent;
   color: var(--text-primary);
   text-align: left;
+  opacity: 0.6;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.toolcall-header:hover,
+.toolcall-header:focus-visible {
+  opacity: 1;
 }
 
 .toolcall-name {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--primary);
 }
 
@@ -212,7 +269,7 @@
  * lines fade out to transparent on the right (mask over the full width —
  * short summaries stay fully visible). */
 .toolcall-summary {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   overflow: hidden;
   white-space: nowrap;

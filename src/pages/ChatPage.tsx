@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
+import { FilePreview } from '../components/FilePreview.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
@@ -92,7 +93,13 @@ function isToolMessage(item: ChatMessage): boolean {
 
 /** Tool-cluster collapse (P1-10 C3): all tool blocks of one prompt run fold
  *  into a single set with a tool-name list header. */
-function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
+function ToolCluster({
+  items,
+  onOpenFile,
+}: {
+  items: ChatMessage[];
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const names = [
@@ -133,12 +140,79 @@ function ToolCluster({ items }: { items: ChatMessage[] }): React.JSX.Element {
       {expanded ? (
         <div className="tool-cluster-body">
           {items.map((item) => (
-            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} />
+            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} onOpenFile={onOpenFile} />
           ))}
         </div>
       ) : null}
     </div>
   );
+}
+
+/**
+ * P1-16 E: a settled prompt run can leave several `.message message-assistant`
+ * entries — only the LAST one is kept fully visible; the earlier ones fold
+ * behind a process toggle (animated via the collapse-region grid rows).
+ * P1-17 B: the toggle shows the run's total working duration.
+ */
+function AssistantProcessCollapse({
+  items,
+  durationLabel,
+  onOpenFile,
+}: {
+  items: ChatMessage[];
+  durationLabel: string | null;
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="assistant-process">
+      <button
+        type="button"
+        className="assistant-process-toggle mono"
+        aria-expanded={expanded}
+        onClick={() => {
+          setExpanded(!expanded);
+        }}
+      >
+        <span className="assistant-process-chevron" aria-hidden="true">
+          {expanded ? '−' : '>'}
+        </span>
+        <span>{t('chat.processPrefix', { count: String(items.length) })}</span>
+        {durationLabel !== null ? (
+          <span className="assistant-process-duration" aria-label={durationLabel}>
+            {durationLabel}
+          </span>
+        ) : null}
+      </button>
+      <div className="collapse-region" data-collapsed={!expanded}>
+        <div className="collapse-region-inner">
+          {items.map((item) => (
+            <MessageItem key={item.key} message={item.message} isStreaming={false} thinkingStatus="done" onOpenFile={onOpenFile} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** P1-17 B: wall-clock span of a prompt run, from the first to the last
+ *  message of the unit (epoch-ms timestamps), or null when undeterminable. */
+function runDurationLabel(items: ChatMessage[]): string | null {
+  const times = items
+    .map((item) => item.message.timestamp)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (times.length < 2) {
+    return null;
+  }
+  const spanMs = Math.max(0, (times[times.length - 1] ?? 0) - (times[0] ?? 0));
+  const totalSeconds = Math.round(spanMs / 1000);
+  if (totalSeconds < 60) {
+    return `${String(totalSeconds)}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes)}m ${String(seconds).padStart(2, '0')}s`;
 }
 
 interface ChatPageProps {
@@ -153,6 +227,12 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  // P1-18: composer morphs into a bottom bar while the chat scroll is not
+  // at the bottom; clicking the bar or Cmd/Ctrl+R expands it (forced).
+  const [atBottom, setAtBottom] = useState(true);
+  const [composerForced, setComposerForced] = useState(false);
+  // P1-03: read-only file preview + recent file operations.
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [collapsedUnits, setCollapsedUnits] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -162,12 +242,85 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
     () => new Set(),
   );
 
+  const updateAtBottom = useCallback((): void => {
+    const element = scrollRef.current;
+    if (element === null) {
+      return;
+    }
+    // Within ~96px of the bottom counts as "at the bottom".
+    const near = element.scrollHeight - element.scrollTop - element.clientHeight <= 96;
+    setAtBottom(near);
+    if (near) {
+      setComposerForced(false);
+    }
+  }, []);
+
   useEffect(() => {
     const element = scrollRef.current;
     if (element !== null) {
       element.scrollTop = element.scrollHeight;
+      updateAtBottom();
     }
-  }, [chat.messages.length, chat.isAgentRunning]);
+  }, [chat.messages.length, chat.isAgentRunning, updateAtBottom]);
+
+  // P1-18: Cmd/Ctrl+R toggles the compact composer bar.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        setComposerForced((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  // P1-03 D: recent file operations aggregated from the tool calls of the
+  // visible conversation (most recent unique paths, capped).
+  const recentFiles = useMemo(() => {
+    const out: Array<{ path: string; action: string }> = [];
+    const seen = new Set<string>();
+    for (let index = chat.messages.length - 1; index >= 0 && out.length < 12; index -= 1) {
+      const item = chat.messages[index];
+      if (item === undefined || item.message.role !== 'assistant') {
+        continue;
+      }
+      for (const block of item.message.content) {
+        if (block.type !== 'toolCall') {
+          continue;
+        }
+        const name = typeof block.name === 'string' ? block.name : '';
+        if (name !== 'read' && name !== 'write' && name !== 'edit' && name !== 'patch') {
+          continue;
+        }
+        const args =
+          typeof block.arguments === 'object' && block.arguments !== null
+            ? (block.arguments as Record<string, unknown>)
+            : {};
+        const rawPath =
+          typeof args['path'] === 'string'
+            ? args['path']
+            : typeof args['filePath'] === 'string'
+              ? args['filePath']
+              : typeof args['file'] === 'string'
+                ? args['file']
+                : null;
+        if (rawPath === null || rawPath.length === 0 || seen.has(rawPath)) {
+          continue;
+        }
+        seen.add(rawPath);
+        out.push({ path: rawPath, action: name });
+      }
+    }
+    return out;
+  }, [chat.messages]);
+
+  const openFile = useCallback((filePath: string): void => {
+    setPreviewPath(filePath);
+  }, []);
 
   // Refresh the model display when the model is cycled via Ctrl+Shift+L.
   useEffect(() => {
@@ -349,7 +502,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
 
   return (
     <section className="chatpage">
-      <div className="chatpage-scroll scroll-area" ref={scrollRef}>
+      <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
             {chat.error}
@@ -369,7 +522,26 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
             })}
           </div>
         ) : null}
-        {chat.messages.length === 0 ? (
+        {/* P1-17 D: skeleton while the switched session's messages load. */}
+        {!chat.hasLoaded ? (
+          <div className="chat-skeleton" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((index) => (
+              <div
+                key={index}
+                className={`chat-skeleton-row ${index % 2 === 0 ? 'chat-skeleton-user' : 'chat-skeleton-assistant'}`}
+              >
+                <span
+                  className="chat-skeleton-line"
+                  style={{ width: `${String(58 + ((index * 13) % 35))}%` }}
+                />
+                <span
+                  className="chat-skeleton-line"
+                  style={{ width: `${String(36 + ((index * 17) % 30))}%` }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : chat.messages.length === 0 ? (
           <div className="chatpage-empty">
             <h2 className="panel-title">{t('chat.empty.title')}</h2>
             <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
@@ -453,40 +625,55 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                             <MessageItem
                               message={unit.user.message}
                               isStreaming={false}
+                              footer={
+                                <>
+                                  <IconButton
+                                    icon="hico-square-on-square-fill"
+                                    label={t('chat.copyPrompt')}
+                                    placement="top"
+                                    onClick={() => {
+                                      void copyUserPrompt(unit.user);
+                                    }}
+                                  />
+                                  {isLast ? (
+                                    <IconButton
+                                      icon="hico-square-and-pencil"
+                                      label={t('chat.editPrompt')}
+                                      placement="top"
+                                      onClick={() => {
+                                        setEditingUnitKey(unit.key);
+                                        setEditText(extractUserPrompt(unit.user));
+                                        setConfirmResend(false);
+                                      }}
+                                    />
+                                  ) : null}
+                                </>
+                              }
                             />
-                            <div className="chat-unit-user-footer">
-                              <IconButton
-                                icon="hico-square-on-square-fill"
-                                label={t('chat.copyPrompt')}
-                                placement="top"
-                                onClick={() => {
-                                  void copyUserPrompt(unit.user);
-                                }}
-                              />
-                              {isLast ? (
-                                <IconButton
-                                  icon="hico-square-and-pencil"
-                                  label={t('chat.editPrompt')}
-                                  placement="top"
-                                  onClick={() => {
-                                    setEditingUnitKey(unit.key);
-                                    setEditText(extractUserPrompt(unit.user));
-                                    setConfirmResend(false);
-                                  }}
-                                />
-                              ) : null}
-                            </div>
                           </>
                         )
                       ) : null}
                       {(() => {
                         // Tool blocks of this run collapse into one set
                         // (P1-10 C3); thinking/text messages render inline.
+                        // P1-16 E: once the run settles, multiple assistant
+                        // messages fold — only the last stays visible.
                         const toolItems = unit.rest.filter(isToolMessage);
                         const nonToolItems = unit.rest.filter((item) => !isToolMessage(item));
+                        const canFoldProcess =
+                          nonToolItems.length > 1 && nonToolItems.every((item) => !item.isStreaming);
+                        const processItems = canFoldProcess ? nonToolItems.slice(0, -1) : [];
+                        const keptItems = canFoldProcess ? nonToolItems.slice(-1) : nonToolItems;
                         return (
                           <>
-                            {nonToolItems.map((item) => (
+                            {canFoldProcess ? (
+                              <AssistantProcessCollapse
+                                items={processItems}
+                                durationLabel={runDurationLabel(unit.rest)}
+                                onOpenFile={openFile}
+                              />
+                            ) : null}
+                            {keptItems.map((item) => (
                               <MessageItem
                                 key={item.key}
                                 message={item.message}
@@ -494,9 +681,10 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                                 thinkingStatus={
                                   unitIndex === units.length - 1 ? thinkingStatus : 'done'
                                 }
+                                onOpenFile={openFile}
                               />
                             ))}
-                            {toolItems.length > 0 ? <ToolCluster items={toolItems} /> : null}
+                            {toolItems.length > 0 ? <ToolCluster items={toolItems} onOpenFile={openFile} /> : null}
                           </>
                         );
                       })()}
@@ -600,7 +788,37 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
         )}
       </div>
       {terminalOpen ? <TerminalPanel /> : null}
+      {previewPath !== null ? (
+        <FilePreview
+          path={previewPath}
+          onClose={() => {
+            setPreviewPath(null);
+          }}
+        />
+      ) : null}
       <div className="chatpage-bottom">
+        {/* P1-03 D: recent file operations aggregated from tool calls. */}
+        {recentFiles.length > 0 ? (
+          <div className="chat-files mono">
+            <span className="chat-files-label">{t('chat.files')}</span>
+            <div className="chat-files-list">
+              {recentFiles.map((file: { path: string; action: string }) => (
+                <button
+                  key={file.path}
+                  type="button"
+                  className="chat-file-chip mono"
+                  title={file.path}
+                  onClick={() => {
+                    setPreviewPath(file.path);
+                  }}
+                >
+                  <span className="chat-file-action">{file.action}</span>
+                  <span className="chat-file-path">{file.path}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <button
           type="button"
           className="chatpage-terminal-toggle mono"
@@ -613,6 +831,10 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
         <Composer
           isAgentRunning={chat.isAgentRunning}
           rpcState={chat.rpcState}
+          compact={!atBottom && !composerForced}
+          onToggleCompact={() => {
+            setComposerForced((prev) => !prev);
+          }}
           onSendPrompt={(text, images) => {
             void chat.sendPrompt(text, images);
           }}

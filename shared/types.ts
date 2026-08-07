@@ -157,6 +157,9 @@ export interface RpcState {
   autoCompactionEnabled?: boolean;
   messageCount?: number;
   pendingMessageCount?: number;
+  /** P1-02 S2: run-mode switches (pi get_state fields). */
+  steeringMode?: string;
+  followUpMode?: string;
 }
 
 /** RPC events streamed to stdout (loosely typed; frequently used shapes). */

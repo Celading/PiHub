@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
 import { summarizeToolCall } from './toolSummary.js';
+import { linkifyPaths } from './filePaths.js';
 import './MessageItem.css';
 
 export type ThinkingStatus = 'active' | 'done' | 'interrupted';
@@ -188,19 +189,85 @@ function ContentBlocks({
   );
 }
 
+/**
+ * P1-16 D: long user prompts collapse to the first 12 lines with an
+ * expand/collapse toggle; the copy path always uses the full original text.
+ * The cap and the expanded height are measured in layout effects so the
+ * max-height transition animates both directions.
+ */
+function CollapsibleUserBubble({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const [capPx, setCapPx] = useState<string | null>(null);
+  const [fullPx, setFullPx] = useState<string | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const el = innerRef.current;
+    if (el === null) {
+      return;
+    }
+    // scrollHeight reports the full content height even when max-height caps
+    // the box (overflow hidden) — no DOM mutation needed, so the effect can
+    // never fight React's style prop for the expand/collapse animation.
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 24;
+    const cap = Math.round(lineHeight * 12);
+    const full = el.scrollHeight;
+    setCapPx(`${String(cap)}px`);
+    setFullPx(`${String(full)}px`);
+    setOverflowing(full > cap);
+  }, [children]);
+
+  return (
+    <div className="user-bubble">
+      {overflowing ? (
+        // P1-17 A: the collapse control is a full-height strip on the LEFT
+        // edge, following the content height — a second tap instantly undoes
+        // a mis-triggered expand/collapse.
+        <button
+          type="button"
+          className="user-bubble-strip"
+          aria-expanded={expanded}
+          aria-label={expanded ? t('chat.collapse') : t('chat.expand')}
+          title={expanded ? t('chat.collapse') : t('chat.expand')}
+          onClick={() => {
+            setExpanded(!expanded);
+          }}
+        >
+          <span className="user-bubble-strip-chevron" aria-hidden="true">
+            {/* P1-18: folded state = up arrow, expanded = down arrow. */}
+            {expanded ? '↓' : '↑'}
+          </span>
+        </button>
+      ) : null}
+      <div className="user-bubble-body">
+        <div
+          ref={innerRef}
+          className="user-bubble-collapse"
+          data-expanded={expanded}
+          style={{ maxHeight: expanded ? (fullPx ?? 'none') : (capPx ?? '18rem') }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UserMessageView({ message }: { message: Extract<AgentMessage, { role: 'user' }> }): React.JSX.Element {
   const content = message.content;
   if (typeof content === 'string') {
     return (
-      <div className="user-bubble">
+      <CollapsibleUserBubble>
         <Markdown text={content} />
-      </div>
+      </CollapsibleUserBubble>
     );
   }
   return (
-    <div className="user-bubble">
+    <CollapsibleUserBubble>
       <ContentBlocks blocks={content} thinkingStatus="done" animate={false} />
-    </div>
+    </CollapsibleUserBubble>
   );
 }
 
@@ -223,7 +290,13 @@ function AssistantMessageView({
   );
 }
 
-function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 'toolResult' }> }): React.JSX.Element {
+function ToolResultView({
+  message,
+  onOpenFile,
+}: {
+  message: Extract<AgentMessage, { role: 'toolResult' }>;
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
   const compactTools = useLabFlag('compactTools');
   const [expanded, setExpanded] = useState(!compactTools);
   const text = message.content
@@ -250,21 +323,33 @@ function ToolResultView({ message }: { message: Extract<AgentMessage, { role: 't
       </button>
       <div className="collapse-region" data-collapsed={!expanded}>
         <div className="collapse-region-inner">
-          <pre className="toolresult-output">{preview}</pre>
+          {/* P1-03 B: clickable file paths inside tool output. */}
+          <pre className="toolresult-output">
+            {onOpenFile !== undefined ? linkifyPaths(preview, onOpenFile) : preview}
+          </pre>
         </div>
       </div>
     </div>
   );
 }
 
-function BashExecutionView({ message }: { message: Extract<AgentMessage, { role: 'bashExecution' }> }): React.JSX.Element {
+function BashExecutionView({
+  message,
+  onOpenFile,
+}: {
+  message: Extract<AgentMessage, { role: 'bashExecution' }>;
+  onOpenFile?: ((path: string) => void) | undefined;
+}): React.JSX.Element {
   return (
     <div className="toolresult">
       <div className="toolresult-header">
         <span className="toolresult-name mono">bash</span>
         <span className="toolresult-status mono">exit {String(message.exitCode)}</span>
       </div>
-      <pre className="toolresult-output">{message.output}</pre>
+      {/* P1-03 B: clickable file paths inside bash output. */}
+      <pre className="toolresult-output">
+        {onOpenFile !== undefined ? linkifyPaths(message.output, onOpenFile) : message.output}
+      </pre>
     </div>
   );
 }
@@ -273,12 +358,19 @@ interface MessageItemProps {
   message: AgentMessage;
   isStreaming: boolean;
   thinkingStatus?: ThinkingStatus;
+  /** P1-16 B: action row rendered INSIDE the user message container so the
+   *  bubble + footer form one unit (footer right-aligned via CSS). */
+  footer?: React.ReactNode;
+  /** P1-03 B: clickable file paths in tool output open the preview. */
+  onOpenFile?: ((path: string) => void) | undefined;
 }
 
 export function MessageItem({
   message,
   isStreaming,
   thinkingStatus = 'done',
+  footer,
+  onOpenFile,
 }: MessageItemProps): React.JSX.Element {
   const streamAnimation = useLabFlag('streamAnimation');
   switch (message.role) {
@@ -286,6 +378,7 @@ export function MessageItem({
       return (
         <div className="message message-user">
           <UserMessageView message={message} />
+          {footer !== undefined ? <div className="chat-unit-user-footer">{footer}</div> : null}
         </div>
       );
     case 'assistant':
@@ -302,13 +395,13 @@ export function MessageItem({
     case 'toolResult':
       return (
         <div className="message message-tool">
-          <ToolResultView message={message} />
+          <ToolResultView message={message} onOpenFile={onOpenFile} />
         </div>
       );
     case 'bashExecution':
       return (
         <div className="message message-tool">
-          <BashExecutionView message={message} />
+          <BashExecutionView message={message} onOpenFile={onOpenFile} />
         </div>
       );
   }

@@ -73,3 +73,23 @@
     display: none;
   }
 }
+
+/* P1-17 F: view switch — 3D entry (perspective rotateY) + rise from below
+ * with fade, replaying on every view change (keyed wrapper). */
+.shell-page-enter {
+  height: 100%;
+  min-height: 0;
+  animation: page-enter-3d var(--duration-base) var(--ease-out) 1;
+  transform-origin: center bottom;
+}
+
+@keyframes page-enter-3d {
+  from {
+    opacity: 0;
+    transform: perspective(1100px) rotateY(-7deg) translateY(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1100px) rotateY(0deg) translateY(0);
+  }
+}

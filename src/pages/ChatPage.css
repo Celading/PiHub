@@ -265,14 +265,14 @@
   border-top: 1px dashed var(--border);
 }
 
-/* P1-13 D/E: user prompt footer + edit-and-resend. */
-
+/* P1-13 D/E + P1-16 B: user prompt footer — one unit with the bubble
+ * (rendered inside `.message-user`), right-aligned, revealed on hover. */
 .chat-unit-user-footer {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   align-items: center;
   gap: 2px;
-  padding: 0 0 6px;
+  padding: 4px 4px 0 0;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -280,6 +280,49 @@
 .chat-unit:hover .chat-unit-user-footer,
 .chat-unit-user-footer:focus-within {
   opacity: 1;
+}
+
+/* P1-16 E: folded earlier assistant messages of a settled prompt run. */
+.assistant-process {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.assistant-process-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 2px 6px;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  opacity: 0.75;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.assistant-process-toggle:hover {
+  opacity: 1;
+  color: var(--primary);
+}
+
+.assistant-process-chevron {
+  font-size: 0.7rem;
+}
+
+/* P1-17 B: total working duration on the process toggle. */
+.assistant-process-duration {
+  margin-left: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+  color: var(--text-placeholder);
 }
 
 .chat-unit-edit {
@@ -315,4 +358,206 @@
 .chat-unit-edit-btn {
   padding: 4px 12px;
   font-size: 12px;
+}
+
+/* P1-17 D: session-loading skeleton (shimmering message rows). */
+.chat-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-4);
+}
+
+.chat-skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.chat-skeleton-user {
+  align-items: flex-end;
+}
+
+.chat-skeleton-line {
+  height: 0.9rem;
+  background: linear-gradient(
+    90deg,
+    var(--surface-subtle) 25%,
+    var(--surface-hover) 50%,
+    var(--surface-subtle) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.chat-skeleton-assistant .chat-skeleton-line {
+  opacity: 0.65;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---- P1-18: float bar + floating input when the chat scroll is up ---- */
+
+.chatpage {
+  position: relative;
+}
+
+.chat-float-bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% - 3.5rem);
+  width: min(36rem, calc(100% - 2rem));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-thin) solid var(--border-strong);
+  border-radius: var(--radius-none);
+  background-color: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.18);
+  z-index: 30;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.chat-float-bar:hover {
+  background-color: var(--surface-hover);
+  color: var(--primary);
+}
+
+.chat-float-bar-arrow {
+  font-size: 1.1em;
+}
+
+.chat-float-input {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% - 3.5rem);
+  width: min(44rem, calc(100% - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-thick) solid var(--primary);
+  background-color: var(--surface);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.25);
+  z-index: 31;
+  animation: float-input-rise var(--duration-base) var(--ease-out) 1;
+}
+
+@keyframes float-input-rise {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.chat-float-input-text {
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-none);
+  background-color: var(--surface-subtle);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.chat-float-input-text:focus {
+  outline: var(--border-thick) solid var(--focus);
+  outline-offset: 0;
+}
+
+.chat-float-input-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.chat-float-btn {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+}
+
+/* ---- P1-03 D: recent file operations strip ---- */
+.chat-files {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--space-1) var(--space-4) 0;
+  overflow: hidden;
+}
+
+.chat-files-label {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-placeholder);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chat-files-list {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chat-files-list::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 16rem;
+  padding: 1px var(--space-2);
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.chat-file-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.chat-file-action {
+  flex-shrink: 0;
+  color: var(--text-placeholder);
+}
+
+.chat-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

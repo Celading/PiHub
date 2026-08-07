@@ -416,3 +416,36 @@
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* P1-17 F: settings sub-pages slide in from the navigation direction —
+ * ascending section index enters from above (sliding down), descending
+ * rises from below. */
+.settings-slide-down {
+  animation: settings-slide-down var(--duration-base) var(--ease-out) 1;
+}
+
+.settings-slide-up {
+  animation: settings-slide-up var(--duration-base) var(--ease-out) 1;
+}
+
+@keyframes settings-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes settings-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

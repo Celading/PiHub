@@ -37,6 +37,22 @@ export interface ModelsResponse {
   providers: Array<{ provider: string; models: ModelInfo[] }>;
 }
 
+/** One entry of the pi.dev official model catalog (P1-15 C). */
+export interface CatalogModel {
+  id: string;
+  name?: string;
+  api?: string;
+  baseUrl?: string;
+  provider?: string;
+  reasoning?: boolean;
+  input?: string[];
+  cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  contextWindow?: number;
+  maxTokens?: number;
+  compat?: Record<string, unknown>;
+  thinkingLevelMap?: Record<string, string | null>;
+}
+
 export interface MessagesResponse {
   messages: unknown[];
 }
@@ -208,6 +224,14 @@ export const api = {
     });
   },
 
+  /** P1-02 S2: auto-retry toggle (pi set_auto_retry). */
+  setAutoRetry(enabled: boolean): Promise<RpcResponse> {
+    return request<RpcResponse>('/api/rpc/auto-retry', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
   sessionStats(): Promise<unknown> {
     return request<unknown>('/api/rpc/session-stats');
   },
@@ -227,11 +251,41 @@ export const api = {
     return request<Record<string, unknown>>('/api/models-config');
   },
 
-  saveModelsConfig(config: Record<string, unknown>): Promise<{ success: boolean }> {
-    return request<{ success: boolean }>('/api/models-config', {
+  saveModelsConfig(config: Record<string, unknown>): Promise<{ success: boolean; reload?: 'reloaded' | 'deferred' }> {
+    return request<{ success: boolean; reload?: 'reloaded' | 'deferred' }>('/api/models-config', {
       method: 'POST',
       body: JSON.stringify(config),
     });
+  },
+
+  /** P1-03: read-only file preview within the workspace root. */
+  filePreview(path: string): Promise<{ path: string; size: number; content: string }> {
+    return request<{ path: string; size: number; content: string }>(
+      `/api/file/preview?path=${encodeURIComponent(path)}`,
+    );
+  },
+
+  /** pi.dev official per-provider model catalog (P1-15 C). */
+  catalogModels(provider: string): Promise<CatalogModel[]> {
+    return request<Record<string, unknown>>(`/api/models/catalog/${encodeURIComponent(provider)}`).then(
+      (data) =>
+        Object.values(data).filter(
+          (value): value is CatalogModel =>
+            typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'string',
+        ),
+    );
+  },
+
+  /** P1-17 C: fetch the channel's OWN model list (`{baseUrl}/models`). */
+  fetchChannelModels(params: {
+    baseUrl: string;
+    apiKey: string;
+    api: string;
+  }): Promise<CatalogModel[]> {
+    return request<{ models: CatalogModel[] }>('/api/models/fetch', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }).then((response) => response.models);
   },
 
   commands(): Promise<PiCommand[]> {

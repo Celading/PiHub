@@ -174,3 +174,106 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
+
+/* ---- P1-02 S2: automation center — live status, switches, event feed ---- */
+
+.automation-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface-subtle);
+}
+
+.automation-status-lamp {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--text-placeholder);
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.automation-status-lamp[data-on='true'] {
+  background-color: var(--status-ok);
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+
+.automation-status-lamp[data-retry='true'] {
+  background-color: var(--status-warning);
+  animation: status-blink 0.8s ease-in-out infinite;
+}
+
+.automation-status-text {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.automation-status-chip {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  padding: 1px var(--space-2);
+  border: var(--border-thin) solid var(--border-subtle);
+}
+
+.automation-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+}
+
+.automation-select {
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.automation-select:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.automation-events {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.automation-event-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: var(--border-thin) solid var(--border-subtle);
+}
+
+.automation-event {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.automation-event:last-child {
+  border-bottom: 0;
+}
+
+.automation-event-time {
+  color: var(--text-placeholder);
+  flex-shrink: 0;
+}
+
+.automation-event-label {
+  color: var(--text-primary);
+}

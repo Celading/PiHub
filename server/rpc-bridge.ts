@@ -23,6 +23,7 @@ export type RpcCommand =
   | { type: 'abort_bash' }
   | { type: 'compact' }
   | { type: 'set_auto_compaction'; enabled: boolean }
+  | { type: 'set_auto_retry'; enabled: boolean }
   | { type: 'get_session_stats' }
   | { type: 'export_html'; outputPath?: string }
   | { type: 'get_commands' }
@@ -144,6 +145,28 @@ export class RpcBridge extends EventEmitter {
     if (this.child !== null) {
       this.child.kill('SIGTERM');
     }
+  }
+
+  /**
+   * Deliberate restart of the pi child (P1-15): pi loads models.json once at
+   * process start, so a channel-config save must respawn the runtime to
+   * compose updated providers. The panel is session-path-driven — every
+   * prompt/steer re-switches to the current session file — so a restart does
+   * not detach the active session.
+   */
+  restart(): void {
+    if (this.stopped || this.child === null) {
+      return;
+    }
+    const child = this.child;
+    this.child = null;
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('pi process restarted for model config reload'));
+    }
+    this.pending.clear();
+    child.kill('SIGTERM');
+    this.start();
   }
 
   isRunning(): boolean {

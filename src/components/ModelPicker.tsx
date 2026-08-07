@@ -105,7 +105,14 @@ export function ModelPicker({
           <div className="model-picker-menu" role="listbox" aria-label={label}>
             {groups.map(([alias, items]) => (
               <div key={alias} className="model-picker-group">
-                <div className="model-picker-group-head mono">{alias}</div>
+                {/* Custom channel aliases (alias ≠ provider key) render in
+                    italic, mirroring the custom model-name convention. */}
+                <div
+                  className="model-picker-group-head mono"
+                  data-custom={items[0] !== undefined && alias !== items[0].provider}
+                >
+                  {alias}
+                </div>
                 {items.map((option) => {
                   const selected = option === current;
                   return (
