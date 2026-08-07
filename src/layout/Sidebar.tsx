@@ -209,6 +209,8 @@ export function Sidebar({
       return [];
     }
   });
+  /** P1-deletefix: bumped after a deletion so the session list reloads. */
+  const [deleteTick, setDeleteTick] = useState(0);
   const [editingCollection, setEditingCollection] = useState<string | null>(null);
   const [collectionDraft, setCollectionDraft] = useState('');
   // P1-17 D: optimistic highlight while switch_session is in flight.
@@ -271,7 +273,9 @@ export function Sidebar({
     };
     // P1-17 E: refresh on status transitions so lastActivityAt stays fresh
     // enough for the unread watermark.
-  }, [sessionStatus]);
+    // P1-deletefix: also reload after a deletion, since removing a session
+    // file does not emit any pi SSE status change.
+  }, [sessionStatus, deleteTick]);
 
   // P1-13 B: new sessions auto-join a collection named after their cwd
   // folder (created on demand). Existing sessions are left untouched — only
@@ -296,8 +300,11 @@ export function Sidebar({
           continue;
         }
         const list = next[folder] ?? [];
-        if (!list.includes(session.fileName)) {
-          next[folder] = [...list, session.fileName];
+        // Store the session id (the key used by byId / dropIntoCollection /
+        // archived markers); P1-13 stored file names, which never matched the
+        // id-keyed lookup and made collections render as empty.
+        if (!list.includes(session.id)) {
+          next[folder] = [...list, session.id];
           changed = true;
         }
       }
@@ -327,6 +334,16 @@ export function Sidebar({
     return map;
   }, [filtered]);
 
+  // P1-13 stored file names in collections; fall back to a file-name lookup
+  // so legacy collection entries keep resolving after the id-key fix.
+  const byFileName = useMemo(() => {
+    const map = new Map<string, SessionSummary>();
+    for (const session of filtered) {
+      map.set(session.fileName, session);
+    }
+    return map;
+  }, [filtered]);
+
   const visible = useMemo(() => {
     return filtered.filter((session) => !archived.includes(session.id));
   }, [filtered, archived]);
@@ -347,11 +364,18 @@ export function Sidebar({
     return Object.entries(collections)
       .map(([name, ids]) => ({
         name,
-        sessions: ids
-          .map((id) => byId.get(id))
-          .filter((session): session is SessionSummary => session !== undefined),
+        // Legacy collections may hold both a file name and the id for the
+        // same session (P1-13 era) — dedupe by session id.
+        sessions: [
+          ...new Map(
+            ids
+              .map((id) => byId.get(id) ?? byFileName.get(id))
+              .filter((session): session is SessionSummary => session !== undefined)
+              .map((session) => [session.id, session] as const),
+          ).values(),
+        ],
       }));
-  }, [collections, byId]);
+  }, [collections, byId, byFileName]);
 
   const handleNewSession = useCallback(async (): Promise<void> => {
     setError(null);
@@ -408,12 +432,31 @@ export function Sidebar({
     (session: SessionSummary): void => {
       void (async () => {
         try {
-          const response = await api.deleteSession(session.fileName);
+          // P1-deletefix: the server only accepts a bare .jsonl name
+          // (path-traversal guard) — the sidebar previously sent the full
+          // path and always got 400, so deletion appeared to do nothing.
+          const bareName = session.fileName.split('/').pop() ?? session.fileName;
+          const response = await api.deleteSession(bareName);
           if (!response.success) {
             setError(response.error ?? 'delete failed');
             return;
           }
-          removeArchived(session.fileName);
+          // Archived markers are keyed by session id, not file name.
+          removeArchived(session.id);
+          // Drop the session from its collections so no stale id remains.
+          setCollections((prev) => {
+            let changed = false;
+            const next: Record<string, string[]> = {};
+            for (const [name, ids] of Object.entries(prev)) {
+              const kept = ids.filter((id) => id !== session.id);
+              if (kept.length !== ids.length) {
+                changed = true;
+              }
+              next[name] = kept;
+            }
+            return changed ? next : prev;
+          });
+          setDeleteTick((prev) => prev + 1);
           onSessionChanged();
           onViewChange('chat');
         } catch (err) {
