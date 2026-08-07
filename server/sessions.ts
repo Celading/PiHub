@@ -16,6 +16,8 @@ import type {
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_LINES = 20_000;
 const SESSION_DIR = path.join(os.homedir(), '.pi', 'agent', 'sessions');
+/** P1-04: how many top-cost sessions the stats endpoint reports. */
+const TOP_SESSIONS_LIMIT = 5;
 
 export const emptyTotals = (): TokenTotals => ({
   input: 0,
@@ -319,6 +321,7 @@ export function createSessionStore(dir: string = SESSION_DIR): SessionStore {
       const byModel = new Map<string, SessionStats['byModel'][number]>();
       const byProvider = new Map<string, SessionStats['byProvider'][number]>();
       const byDirectory = new Map<string, SessionStats['byDirectory'][number]>();
+      const byDay = new Map<string, SessionStats['byDay'][number]>();
 
       let totalUserMessages = 0;
       let totalAssistantMessages = 0;
@@ -376,17 +379,49 @@ export function createSessionStore(dir: string = SESSION_DIR): SessionStore {
             cwd: dir,
             sessions: 1,
             messages: summary.messageCount,
+            tokens: { ...summary.tokens },
             cost: summary.cost,
           });
         } else {
           dirRow.sessions += 1;
           dirRow.messages += summary.messageCount;
+          addTotals(dirRow.tokens, summary.tokens);
           dirRow.cost += summary.cost;
+        }
+
+        const day = summary.lastActivityAt.slice(0, 10);
+        const dayRow = byDay.get(day);
+        if (dayRow === undefined) {
+          byDay.set(day, {
+            day,
+            sessions: 1,
+            messages: summary.messageCount,
+            tokens: { ...summary.tokens },
+            cost: summary.cost,
+          });
+        } else {
+          dayRow.sessions += 1;
+          dayRow.messages += summary.messageCount;
+          addTotals(dayRow.tokens, summary.tokens);
+          dayRow.cost += summary.cost;
         }
       }
 
       const sortByCost = <T extends { cost: number }>(rows: T[]): T[] =>
         [...rows].sort((a, b) => b.cost - a.cost);
+
+      const topSessions: SessionStats['topSessions'] = summaries
+        .map((summary) => ({
+          fileName: path.basename(summary.fileName),
+          cwd: summary.cwd,
+          startedAt: summary.startedAt,
+          lastActivityAt: summary.lastActivityAt,
+          messages: summary.messageCount,
+          tokens: { ...summary.tokens },
+          cost: summary.cost,
+        }))
+        .sort((a, b) => b.cost - a.cost)
+        .slice(0, TOP_SESSIONS_LIMIT);
 
       return {
         totalSessions: summaries.length,
@@ -398,6 +433,8 @@ export function createSessionStore(dir: string = SESSION_DIR): SessionStore {
         byModel: sortByCost([...byModel.values()]),
         byProvider: sortByCost([...byProvider.values()]),
         byDirectory: sortByCost([...byDirectory.values()]),
+        byDay: [...byDay.entries()].map(([, row]) => row).sort((a, b) => (a.day < b.day ? -1 : 1)),
+        topSessions,
       };
     },
   };
