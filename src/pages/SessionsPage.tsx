@@ -19,12 +19,10 @@ function formatDate(iso: string, intlTag: string): string {
   }).format(date);
 }
 
+/** Session alias (P1-13 B): traditional style — the last folder name. */
 function shortCwd(cwd: string): string {
   const parts = cwd.split('/').filter((part) => part.length > 0);
-  if (parts.length <= 2) {
-    return cwd;
-  }
-  return `${parts[0] ?? ''}/…/${parts[parts.length - 1] ?? ''}`;
+  return parts[parts.length - 1] ?? cwd;
 }
 
 function SessionRow({

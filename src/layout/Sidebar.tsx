@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
@@ -72,12 +72,10 @@ function formatTime(iso: string, intlTag: string): string {
   }).format(date);
 }
 
+/** Session alias (P1-13 B): traditional style — the last folder name. */
 function shortCwd(cwd: string): string {
   const parts = cwd.split('/').filter((part) => part.length > 0);
-  if (parts.length <= 2) {
-    return cwd;
-  }
-  return `${parts[0] ?? ''}/…/${parts[parts.length - 1] ?? ''}`;
+  return parts[parts.length - 1] ?? cwd;
 }
 
 function loadJson(key: string, fallback: string): string {
@@ -237,6 +235,39 @@ export function Sidebar({
       cancelled = true;
     };
   }, []);
+
+  // P1-13 B: new sessions auto-join a collection named after their cwd
+  // folder (created on demand). Existing sessions are left untouched — only
+  // sessions that appear after the initial load are grouped.
+  const knownSessionsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ids = new Set(sessions.map((session) => session.fileName));
+    const known = knownSessionsRef.current;
+    if (known === null) {
+      knownSessionsRef.current = ids;
+      return;
+    }
+    setCollections((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const session of sessions) {
+        if (known.has(session.fileName)) {
+          continue;
+        }
+        const folder = session.cwd.split('/').filter((part) => part.length > 0).pop();
+        if (folder === undefined || folder.length === 0) {
+          continue;
+        }
+        const list = next[folder] ?? [];
+        if (!list.includes(session.fileName)) {
+          next[folder] = [...list, session.fileName];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    knownSessionsRef.current = ids;
+  }, [sessions]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

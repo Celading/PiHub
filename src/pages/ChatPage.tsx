@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
@@ -233,15 +234,53 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
         nextUser?.entryId !== undefined
           ? await api.forkSession(nextUser.entryId)
           : await api.cloneSession();
-      if (response.success) {
-        onSessionChanged();
+      if (!response.success) {
+        return;
       }
+      // P1-13 B: the new branch gets the traditional alias prefix
+      // 新支源自{旧 alias}（旧 alias = session name or last cwd folder）。
+      const branchName = await resolveBranchAlias();
+      if (branchName === null) {
+        onSessionChanged();
+        return;
+      }
+      const sessions = await api.sessions().catch(() => null);
+      const duplicate = sessions?.sessions.some((session) => session.name === branchName) ?? false;
+      if (duplicate) {
+        setBranchConfirm({ entryId, name: branchName });
+        return;
+      }
+      await api.renameSession(branchName);
+      onSessionChanged();
     } catch {
       // chat state surfaces backend errors
     }
   };
 
+  /** 新支源自{旧 alias}；旧 alias 取当前会话名，缺省用 cwd 最后文件夹名。 */
+  const resolveBranchAlias = async (): Promise<string | null> => {
+    const sessionName = chat.rpcState?.sessionName;
+    if (sessionName !== undefined && sessionName.length > 0) {
+      return `${t('session.branchPrefix', { name: sessionName })}`;
+    }
+    const file = chat.rpcState?.sessionFile;
+    if (file === undefined || file.length === 0) {
+      return null;
+    }
+    const sessions = await api.sessions().catch(() => null);
+    const current = sessions?.sessions.find((session) => session.fileName === file);
+    const alias =
+      current?.name !== undefined && current.name.length > 0
+        ? current.name
+        : current?.cwd.split('/').filter((part) => part.length > 0).pop() ?? null;
+    return alias === null ? null : t('session.branchPrefix', { name: alias });
+  };
+
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // P1-13 B: branch alias duplicates need a second confirmation.
+  const [branchConfirm, setBranchConfirm] = useState<{ entryId: string; name: string } | null>(
+    null,
+  );
   // Live elapsed timer for the running unit (1s tick; renders only while a
   // run is active so idle pages never pay the interval cost).
   const [, setNowTick] = useState(0);
@@ -481,6 +520,30 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
           }}
         />
       </div>
+
+      {branchConfirm !== null ? (
+        <ConfirmDialog
+          title={t('sidebar.newBranch')}
+          message={t('session.branchConfirm', { name: branchConfirm.name })}
+          danger={false}
+          confirmLabel={t('sidebar.newBranch')}
+          onConfirm={() => {
+            void (async (): Promise<void> => {
+              try {
+                await api.renameSession(branchConfirm.name);
+              } catch {
+                // chat state surfaces backend errors
+              }
+              setBranchConfirm(null);
+              onSessionChanged();
+            })();
+          }}
+          onCancel={() => {
+            setBranchConfirm(null);
+            onSessionChanged();
+          }}
+        />
+      ) : null}
     </section>
   );
 }
