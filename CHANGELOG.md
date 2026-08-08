@@ -1,0 +1,70 @@
+# Changelog
+
+All notable changes to PiHub are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/), and this project adheres to
+[Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Security (SPRINT-2)
+
+- **Local control-plane gate**: strict Host allowlist (127.0.0.1 / localhost
+  by default, extendable via `PIHUB_ALLOWED_HOSTS`), same-origin check for
+  state-changing requests carrying an `Origin` header, and a random
+  per-process control token required on every write route and sensitive read
+  route (model config, file preview, session/message state, SSE event
+  stream). The SPA receives the token from the served index.html and sends it
+  as `X-PiHub-Token`; EventSource carries it as `?token=`. Token is never
+  persisted or logged.
+- **Service worker no longer caches API responses** (`/api/**`), and all API
+  responses send `Cache-Control: no-store` — session content, file previews
+  and credential-bearing model configs never touch the cache.
+- **File preview symlink containment**: the preview path is re-verified with
+  `realpath` against the real workspace root before reading, so a symlink
+  inside the workspace pointing outside is rejected (400).
+- **RpcBridge restart race fixed**: a deliberately restarted pi process no
+  longer has its new child reference cleared by the old process's late exit
+  event (no orphans / duplicate pi).
+
+### Fixed
+
+- **Pipeline `requiresApproval` prompt now executes**: previously a
+  prompt/steer step with `requiresApproval: true` completed immediately after
+  approval without ever sending the prompt to pi.
+- **Settle timeouts are honest**: a pipeline step that times out waiting for
+  `agent_settled` now marks the run `uncertain` instead of pretending it
+  settled successfully.
+- **Pipeline abort cancels pi**: aborting a running pipeline now sends the pi
+  `abort` command instead of only releasing the in-memory waiter.
+
+### Added
+
+- **Event envelope**: every streamed RPC event now carries a per-process
+  monotonic `sequence` plus optional `sessionId` / `runId`, laying the
+  groundwork for run isolation and replay tooling (original payload kept
+  untouched).
+
+## [0.1.0] - 2026-08-08
+
+### Added
+
+- Interactive showcase video export: `npm run showcase:record` drives the
+  demo panel in headless Chrome (component anchors + change-driven key
+  frames + absolute-coordinate click ripples) and renders an mp4 ready for
+  editing.
+- File workbench: read-only file preview (session-cwd whitelist), clickable
+  paths in tool output, inline diff highlighting, recent-files strip.
+- Cost insights: daily usage trend, top-cost sessions, zero-dependency SVG
+  charts (cost share by provider / directory), token totals per directory.
+- Session tree visualization: branch timeline, node labels, one-click fork.
+- Pipelines (automation · skills · pipelines center): declarative DSL,
+  state-machine engine, approval gates, branching, SSE timeline.
+- Session deletion fix: sidebar deletion now sends the bare file name
+  (server guard) and refreshes the list; collection keys unified to session
+  ids with legacy fallback and dedupe.
+
+### Security
+
+- Panel binds 127.0.0.1 only; `~/.pi/agent/auth.json` is never read.
+
+[0.1.0]: https://github.com/HapPub/PiHub/releases/tag/v0.1.0

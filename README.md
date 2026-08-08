@@ -30,7 +30,9 @@ Issues and pull requests are welcome on either mirror; both stay in sync.
 PiHub is a browser-based workspace for [`pi`](https://pi.dev)
 (`@earendil-works/pi-coding-agent`) that runs entirely on your machine. It
 talks to a local `pi --mode rpc` process through a small Node bridge — no
-cloud, no accounts, no data leaves your computer.
+cloud accounts required. PiHub does not use its own cloud service; the only
+outbound requests happen on explicit feature paths (model catalog lookups to
+pi.dev, and prompts sent to the model provider you configure).
 
 It is an independent, clean-room implementation — written from scratch,
 no external UI source is reused.
@@ -71,7 +73,7 @@ Permissions · Prompt Favorites · Lab
 - **Pipelines**: PiHub-exclusive multi-step orchestration — a sequence of
   prompt / steer / approval / model / thinking steps executed on one pi
   session, with match branching, error strategies, human approval gates and
-  a live run timeline. Part of the HaomoKit generalized capability set.
+  a live run timeline. Part of the built-in workflow surface.
 - Skill import: convert any skill into a pipeline — algorithmic conversion
   (zero tokens) or agent-assisted conversion (token-gated, confirmed first)
 
@@ -80,8 +82,8 @@ Permissions · Prompt Favorites · Lab
 Requires [pi](https://pi.dev) (`pi --version` ≥ 0.83) and Node.js ≥ 20.
 
 ```bash
-git clone <your-fork-or-local-root>/pi-panel
-cd pi-panel
+git clone https://github.com/HapPub/PiHub.git
+cd PiHub
 npm install
 npm run dev        # web UI on http://localhost:18384 (backend on 127.0.0.1:3001)
 ```
@@ -167,9 +169,18 @@ public/    PWA manifest, icon, service worker
 
 ## Boundaries
 
-- **Localhost-only**: the panel listens on `127.0.0.1` / `localhost` only.
+- **Localhost-only**: the panel listens on `127.0.0.1` / `localhost` only and
+  refuses other Host headers.
+- **Control token**: every write route and every sensitive read route
+  (model config, file preview, session state, SSE) requires a random
+  per-process token that the served page receives automatically.
 - **Never reads credentials**: `~/.pi/agent/auth.json` is never read or
-  exposed by the panel.
+  exposed by the panel. Custom channel API keys are stored only in your
+  local `~/.pi/agent/models.json` and sent only to the provider you
+  configured.
+- **Outbound traffic is explicit**: no cloud service is used; requests to
+  pi.dev's public model catalog and to your configured model provider happen
+  only on those explicit feature paths.
 - **Minimal writes**: the panel writes only what you ask it to — new
   conversations via pi RPC, custom channels into `models.json`, and your
   panel preferences in the browser's local storage.
