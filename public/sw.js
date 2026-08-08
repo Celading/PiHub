@@ -26,10 +26,16 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') {
     return;
   }
+  const url = new URL(request.url);
+  // SPRINT-2 A2: never cache API responses — they carry session content,
+  // file previews, model configs (with API keys) and cost records. The
+  // server already sends Cache-Control: no-store; this is the belt.
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
   event.respondWith(
     fetch(request)
       .then((response) => {
-        const url = new URL(request.url);
         if (url.origin === self.location.origin && request.destination !== 'document') {
           const copy = response.clone();
           void caches.open('pihub-shell-v1').then((cache) => cache.put(request, copy));

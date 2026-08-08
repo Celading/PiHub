@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Pipeline, PipelineRunRecord } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 
 const ACTIVE_RUN_STATUSES: readonly string[] = ['running', 'idle', 'awaiting-approval'];
 
@@ -66,7 +67,7 @@ export function usePipelines(): {
 
   // SSE: pipeline_step snapshots upsert into the runs list live.
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {

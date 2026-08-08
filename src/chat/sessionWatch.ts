@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 
 /** Semantic traffic-light status of the current RPC session:
  *  green = settled/done, red = interrupted, cyan = running,
@@ -51,7 +52,7 @@ export function useSessionWatch(): SessionWatch {
       void poll();
     }, POLL_MS);
 
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onPiEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {

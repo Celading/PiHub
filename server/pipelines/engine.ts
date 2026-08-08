@@ -160,6 +160,11 @@ export class PipelineEngine extends EventEmitter {
     run.status = 'aborted';
     run.finishedAt = Date.now();
     this.emitChange(run);
+    // SPRINT-2 B3: cancel the pi side too — previously only the in-memory
+    // waiter was released and pi kept running the prompt to completion.
+    void this.bridge.send({ type: 'abort' }).catch(() => {
+      // best effort: pi may already be idle
+    });
     // Release a pending settle wait; the loop then stops.
     const waiter = this.waiters.get(runId);
     if (waiter !== undefined) {
@@ -242,7 +247,7 @@ export class PipelineEngine extends EventEmitter {
       index = next;
     }
 
-    if (run.status !== 'aborted' && run.status !== 'failed') {
+    if (run.status !== 'aborted' && run.status !== 'failed' && run.status !== 'uncertain') {
       run.status = 'completed';
       run.finishedAt = Date.now();
       this.emitChange(run);
@@ -304,10 +309,17 @@ export class PipelineEngine extends EventEmitter {
           this.emitChange(run);
           return 'stop';
         }
-        record.status = 'succeeded';
-        record.finishedAt = Date.now();
-        this.emitChange(run);
-        return 'ok';
+        if (step.type === 'approval') {
+          // Pure approval gate: approving the step completes it.
+          record.status = 'succeeded';
+          record.finishedAt = Date.now();
+          this.emitChange(run);
+          return 'ok';
+        }
+        // SPRINT-2 B1: a prompt/steer step with requiresApproval=true must
+        // EXECUTE after approval — previously the gate branch returned 'ok'
+        // directly, so the prompt was never sent to pi (audit-confirmed bug).
+        // Fall through to the switch below with the same step.
       }
 
       try {
@@ -332,6 +344,8 @@ export class PipelineEngine extends EventEmitter {
             if (settled === 'aborted') {
               return 'stop';
             }
+            // 'uncertain': run.status already flipped to uncertain; the step
+            // itself completed with whatever output was collected.
             break;
           }
           case 'steer': {
@@ -400,10 +414,10 @@ export class PipelineEngine extends EventEmitter {
     run: PipelineRunRecord,
     record: PipelineStepRecord,
     vars: Record<string, string>,
-  ): Promise<'settled' | 'aborted'> {
-    return new Promise<'settled' | 'aborted'>((resolve) => {
+  ): Promise<'settled' | 'aborted' | 'uncertain'> {
+    return new Promise<'settled' | 'aborted' | 'uncertain'>((resolve) => {
       let done = false;
-      const finish = (result: 'settled' | 'aborted'): void => {
+      const finish = (result: 'settled' | 'aborted' | 'uncertain'): void => {
         if (done) {
           return;
         }
@@ -449,7 +463,11 @@ export class PipelineEngine extends EventEmitter {
         }
       };
       const timer = setTimeout(() => {
-        finish('settled'); // settle-timeout: continue with whatever output we have
+        // SPRINT-2 B2: a settle timeout is NOT a successful settle — the pi
+        // side may still be working (or hung). Mark the run uncertain so the
+        // UI shows "result uncertain" instead of a fake green completion.
+        run.status = 'uncertain';
+        finish('uncertain');
       }, this.settleTimeoutMs);
       this.waiters.set(run.runId, {
         resolve: (result) => {

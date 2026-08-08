@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer } from 'react';
 import type { AgentMessage, RpcState, RpcStreamEvent } from '../../shared/types.js';
 import { api, type PromptImage } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 
 export interface ChatMessage {
   key: string;
@@ -333,7 +334,7 @@ export function useChatSession(): ChatSession {
   }, []);
 
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onPiEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {

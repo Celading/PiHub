@@ -11,6 +11,7 @@ import { createPipelineStore } from './pipelines/store.js';
 import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
+import { createSecurityGate, requiresToken } from './security.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
@@ -25,6 +26,31 @@ const mode: PanelMode = rawMode === 'debug' || rawMode === 'demo' ? rawMode : 'p
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
+
+// SPRINT-2 A1: local control-plane security gate. Host + Origin checks run
+// for every request; the per-process control token is mandatory in
+// production (injected into the served index.html, read back by the SPA for
+// fetch headers and SSE query params). Demo/debug keep Host/Origin gating
+// but may disable the token via env — demo already has 503 write guards and
+// synthetic data, and the dev tooling (vite origin + curl probes) must keep
+// working.
+const security = createSecurityGate();
+const tokenEnabled = mode === 'production' || process.env.PIHUB_DEV_NO_TOKEN !== '1';
+app.use(security.middleware.bind(security));
+app.use((req, res, next) => {
+  if (tokenEnabled && requiresToken(req) && !security.isAuthorized(req)) {
+    res.status(401).json({ error: 'missing or invalid control token' });
+    return;
+  }
+  next();
+});
+// Sensitive API responses must never be cached (SPRINT-2 A2).
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
 
 // Data isolation: demo mode never touches ~/.pi and never spawns real pi.
 const sessions =
@@ -127,22 +153,49 @@ app.use(
 
 // Production: serve the built SPA with an index.html fallback for client routes.
 // When dist is absent (dev mode), return a JSON hint instead of a 500.
+// The per-process control token is injected into the served HTML (SPRINT-2 A1):
+// the SPA reads window.__PIHUB_TOKEN__ and sends it as X-PiHub-Token on
+// writes / sensitive reads, and as ?token= on the SSE EventSource.
 const distDir = path.resolve(process.cwd(), 'dist');
 const indexFile = path.join(distDir, 'index.html');
-app.use(express.static(distDir));
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
+// Serve index.html ourselves (BEFORE express.static, which would otherwise
+// short-circuit it) so the per-process control token can be injected.
 app.use((req, res, next) => {
   if (req.method !== 'GET' || req.path.startsWith('/api/')) {
     next();
     return;
   }
-  res.sendFile(indexFile, (err) => {
-    if (err !== undefined) {
+  const wantsIndex = req.path === '/' || req.path === '/index.html';
+  if (!wantsIndex) {
+    next();
+    return;
+  }
+  const sendHtml = async (): Promise<void> => {
+    try {
+      const { readFile } = await import('node:fs/promises');
+      let html = await readFile(indexFile, 'utf8');
+      if (tokenEnabled) {
+        html = html.replace(
+          '</head>',
+          `<script>window.__PIHUB_TOKEN__=${JSON.stringify(security.token)};</script></head>`,
+        );
+      }
+      res.type('html').send(html);
+    } catch {
       res.status(404).json({
         error: 'frontend build not found — run `npm run build` or use the Vite dev server on port 18384',
       });
     }
-  });
+  };
+  void sendHtml();
 });
+app.use(express.static(distDir, { index: false }));
 
 // Express 5 forwards rejected async handlers here.
 app.use(

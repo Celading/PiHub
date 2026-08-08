@@ -1,4 +1,4 @@
-import { readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -754,7 +754,18 @@ export function createRouter(
       return;
     }
     try {
-      const info = await stat(resolved);
+      // SPRINT-2 A2: string-prefix containment is not enough — stat/readFile
+      // follow symlinks, so a symlink inside the workspace pointing outside
+      // would escape. Re-verify the REAL path against the real root.
+      const [realRoot, realTarget] = await Promise.all([
+        realpath(rootResolved),
+        realpath(resolved),
+      ]);
+      if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${path.sep}`)) {
+        res.status(400).json({ error: 'path outside workspace' });
+        return;
+      }
+      const info = await stat(realTarget);
       if (!info.isFile()) {
         res.status(400).json({ error: 'not a file' });
         return;
@@ -763,8 +774,8 @@ export function createRouter(
         res.status(413).json({ error: 'file too large for preview', size: info.size });
         return;
       }
-      const content = await readFile(resolved, 'utf8');
-      res.json({ path: resolved, size: info.size, content });
+      const content = await readFile(realTarget, 'utf8');
+      res.json({ path: realTarget, size: info.size, content });
     } catch (error) {
       res.status(404).json({ error: `cannot read file: ${error instanceof Error ? error.message : String(error)}` });
     }

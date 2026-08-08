@@ -13,10 +13,15 @@ import type {
   SessionSummary,
   SessionTreeResponse,
 } from '../../shared/types.js';
+import { controlTokenHeader } from './controlToken.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
+  // SPRINT-2 A1: attach the control token when the server injected one.
+  for (const [name, value] of Object.entries(controlTokenHeader())) {
+    headers.set(name, value);
+  }
   const response = await fetch(path, { ...init, headers });
   const raw = await response.text();
   const parsed = (raw.length === 0 ? null : (JSON.parse(raw) as unknown)) as

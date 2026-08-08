@@ -284,6 +284,51 @@ describe('pipeline engine', () => {
     expect(engine.abort(run.runId)).toBe(false); // already aborted
   });
 
+  it('SPRINT-2 B3: abort sends the pi abort command, not just a memory release', async () => {
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(samplePipeline(), 'x', {});
+    await tick();
+    engine.abort(run.runId);
+    await waitForStatus(engine, run.runId, (r) => r.status === 'aborted');
+    expect(bridge.sent).toContainEqual({ type: 'abort' });
+  });
+
+  it('SPRINT-2 B1: a prompt with requiresApproval executes after approval', async () => {
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Guarded prompt', type: 'prompt', prompt: 'do it', requiresApproval: true },
+      ],
+    });
+    const run = engine.start(pipeline, 'x', {});
+    await waitForStatus(engine, run.runId, (r) => r.steps[0]?.status === 'awaiting-approval');
+    // Before the fix the step succeeded right after approval and the prompt
+    // was NEVER sent — the approval branch returned early.
+    engine.approve(run.runId, true);
+    // The guarded prompt now executes: let the approval promise settle, then
+    // settle the agent to complete the run.
+    await tick();
+    bridge.settle();
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    expect(bridge.sent).toContainEqual({ type: 'prompt', message: 'do it' });
+    expect(finalRun.steps[0]?.status).toBe('succeeded');
+  });
+
+  it('SPRINT-2 B2: settle timeout marks the run uncertain instead of settled', async () => {
+    const bridge = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const store = createPipelineStore(tempDir);
+    // Tiny settle timeout so the test does not wait minutes.
+    const engine = new PipelineEngine(bridge, store, 30);
+    const run = engine.start(samplePipeline(), 'x', {});
+    // Never emit agent_settled — the timeout must fire.
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'uncertain');
+    expect(finalRun.steps[0]?.status).toBe('succeeded');
+    expect(finalRun.status).toBe('uncertain');
+  });
+
   it('records step setModel/setThinking sends without waiting for settle', async () => {
     const pipeline = samplePipeline({
       steps: [

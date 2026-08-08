@@ -264,7 +264,7 @@ export type PipelineStepStatus =
   | 'skipped'
   | 'awaiting-approval';
 
-export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'aborted' | 'failed';
+export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'aborted' | 'failed' | 'uncertain';
 
 export interface PipelineStepRecord {
   stepId: string;

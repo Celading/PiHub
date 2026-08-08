@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SessionDetail } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 import { useSessionComposer } from '../chat/sessionComposer.js';
 import { Composer } from '../components/Composer.js';
 import { MessageItem } from '../components/MessageItem.js';
@@ -144,7 +145,7 @@ export function SessionDetailView({ id, onBack }: SessionDetailViewProps): React
 
   // compaction lifecycle banner
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onPiEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {
