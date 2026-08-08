@@ -13,6 +13,7 @@ import type {
   SessionSummary,
   SessionTreeResponse,
 } from '../../shared/types.js';
+import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import { controlTokenHeader } from './controlToken.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -84,6 +85,22 @@ export const api = {
 
   settings(): Promise<Record<string, unknown>> {
     return request<Record<string, unknown>>('/api/settings');
+  },
+
+  // P2-01: registered agent adapters (metadata for the appearance section).
+  adapters(): Promise<{
+    adapters: Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
+  }> {
+    return request('/api/adapters');
+  },
+
+  // P2-01: read-only codex session records (never spawns codex).
+  codexSessions(): Promise<{ sessions: CodexSessionMeta[] }> {
+    return request('/api/codex/sessions');
+  },
+
+  codexSessionDetail(id: string): Promise<CodexSessionDetail> {
+    return request(`/api/codex/sessions/${encodeURIComponent(id)}`);
   },
 
   models(): Promise<ModelsResponse> {

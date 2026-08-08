@@ -449,3 +449,33 @@
     transform: translateY(0);
   }
 }
+
+/* P2-01 D: adapter appearance — per-backend accent colors */
+.adapter-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.adapter-color-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface);
+}
+
+.adapter-color-input {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.adapter-color-label {
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}

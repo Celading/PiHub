@@ -12,6 +12,8 @@ import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import { createSecurityGate, requiresToken } from './security.js';
+import { PiAdapter } from './adapters/pi-adapter.js';
+import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
@@ -57,6 +59,35 @@ const sessions =
   mode === 'demo' ? createMockSessionProvider() : createFileSessionProvider();
 const hub = new SseHub();
 const bridge = new RpcBridge(PI_BINARY, AGENT_CWD);
+
+// P2-01: adapter surface — pi is the primary adapter (wraps the existing
+// bridge); codex history is a read-only integration (rollout parse) that
+// never spawns codex and never reads ~/.codex/auth.json.
+const piAdapter = new PiAdapter(bridge);
+// Node EventEmitter throws on unhandled 'error' — the adapter re-broadcasts
+// bridge errors, so always attach a handler here.
+piAdapter.on('error', (error) => {
+  console.error(`[adapter:pi] ${error.message}`);
+});
+const adapters = [
+  piAdapter.meta,
+  {
+    kind: 'codex' as const,
+    label: 'Codex',
+    version: 'read-only', // history integration; exec adapter is opt-in
+    defaultColor: '#10a37f',
+  },
+];
+
+/** Finds a codex rollout by session id (read-only, no spawn). */
+async function parseRolloutFileById(id: string): Promise<CodexSessionDetail | null> {
+  const sessionsList = await listCodexSessions();
+  const match = sessionsList.find((session) => session.sessionId === id);
+  if (match === undefined) {
+    return null;
+  }
+  return parseRolloutFile(match.fileName);
+}
 
 // P1-15: track agent runs so a channel-config save can restart pi when idle
 // (models.json is loaded once at process start) or defer the restart to the
@@ -138,6 +169,17 @@ app.use(
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,
+    adapters: {
+      list: () => adapters,
+      // Read-only codex integration; demo keeps it empty (synthetic-only).
+      ...(mode === 'demo'
+        ? {}
+        : {
+            codexSessions: () => listCodexSessions(),
+            codexSessionDetail: (id: string) =>
+              parseRolloutFileById(id),
+          }),
+    },
     ...(mode === 'debug'
       ? {
           debugState: (): Record<string, unknown> => ({

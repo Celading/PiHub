@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ModelInfo, SessionSummary } from '../../shared/types.js';
 import type { SettingsSectionId, Theme } from '../types/app.js';
 import { api } from '../api/client.js';
+import {
+  loadAdapterColors,
+  saveAdapterColor,
+  type AdapterInfo,
+} from '../adapters/adapterColors.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { removeArchived, restoreSession as restoreArchived } from '../sessions/sessionActions.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
@@ -110,6 +115,15 @@ export function SettingsPage({
   const [, forceRender] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // P2-01 D: adapter appearance (metadata + per-adapter accent colors).
+  const [adapters, setAdapters] = useState<AdapterInfo[]>([]);
+  const [adapterColors, setAdapterColorsState] = useState<Record<string, string>>(() =>
+    loadAdapterColors(),
+  );
+  const setAdapterColor = useCallback((kind: string, color: string): void => {
+    saveAdapterColor(kind, color);
+    setAdapterColorsState((prev) => ({ ...prev, [kind]: color }));
+  }, []);
   const prefs = getPrefs();
   const [modes, setModes] = useState<{ steering: string; followUp: string }>(() => {
     try {
@@ -171,6 +185,25 @@ export function SettingsPage({
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [t]);
+
+  // P2-01 D: load registered adapters for the appearance section.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const result = await api.adapters();
+        if (!cancelled) {
+          setAdapters(result.adapters);
+        }
+      } catch {
+        // appearance section stays empty when the endpoint is unavailable
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -438,6 +471,37 @@ export function SettingsPage({
                 )}
               </div>
               <p className="settings-hint">{t('settings.personal.userIdHint')}</p>
+            </section>
+
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.personal.adapters')}</h2>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.personal.adapters')}</span>
+                <div className="setting-row-value adapter-color-row">
+                  {adapters.map((adapter) => (
+                    <label
+                      key={adapter.kind}
+                      className="adapter-color-item mono"
+                      title={t('settings.personal.adapterColor', { label: adapter.label })}
+                    >
+                      <input
+                        type="color"
+                        className="adapter-color-input"
+                        value={adapterColors[adapter.kind] ?? adapter.defaultColor}
+                        aria-label={t('settings.personal.adapterColor', { label: adapter.label })}
+                        onChange={(event) => {
+                          setAdapterColor(adapter.kind, event.target.value);
+                        }}
+                      />
+                      <span className="adapter-color-label">
+                        {adapter.label}
+                        {adapter.version !== null ? ` · ${adapter.version}` : ''}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <p className="settings-hint">{t('settings.personal.adaptersHint')}</p>
             </section>
 
             <section className="settings-section">

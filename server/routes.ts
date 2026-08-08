@@ -19,6 +19,7 @@ import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
+import type { CodexSessionDetail } from './adapters/codex-history.js';
 import type { PipelineStore } from './pipelines/store.js';
 import { hardConvert, softConvert } from './pipelines/convert.js';
 
@@ -147,6 +148,16 @@ export interface RouterModeOptions {
   reloadModels?: () => 'reloaded' | 'deferred';
   /** P1-03: workspace root the file preview may read from (cwd subtree). */
   allowedRoot?: string;
+  /**
+   * P2-01: registered agent adapters (metadata + codex history surface).
+   * `codexHistory` is the read-only integration (rollout parse); it is
+   * optional so demo mode stays synthetic.
+   */
+  adapters?: {
+    list: () => Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
+    codexSessions?: () => Promise<unknown[]>;
+    codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
+  };
 }
 
 /** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
@@ -314,6 +325,45 @@ export function createRouter(
       models: entry.models,
     }));
     res.json({ providers });
+  });
+
+  /* ---- P2-01: agent adapters (metadata + codex read-only history) ---- */
+  router.get('/api/adapters', (_req, res) => {
+    res.json({ adapters: options?.adapters?.list() ?? [] });
+  });
+  router.get('/api/codex/sessions', async (_req, res) => {
+    const fn = options?.adapters?.codexSessions;
+    if (fn === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    try {
+      res.json({ sessions: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  router.get('/api/codex/sessions/:id', async (req, res) => {
+    const fn = options?.adapters?.codexSessionDetail;
+    if (fn === undefined) {
+      res.status(404).json({ error: 'codex history unavailable' });
+      return;
+    }
+    const id = req.params['id'];
+    if (typeof id !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(id)) {
+      res.status(400).json({ error: 'invalid session id' });
+      return;
+    }
+    try {
+      const detail = await fn(id);
+      if (detail === null) {
+        res.status(404).json({ error: 'codex session not found' });
+        return;
+      }
+      res.json(detail);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   /* ---- official model catalog (P1-15 C) ----
