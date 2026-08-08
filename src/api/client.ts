@@ -87,6 +87,33 @@ export const api = {
     return request<Record<string, unknown>>('/api/settings');
   },
 
+  // P2-02: LAN access modes + capability scope.
+  net(): Promise<{
+    mode: 'local' | 'pair' | 'lan';
+    caps: { remoteApprove: boolean; remotePrompt: boolean; remoteShell: boolean };
+    pairs: Array<{ code: string; expiresAt: number }>;
+  }> {
+    return request('/api/net');
+  },
+
+  netPair(): Promise<{ code: string }> {
+    return request('/api/net/pair', { method: 'POST' });
+  },
+
+  netRevokePair(code: string): Promise<{ success: boolean }> {
+    return request('/api/net/pair/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  netSetCap(key: string, value: boolean): Promise<{ success: boolean; caps: unknown }> {
+    return request('/api/net/caps', {
+      method: 'POST',
+      body: JSON.stringify({ key, value }),
+    });
+  },
+
   // P2-01: registered agent adapters (metadata for the appearance section).
   adapters(): Promise<{
     adapters: Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;

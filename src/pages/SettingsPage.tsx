@@ -124,6 +124,52 @@ export function SettingsPage({
     saveAdapterColor(kind, color);
     setAdapterColorsState((prev) => ({ ...prev, [kind]: color }));
   }, []);
+  // P2-02: access mode + pairing + remote capabilities.
+  const [netMode, setNetMode] = useState<'local' | 'pair' | 'lan'>('local');
+  const [caps, setCaps] = useState({
+    remoteApprove: false,
+    remotePrompt: false,
+    remoteShell: false,
+  });
+  const [pairCode, setPairCode] = useState<string | null>(null);
+
+  const generatePair = useCallback(async (): Promise<void> => {
+    setError(null);
+    try {
+      const result = await api.netPair();
+      setPairCode(result.code);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const revokePair = useCallback(async (code: string): Promise<void> => {
+    setError(null);
+    try {
+      await api.netRevokePair(code);
+      setPairCode(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const setCap = useCallback(
+    async (key: 'remoteApprove' | 'remotePrompt' | 'remoteShell', value: boolean): Promise<void> => {
+      setError(null);
+      try {
+        const result = await api.netSetCap(key, value);
+        const next = result.caps as {
+          remoteApprove: boolean;
+          remotePrompt: boolean;
+          remoteShell: boolean;
+        };
+        setCaps(next);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [],
+  );
   const prefs = getPrefs();
   const [modes, setModes] = useState<{ steering: string; followUp: string }>(() => {
     try {
@@ -197,6 +243,28 @@ export function SettingsPage({
         }
       } catch {
         // appearance section stays empty when the endpoint is unavailable
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // P2-02: load access-mode state (mode/caps/pairs) once.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const result = await api.net();
+        if (!cancelled) {
+          setNetMode(result.mode);
+          setCaps(result.caps);
+          const active = result.pairs.find((pair) => pair.expiresAt > Date.now());
+          setPairCode(active?.code ?? null);
+        }
+      } catch {
+        // access mode stays local when the endpoint is unavailable
       }
     };
     void load();
@@ -570,6 +638,77 @@ export function SettingsPage({
                 ))}
               </div>
               <p className="settings-hint">{t('settings.personal.keysHint')}</p>
+            </section>
+
+            {/* P2-02: access mode + pairing + remote capabilities */}
+            <section className="settings-section">
+              <h2 className="settings-section-title mono">{t('settings.network')}</h2>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.network.mode')}</span>
+                <div className="setting-row-value">
+                  <span className="setting-value mono">
+                    {netMode === 'local'
+                      ? t('settings.network.local')
+                      : netMode === 'pair'
+                        ? t('settings.network.pair')
+                        : t('settings.network.lan')}
+                  </span>
+                </div>
+              </div>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.network.pairCode')}</span>
+                <div className="setting-row-value">
+                  {pairCode !== null ? (
+                    <>
+                      <span className="setting-value mono">{pairCode}</span>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => {
+                          void revokePair(pairCode);
+                        }}
+                      >
+                        {t('settings.network.revokePair')}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={netMode === 'local'}
+                      title={netMode === 'local' ? t('settings.network.pairDisabled') : undefined}
+                      onClick={() => {
+                        void generatePair();
+                      }}
+                    >
+                      {t('settings.network.generatePair')}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="settings-hint">{t('settings.network.hint')}</p>
+              <div className="network-caps">
+                <span className="setting-label mono">{t('settings.network.caps')}</span>
+                {(
+                  [
+                    { key: 'remoteApprove', label: t('settings.network.capApprove') },
+                    { key: 'remotePrompt', label: t('settings.network.capPrompt') },
+                    { key: 'remoteShell', label: t('settings.network.capShell') },
+                  ] as ReadonlyArray<{ key: 'remoteApprove' | 'remotePrompt' | 'remoteShell'; label: string }>
+                ).map((cap) => (
+                  <label key={cap.key} className="network-cap mono">
+                    <input
+                      type="checkbox"
+                      checked={caps[cap.key]}
+                      disabled={netMode === 'local'}
+                      onChange={(event) => {
+                        void setCap(cap.key, event.target.checked);
+                      }}
+                    />
+                    {cap.label}
+                  </label>
+                ))}
+              </div>
             </section>
           </>
         ) : null}

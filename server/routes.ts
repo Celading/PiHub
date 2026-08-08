@@ -20,6 +20,7 @@ import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { CodexSessionDetail } from './adapters/codex-history.js';
+import type { LanGate } from './security.js';
 import type { PipelineStore } from './pipelines/store.js';
 import { hardConvert, softConvert } from './pipelines/convert.js';
 
@@ -158,6 +159,8 @@ export interface RouterModeOptions {
     codexSessions?: () => Promise<unknown[]>;
     codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
   };
+  /** P2-02: LAN access modes + capability scope. */
+  lanGate?: LanGate;
 }
 
 /** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
@@ -216,6 +219,23 @@ export function createRouter(
     return true;
   };
 
+  // P2-02 B: remote peers (non-loopback) are read-only by default. Writes
+  // require the operator to have enabled the matching capability.
+  const remoteWriteDenied = (
+    req: express.Request,
+    res: express.Response,
+    route: 'approve' | 'prompt' | 'shell',
+  ): boolean => {
+    if (lanGate === undefined || !lanGate.isRemote(req)) {
+      return false;
+    }
+    if (lanGate.remoteCan(req, route)) {
+      return false;
+    }
+    res.status(403).json({ error: 'remote write requires capability: enable it in settings' });
+    return true;
+  };
+
   router.get('/api/mode', (_req, res) => {
     res.json({ mode });
   });
@@ -262,7 +282,7 @@ export function createRouter(
   // (path-traversal guard). Sessions live under cwd-named subdirectories, so
   // the file is located by a bounded recursive search.
   router.post('/api/sessions/delete', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     const body = req.body as Record<string, unknown> | null;
@@ -325,6 +345,58 @@ export function createRouter(
       models: entry.models,
     }));
     res.json({ providers });
+  });
+
+  /* ---- P2-02: LAN access + capability scope ----
+   * Pairing codes and capability switches are managed locally; remote peers
+   * (non-loopback Host) are gated by the LanGate middleware and can only use
+   * capabilities the operator enabled. */
+  const lanGate = options?.lanGate;
+  router.get('/api/net', (_req, res) => {
+    res.json(
+      lanGate === undefined
+        ? { mode: 'local', caps: { remoteApprove: false, remotePrompt: false, remoteShell: false } }
+        : { mode: lanGate.mode, caps: lanGate.caps, pairs: lanGate.listPairs() },
+    );
+  });
+  router.post('/api/net/pair', (_req, res) => {
+    if (lanGate === undefined || lanGate.mode === 'local') {
+      res.status(503).json({ error: 'pairing disabled in local mode' });
+      return;
+    }
+    res.json({ code: lanGate.createPairCode() });
+  });
+  router.post('/api/net/pair/revoke', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'pairing disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const code = typeof body === 'object' && body !== null ? body['code'] : undefined;
+    if (typeof code !== 'string' || code.length === 0) {
+      res.status(400).json({ error: 'invalid pair code' });
+      return;
+    }
+    lanGate.revoke(code);
+    res.json({ success: true });
+  });
+  router.post('/api/net/caps', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'capability scope disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const key = typeof body === 'object' && body !== null ? body['key'] : undefined;
+    const value = typeof body === 'object' && body !== null ? body['value'] : undefined;
+    if (
+      (key !== 'remoteApprove' && key !== 'remotePrompt' && key !== 'remoteShell') ||
+      typeof value !== 'boolean'
+    ) {
+      res.status(400).json({ error: 'invalid capability switch' });
+      return;
+    }
+    lanGate.setCap(key, value);
+    res.json({ success: true, caps: lanGate.caps });
   });
 
   /* ---- P2-01: agent adapters (metadata + codex read-only history) ---- */
@@ -421,7 +493,7 @@ export function createRouter(
   });
 
   router.post('/api/rpc/prompt', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     const body = promptBodySchema.safeParse(req.body);
@@ -442,7 +514,7 @@ export function createRouter(
   });
 
   router.post('/api/rpc/steer', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     const body = steerBodySchema.safeParse(req.body);
@@ -684,7 +756,7 @@ export function createRouter(
   });
 
   router.post('/api/rpc/bash', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'shell')) {
       return;
     }
     const body = bashBodySchema.safeParse(req.body);
@@ -890,6 +962,9 @@ export function createRouter(
   });
 
   router.post('/api/models-config', async (req, res) => {
+    if (remoteWriteDenied(req, res, 'prompt')) {
+      return;
+    }
     if (mode === 'demo') {
       // kMode write guard: demo never mutates ~/.pi.
       res.status(503).json({ error: 'demo mode is read-only' });
@@ -966,7 +1041,7 @@ export function createRouter(
   });
 
   router.get('/api/events', (req, res) => {
-    hub.addClient(res);
+    hub.addClient(req, res);
     req.on('close', () => {
       // Client disconnect is handled inside the hub via res 'close'.
     });

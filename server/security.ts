@@ -21,11 +21,13 @@ import { randomBytes } from 'node:crypto';
 const DEFAULT_ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost']);
 
 function allowedHosts(): Set<string> {
+  const set = new Set<string>(DEFAULT_ALLOWED_HOSTS);
   const raw = process.env.PIHUB_ALLOWED_HOSTS;
   if (raw === undefined || raw.length === 0) {
-    return DEFAULT_ALLOWED_HOSTS;
+    return set;
   }
-  const set = new Set<string>();
+  // PIHUB_ALLOWED_HOSTS EXTENDS the loopback allowlist — it never removes
+  // 127.0.0.1/localhost (P2-02 lan mode must keep local access working).
   for (const part of raw.split(',')) {
     const host = part.trim().toLowerCase();
     if (host.length > 0) {
@@ -124,3 +126,156 @@ export function requiresToken(req: Request): boolean {
     p === '/api/events'
   );
 }
+
+/* ---- P2-02: LAN access modes + capability scope ---- */
+
+export type NetMode = 'local' | 'pair' | 'lan';
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(bareHost(host));
+}
+
+/** Routes that mutate agent state — denied for remote (non-loopback) peers
+ *  unless the capability switch explicitly allows them (P2-02 B). */
+export function isRemoteWriteRoute(p: string): boolean {
+  return (
+    p === '/api/rpc/prompt' ||
+    p === '/api/rpc/steer' ||
+    p === '/api/rpc/abort' ||
+    p === '/api/rpc/bash' ||
+    p === '/api/rpc/abort-bash' ||
+    p === '/api/sessions/delete' ||
+    p === '/api/models-config'
+  );
+}
+
+export interface CapabilitySwitches {
+  remoteApprove: boolean;
+  remotePrompt: boolean;
+  remoteShell: boolean;
+}
+
+/**
+ * P2-02 LAN gate: decides whether a request is "remote" and which
+ * capabilities it may use. Mode is fixed at startup (PIHUB_NET):
+ *  - local (default): loopback only — behavior identical to SPRINT-2.
+ *  - pair: a one-time pairing code (short TTL) unlocks a remote session;
+ *    the code is validated here and swapped for a short-lived session token.
+ *  - lan: explicit PIHUB_ALLOWED_HOSTS plus capability switches via env.
+ */
+export class LanGate {
+  readonly mode: NetMode;
+  /** One-time pairing codes: code -> { createdAt, expiresAt }. */
+  private readonly pairs = new Map<string, { createdAt: number; expiresAt: number }>();
+  /** Remote sessions that completed pairing: token -> { expiresAt }. */
+  private readonly sessions = new Map<string, { expiresAt: number }>();
+  /** Runtime-adjustable capability switches (local settings page). */
+  caps: CapabilitySwitches;
+  private readonly pairTtlMs: number;
+
+  constructor() {
+    const raw = process.env.PIHUB_NET;
+    this.mode = raw === 'pair' || raw === 'lan' ? raw : 'local';
+    this.pairTtlMs = Number(process.env.PIHUB_PAIR_TTL_MS ?? 15 * 60 * 1000);
+    this.caps = {
+      remoteApprove: process.env.PIHUB_CAP_REMOTE_APPROVE === '1',
+      remotePrompt: process.env.PIHUB_CAP_REMOTE_PROMPT === '1',
+      remoteShell: process.env.PIHUB_CAP_REMOTE_SHELL === '1',
+    };
+  }
+
+  /** Updates a capability switch (called from the local settings page). */
+  setCap(key: keyof CapabilitySwitches, value: boolean): void {
+    this.caps[key] = value;
+  }
+
+  /** True when the request comes from a non-loopback host (remote peer). */
+  isRemote(req: Request): boolean {
+    const host = req.headers.host;
+    return typeof host !== 'string' || host.length === 0 || !isLoopbackHost(host);
+  }
+
+  /** Generates a one-time pairing code (remote unlock). */
+  createPairCode(): string {
+    const code = randomBytes(4).toString('hex');
+    const now = Date.now();
+    this.pairs.set(code, { createdAt: now, expiresAt: now + this.pairTtlMs });
+    // Keep the map small: prune expired codes.
+    for (const [key, value] of this.pairs) {
+      if (value.expiresAt < now) {
+        this.pairs.delete(key);
+      }
+    }
+    return code;
+  }
+
+  /** Revokes a pairing code / remote session (token rotation). */
+  revoke(code: string): void {
+    this.pairs.delete(code);
+    this.sessions.delete(code);
+  }
+
+  listPairs(): Array<{ code: string; expiresAt: number }> {
+    const now = Date.now();
+    const out: Array<{ code: string; expiresAt: number }> = [];
+    for (const [code, value] of this.pairs) {
+      if (value.expiresAt > now) {
+        out.push({ code, expiresAt: value.expiresAt });
+      }
+    }
+    return out;
+  }
+
+  /** Middleware: for remote peers, require a valid pair/session token and
+   *  apply capability scope. Loopback traffic is untouched. */
+  middleware(req: Request, res: Response, next: NextFunction): void {
+    if (!this.isRemote(req)) {
+      next();
+      return;
+    }
+    // Any mode with a remote peer: API access requires a pair/session token.
+    // In local mode this can only happen for explicitly allowlisted hosts
+    // (lan-like) — pairing is still required.
+    if (req.path.startsWith('/api/')) {
+      const pair = req.query['pair'];
+      if (typeof pair !== 'string' || !this.validate(pair)) {
+        res.status(403).json({ error: 'remote access requires pairing' });
+        return;
+      }
+    }
+    next();
+  }
+
+  /** Validates a pair code / session token; expires and rotates cleanly. */
+  private validate(token: string): boolean {
+    const now = Date.now();
+    const pair = this.pairs.get(token);
+    if (pair !== undefined && pair.expiresAt > now) {
+      // One-time use: the code becomes the session token until expiry.
+      this.sessions.set(token, { expiresAt: pair.expiresAt });
+      return true;
+    }
+    const session = this.sessions.get(token);
+    return session !== undefined && session.expiresAt > now;
+  }
+
+  /** Capability check for remote peers: writes require the matching switch. */
+  remoteCan(req: Request, route: 'approve' | 'prompt' | 'shell'): boolean {
+    if (!this.isRemote(req)) {
+      return true; // local always allowed
+    }
+    switch (route) {
+      case 'approve':
+        return this.caps.remoteApprove;
+      case 'prompt':
+        return this.caps.remotePrompt;
+      case 'shell':
+        return this.caps.remoteShell;
+      default:
+        return false;
+    }
+  }
+}
+

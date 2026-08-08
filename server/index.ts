@@ -11,7 +11,7 @@ import { createPipelineStore } from './pipelines/store.js';
 import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
-import { createSecurityGate, requiresToken } from './security.js';
+import { createSecurityGate, LanGate, requiresToken } from './security.js';
 import { PiAdapter } from './adapters/pi-adapter.js';
 import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
 
@@ -39,8 +39,17 @@ app.use(express.json({ limit: '1mb' }));
 const security = createSecurityGate();
 const tokenEnabled = mode === 'production' || process.env.PIHUB_DEV_NO_TOKEN !== '1';
 app.use(security.middleware.bind(security));
+// P2-02: LAN gate runs FIRST — remote peers must present a valid pairing
+// token; once paired, the request is treated as authorized (the pair IS the
+// remote credential). Loopback traffic is untouched.
+const lanGate = new LanGate();
+app.use(lanGate.middleware.bind(lanGate));
+
 app.use((req, res, next) => {
-  if (tokenEnabled && requiresToken(req) && !security.isAuthorized(req)) {
+  // A validated remote pairing satisfies the token requirement for API
+  // access; loopback still needs the control token.
+  const paired = lanGate.isRemote(req) && typeof req.query['pair'] === 'string';
+  if (tokenEnabled && requiresToken(req) && !paired && !security.isAuthorized(req)) {
     res.status(401).json({ error: 'missing or invalid control token' });
     return;
   }
@@ -169,6 +178,7 @@ app.use(
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,
+    lanGate,
     adapters: {
       list: () => adapters,
       // Read-only codex integration; demo keeps it empty (synthetic-only).
