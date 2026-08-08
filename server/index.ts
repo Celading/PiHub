@@ -14,6 +14,8 @@ import os from 'node:os';
 import { createSecurityGate, LanGate, requiresToken } from './security.js';
 import { PiAdapter } from './adapters/pi-adapter.js';
 import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
+import { getAtomcodeSession } from './adapters/atomcode-history.js';
+import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from './adapters/zcode-history.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
@@ -86,7 +88,29 @@ const adapters = [
     version: 'read-only', // history integration; exec adapter is opt-in
     defaultColor: '#10a37f',
   },
+  {
+    kind: 'atomcode' as const,
+    label: 'AtomCode',
+    version: 'read-only', // exec adapter opt-in; history parsed read-only
+    defaultColor: '#e4572e',
+  },
+  {
+    kind: 'zcode' as const,
+    label: 'ZCode',
+    version: 'read-only', // host agent; record consumer only
+    defaultColor: '#7f56d9',
+  },
 ];
+
+/** Finds a zcode rollout by session id (read-only, no spawn). */
+async function findZcodeRolloutById(id: string): Promise<ZcodeSessionDetail | null> {
+  const sessions = await listZcodeSessions();
+  const match = sessions.find((session) => session.sessionId === id);
+  if (match === undefined) {
+    return null;
+  }
+  return parseZcodeRollout(match.fileName);
+}
 
 /** Finds a codex rollout by session id (read-only, no spawn). */
 async function parseRolloutFileById(id: string): Promise<CodexSessionDetail | null> {
@@ -181,13 +205,15 @@ app.use(
     lanGate,
     adapters: {
       list: () => adapters,
-      // Read-only codex integration; demo keeps it empty (synthetic-only).
+      // Read-only integrations; demo keeps them empty (synthetic-only).
       ...(mode === 'demo'
         ? {}
         : {
             codexSessions: () => listCodexSessions(),
-            codexSessionDetail: (id: string) =>
-              parseRolloutFileById(id),
+            codexSessionDetail: (id: string) => parseRolloutFileById(id),
+            atomcodeSession: () => getAtomcodeSession(),
+            zcodeSessions: () => listZcodeSessions(),
+            zcodeSessionDetail: (id: string) => findZcodeRolloutById(id),
           }),
     },
     ...(mode === 'debug'

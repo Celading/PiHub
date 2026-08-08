@@ -20,6 +20,8 @@ import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { CodexSessionDetail } from './adapters/codex-history.js';
+import type { AtomcodeSessionDetail } from './adapters/atomcode-history.js';
+import type { ZcodeSessionDetail, ZcodeSessionMeta } from './adapters/zcode-history.js';
 import type { LanGate } from './security.js';
 import type { PipelineStore } from './pipelines/store.js';
 import { hardConvert, softConvert } from './pipelines/convert.js';
@@ -158,6 +160,10 @@ export interface RouterModeOptions {
     list: () => Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
     codexSessions?: () => Promise<unknown[]>;
     codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
+    /** ADAPTER2: atomcode + zcode read-only history surfaces. */
+    atomcodeSession?: () => Promise<AtomcodeSessionDetail | null>;
+    zcodeSessions?: () => Promise<ZcodeSessionMeta[]>;
+    zcodeSessionDetail?: (id: string) => Promise<ZcodeSessionDetail | null>;
   };
   /** P2-02: LAN access modes + capability scope. */
   lanGate?: LanGate;
@@ -430,6 +436,54 @@ export function createRouter(
       const detail = await fn(id);
       if (detail === null) {
         res.status(404).json({ error: 'codex session not found' });
+        return;
+      }
+      res.json(detail);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /* ---- ADAPTER2: atomcode + zcode read-only history ---- */
+  router.get('/api/atomcode/sessions', async (_req, res) => {
+    const fn = options?.adapters?.atomcodeSession;
+    if (fn === undefined) {
+      res.json({ session: null });
+      return;
+    }
+    try {
+      res.json({ session: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  router.get('/api/zcode/sessions', async (_req, res) => {
+    const fn = options?.adapters?.zcodeSessions;
+    if (fn === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    try {
+      res.json({ sessions: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  router.get('/api/zcode/sessions/:id', async (req, res) => {
+    const fn = options?.adapters?.zcodeSessionDetail;
+    if (fn === undefined) {
+      res.status(404).json({ error: 'zcode history unavailable' });
+      return;
+    }
+    const id = req.params['id'];
+    if (typeof id !== 'string' || !/^[A-Za-z0-9()._-]{1,128}$/.test(id)) {
+      res.status(400).json({ error: 'invalid session id' });
+      return;
+    }
+    try {
+      const detail = await fn(id);
+      if (detail === null) {
+        res.status(404).json({ error: 'zcode session not found' });
         return;
       }
       res.json(detail);

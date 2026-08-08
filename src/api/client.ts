@@ -14,6 +14,8 @@ import type {
   SessionTreeResponse,
 } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
+import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
+import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { controlTokenHeader } from './controlToken.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -128,6 +130,19 @@ export const api = {
 
   codexSessionDetail(id: string): Promise<CodexSessionDetail> {
     return request(`/api/codex/sessions/${encodeURIComponent(id)}`);
+  },
+
+  // ADAPTER2: atomcode + zcode read-only history.
+  atomcodeSession(): Promise<{ session: AtomcodeSessionDetail | null }> {
+    return request('/api/atomcode/sessions');
+  },
+
+  zcodeSessions(): Promise<{ sessions: ZcodeSessionMeta[] }> {
+    return request('/api/zcode/sessions');
+  },
+
+  zcodeSessionDetail(id: string): Promise<ZcodeSessionDetail> {
+    return request(`/api/zcode/sessions/${encodeURIComponent(id)}`);
   },
 
   models(): Promise<ModelsResponse> {

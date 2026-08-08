@@ -16,7 +16,7 @@ import type { RpcStreamEvent, RpcResponse, ExtensionUiRequest } from '../../shar
  */
 
 /** Which agent backend a session/message belongs to (for UI coloring). */
-export type AgentKind = 'pi' | 'codex';
+export type AgentKind = 'pi' | 'codex' | 'atomcode' | 'zcode';
 
 export interface AgentMeta {
   kind: AgentKind;

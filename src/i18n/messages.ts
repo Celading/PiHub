@@ -347,6 +347,10 @@ export const zhMessages = {
   'codex.messages': '消息',
   'codex.tools': '工具调用',
   'codex.open': '查看',
+  'adapter.sessions': '{label} 会话（只读）',
+  'adapter.turns': '轮次',
+  'adapter.tokens': 'tokens',
+  'adapter.duration': '耗时',
 
   // settings
   'settings.title': '设置',
@@ -784,6 +788,10 @@ export const enMessages: Record<MessageKey, string> = {
   'codex.messages': 'messages',
   'codex.tools': 'tool calls',
   'codex.open': 'view',
+  'adapter.sessions': '{label} sessions (read-only)',
+  'adapter.turns': 'turns',
+  'adapter.tokens': 'tokens',
+  'adapter.duration': 'duration',
 
   'settings.title': 'Settings',
   'settings.readonly': 'local · ~/.pi/agent',
