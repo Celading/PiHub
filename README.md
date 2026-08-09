@@ -56,8 +56,18 @@ configure (model catalog lookups and prompts to your chosen provider). See
 - Slash suggestions (`/`) for extensions, skills and prompt templates
 - Image paste
 
+### File workbench
+- Read-only preview of any file touched during the session (workspace-whitelisted)
+- Inline unified-diff highlighting on changed files
+- Recent-files strip: read / write / edit / patch calls, one click to preview
+
 ### Sessions
 - Session list with live status lights (done / running / interrupted)
+- **Multi-tab workspace**: open several sessions in parallel tabs — clicking
+  a session opens or switches a tab; tabs close independently and fall back
+  to a fresh chat tab
+- **Session trees**: branch timeline with node labels and one-click fork of
+  mainline user messages
 - Collections (groups &amp; projects) with drag-and-drop and custom names
 - Archive to settings (restorable) and guarded deletion
 - Right-click menu: open · new branch (clone) · archive · delete
@@ -84,6 +94,13 @@ Permissions · Prompt Favorites · Lab
   a live run timeline. Part of the built-in workflow surface.
 - Skill import: convert any skill into a pipeline — algorithmic conversion
   (zero tokens) or agent-assisted conversion (token-gated, confirmed first)
+
+### Multi-agent visibility
+- Read-only session views for other agent CLIs on the same machine — Codex
+  rollout history, AtomCode history and ZCode model-I/O records — each with
+  its own accent color (overridable in **Settings → Appearance**)
+- Codex is never spawned by default; the opt-in `exec` integration streams
+  its JSONL events and never touches a running Codex
 
 ## Quick Start
 
@@ -163,7 +180,7 @@ produce a different demo.
 | `Ctrl+Shift+M` | automation / skills / workflows palette |
 | `Ctrl+Shift+L` | cycle model |
 | `⌘`/`Ctrl` + `↑`/`↓` | switch session |
-| `Alt+1..4` | chat / sessions / stats / settings |
+| `Alt+1..5` | chat / sessions / stats / settings / automation |
 
 ## Layout
 
@@ -178,7 +195,10 @@ public/    PWA manifest, icon, service worker
 ## Boundaries
 
 - **Localhost-only**: the panel listens on `127.0.0.1` / `localhost` only and
-  refuses other Host headers.
+  refuses other Host headers. Optional LAN access (`PIHUB_NET=pair` / `lan`)
+  is **off by default**; enabling it requires a one-time pairing code per
+  peer, and every remote capability (prompt / steer / delete / shell /
+  approval) has its own switch, all defaulting to off.
 - **Control token**: every write route and every sensitive read route
   (model config, file preview, session state, SSE) requires a random
   per-process token that the served page receives automatically.

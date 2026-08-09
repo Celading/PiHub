@@ -6,7 +6,43 @@ All notable changes to PiHub are documented here. The format follows
 
 ## [Unreleased]
 
-### Security (SPRINT-2)
+_No unreleased changes yet._
+
+## [0.2.0] - 2026-08-09
+
+### Added
+
+- **Multi-tab chat workspace**: sessions open in parallel tabs
+  (sidebar click opens or switches a tab; tabs can be closed and fall back
+  to a fresh draft tab). Each tab keeps its own message flow — activating a
+  tab whose session differs from the RPC's current one switches sessions
+  first, then reloads that session's chat. Draft tabs follow whatever
+  session the RPC currently holds.
+- **Agent adapter surface**: a protocol-neutral
+  `AgentAdapter` interface (commands / events / meta) with pi as the first
+  adapter; read-only visibility into sessions recorded by other agent CLIs —
+  Codex rollout history (`~/.codex/sessions`), AtomCode history and ZCode
+  model-I/O records, each with its own accent color overridable in
+  **Settings → Appearance**. An opt-in Codex `exec` adapter
+  (JSONL event stream) is available and never touches a running Codex.
+- **LAN access modes**: optional `PIHUB_NET` mode (`local` default,
+  `pair` / `lan`) with one-time pairing codes (short TTL, revocable) and
+  per-capability switches for remote writes — all remote capabilities are
+  **off by default**; loopback access is unchanged.
+- **Session tree visualization**: branch timeline in session details
+  with node labels and one-click fork of mainline user messages.
+- **Release kit**: `docs/release-notes-template.md` (user-facing
+  release notes template with a tagging checklist), `docs/demo-script.md`
+  (30-second demo video script mapped 1:1 to the showcase recorder DSL),
+  `docs/community-post.md` (EN/中文 community post kits with exact security
+  claims), and a "Local-first by design" trust section on the README
+  (EN/中文).
+- **Event envelope**: every streamed RPC event now carries a per-process
+  monotonic `sequence` plus optional `sessionId` / `runId`, laying the
+  groundwork for run isolation and replay tooling (original payload kept
+  untouched).
+
+### Security
 
 - **Local control-plane gate**: strict Host allowlist (127.0.0.1 / localhost
   by default, extendable via `PIHUB_ALLOWED_HOSTS`), same-origin check for
@@ -16,6 +52,9 @@ All notable changes to PiHub are documented here. The format follows
   stream). The SPA receives the token from the served index.html and sends it
   as `X-PiHub-Token`; EventSource carries it as `?token=`. Token is never
   persisted or logged.
+- **Remote peers need a valid pair**: any non-loopback API request must
+  present a validated pairing code; capability switches gate each remote
+  write class independently (all off by default).
 - **Service worker no longer caches API responses** (`/api/**`), and all API
   responses send `Cache-Control: no-store` — session content, file previews
   and credential-bearing model configs never touch the cache.
@@ -36,25 +75,6 @@ All notable changes to PiHub are documented here. The format follows
   settled successfully.
 - **Pipeline abort cancels pi**: aborting a running pipeline now sends the pi
   `abort` command instead of only releasing the in-memory waiter.
-
-### Added
-
-- **Release kit (P2-04)**: `docs/release-notes-template.md` (user-facing
-  release notes template with a tagging checklist), `docs/demo-script.md`
-  (30-second demo video script mapped 1:1 to the showcase recorder DSL),
-  `docs/community-post.md` (EN/中文 community post kits with exact security
-  claims), and a "Local-first by design" trust section on the README
-  (EN/中文).
-- **Multi-tab chat workspace (P1-06)**: sessions open in parallel tabs
-  (sidebar click opens or switches a tab; tabs can be closed and fall back
-  to a fresh draft tab). Each tab keeps its own message flow — activating a
-  tab whose session differs from the RPC's current one switches sessions
-  first, then reloads that session's chat. Draft tabs follow whatever
-  session the RPC currently holds.
-- **Event envelope**: every streamed RPC event now carries a per-process
-  monotonic `sequence` plus optional `sessionId` / `runId`, laying the
-  groundwork for run isolation and replay tooling (original payload kept
-  untouched).
 
 ## [0.1.0] - 2026-08-08
 
@@ -79,4 +99,5 @@ All notable changes to PiHub are documented here. The format follows
 
 - Panel binds 127.0.0.1 only; `~/.pi/agent/auth.json` is never read.
 
+[0.2.0]: https://github.com/HapPub/PiHub/releases/tag/v0.2.0
 [0.1.0]: https://github.com/HapPub/PiHub/releases/tag/v0.1.0
