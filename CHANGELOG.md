@@ -6,7 +6,28 @@ All notable changes to PiHub are documented here. The format follows
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Typewriter output** (showcase sprint, Lab on by default): assistant text
+  reveals character-by-character with a primary-color caret. Only rendering
+  is animated — the message data stays complete, so copy / resend / export
+  always carry the full text; growing stream deltas continue the reveal
+  instead of re-typing, long replies throttle to a 12s cap, and settling
+  finishes the reveal.
+- **Settle-collapse** (showcase sprint, Lab on by default): when a run
+  settles, the whole tool chain folds into one block (grid-rows transition)
+  and a **Final summary** line fades in (last assistant reply, capped),
+  followed by the `.....` folded marker. Clicking the summary expands the
+  block — nothing is trimmed.
+- **Demo showcase movie**: demo mode now auto-plays a scripted conversation
+  (pretend-send user message, thinking, a three-tool chain with results,
+  typewriter-style text deltas, settle) over the standard SSE event stream —
+  the typewriter, tool-chain collapse and final summary are all production
+  components reacting to ordinary events. `docs/showcase-director-script.md`
+  is the 8-scene storyboard (timing, subtitles, CN voiceover); the demo
+  stack + headless check live in `scripts/smoke-showcase.mjs` (9/9).
+
+_No unreleased security changes._
 
 ## [0.2.0] - 2026-08-09
 
