@@ -39,6 +39,12 @@ All notable changes to PiHub are documented here. The format follows
 
 ### Added
 
+- **Release kit (P2-04)**: `docs/release-notes-template.md` (user-facing
+  release notes template with a tagging checklist), `docs/demo-script.md`
+  (30-second demo video script mapped 1:1 to the showcase recorder DSL),
+  `docs/community-post.md` (EN/中文 community post kits with exact security
+  claims), and a "Local-first by design" trust section on the README
+  (EN/中文).
 - **Multi-tab chat workspace (P1-06)**: sessions open in parallel tabs
   (sidebar click opens or switches a tab; tabs can be closed and fall back
   to a fresh draft tab). Each tab keeps its own message flow — activating a

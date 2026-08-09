@@ -37,6 +37,14 @@ pi.dev, and prompts sent to the model provider you configure).
 It is an independent, clean-room implementation — written from scratch,
 no external UI source is reused.
 
+### Local-first by design
+
+Your conversations stay on your machine. The panel binds to the loopback
+interface only, never reads your agent credentials, and operates no cloud
+service of its own — the only outbound requests are the ones you explicitly
+configure (model catalog lookups and prompts to your chosen provider). See
+[`SECURITY.md`](SECURITY.md) for the exact boundary.
+
 ## Features
 
 ### Chat
