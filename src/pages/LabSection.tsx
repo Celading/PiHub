@@ -14,18 +14,32 @@ const LAB_SWITCHES: ReadonlyArray<{
     | 'lab.compactTools'
     | 'lab.settledNotify'
     | 'lab.simplifiedOutput'
-    | 'lab.showThinkingLive';
+    | 'lab.showThinkingLive'
+    | 'lab.typewriter'
+    | 'lab.settledCollapse';
   hintKey:
     | 'lab.streamAnimationHint'
     | 'lab.compactToolsHint'
     | 'lab.settledNotifyHint'
     | 'lab.simplifiedOutputHint'
-    | 'lab.showThinkingLiveHint';
+    | 'lab.showThinkingLiveHint'
+    | 'lab.typewriterHint'
+    | 'lab.settledCollapseHint';
 }> = [
   {
     flag: 'streamAnimation',
     labelKey: 'lab.streamAnimation',
     hintKey: 'lab.streamAnimationHint',
+  },
+  {
+    flag: 'typewriter',
+    labelKey: 'lab.typewriter',
+    hintKey: 'lab.typewriterHint',
+  },
+  {
+    flag: 'settledCollapse',
+    labelKey: 'lab.settledCollapse',
+    hintKey: 'lab.settledCollapseHint',
   },
   {
     flag: 'compactTools',

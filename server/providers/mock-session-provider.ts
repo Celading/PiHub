@@ -433,9 +433,12 @@ function stats(): SessionStats {
 export const DEMO_RUNNING_ID = runningSpec.id;
 
 /** Demo-mode provider: static fictional dataset + status-light hook for the
- *  state machine (KMODE-001 K3/K4). */
+ *  state machine (KMODE-001 K3/K4), plus a wipe hook for the showcase
+ *  player (showcase sprint: a play resets the running conversation so the
+ *  broadcast events are the only data source). */
 export interface DemoSessionProvider extends SessionProvider {
   setDemoStatus: (id: string, status: 'done' | 'aborted') => void;
+  clearDemoEntries: (id: string) => void;
 }
 
 export function createMockSessionProvider(): DemoSessionProvider {
@@ -456,6 +459,12 @@ export function createMockSessionProvider(): DemoSessionProvider {
       const spec = SPECS.find((entry) => entry.id === id);
       if (spec !== undefined) {
         spec.status = status;
+      }
+    },
+    clearDemoEntries(id: string): void {
+      const spec = SPECS.find((entry) => entry.id === id);
+      if (spec !== undefined) {
+        spec.entries = [];
       }
     },
   };

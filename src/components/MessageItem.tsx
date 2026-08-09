@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
+import { TypewriterText } from './TypewriterText.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
 import { summarizeToolCall } from './toolSummary.js';
@@ -138,10 +139,14 @@ function ContentBlocks({
   blocks,
   thinkingStatus,
   animate,
+  typewriter,
 }: {
   blocks: RenderBlock[];
   thinkingStatus: ThinkingStatus;
   animate: boolean;
+  /** Showcase sprint: render streaming text blocks with the typewriter
+   *  reveal (markdown takes over once the reveal completes). */
+  typewriter?: boolean;
 }): React.JSX.Element {
   return (
     <>
@@ -165,7 +170,11 @@ function ContentBlocks({
             // malformed block alive; never crash the stream on it.
             const textValue: unknown = (known as { text?: unknown }).text;
             return typeof textValue === 'string' ? (
-              <Markdown key={index} text={textValue} />
+              typewriter === true ? (
+                <TypewriterText key={index} text={textValue} />
+              ) : (
+                <Markdown key={index} text={textValue} />
+              )
             ) : null;
           }
           case 'thinking': {
@@ -276,15 +285,22 @@ function AssistantMessageView({
   isStreaming,
   thinkingStatus,
   animate,
+  typewriter,
 }: {
   message: Extract<AgentMessage, { role: 'assistant' }>;
   isStreaming: boolean;
   thinkingStatus: ThinkingStatus;
   animate: boolean;
+  typewriter: boolean;
 }): React.JSX.Element {
   return (
     <div className="assistant-body" data-streaming={isStreaming}>
-      <ContentBlocks blocks={message.content} thinkingStatus={thinkingStatus} animate={animate} />
+      <ContentBlocks
+        blocks={message.content}
+        thinkingStatus={thinkingStatus}
+        animate={animate}
+        typewriter={typewriter && isStreaming}
+      />
       {isStreaming && animate ? <span className="stream-cursor" aria-hidden="true" /> : null}
     </div>
   );
@@ -373,6 +389,7 @@ export function MessageItem({
   onOpenFile,
 }: MessageItemProps): React.JSX.Element {
   const streamAnimation = useLabFlag('streamAnimation');
+  const typewriter = useLabFlag('typewriter');
   switch (message.role) {
     case 'user':
       return (
@@ -389,6 +406,7 @@ export function MessageItem({
             isStreaming={isStreaming}
             thinkingStatus={thinkingStatus}
             animate={streamAnimation}
+            typewriter={typewriter}
           />
         </div>
       );

@@ -14,6 +14,7 @@ import {
 } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
+import type { DemoShowcase } from './demo/showcase.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
@@ -136,6 +137,8 @@ async function withBridge(
 export interface RouterModeOptions {
   mode: 'production' | 'debug' | 'demo';
   demoMachine?: DemoStateMachine | null;
+  /** Showcase sprint: scripted demo conversation player (demo mode only). */
+  demoShowcase?: DemoShowcase | null;
   debugState?: () => Record<string, unknown>;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
   pipelines?: {
@@ -215,6 +218,7 @@ export function createRouter(
   const router = express.Router();
   const mode = options?.mode ?? 'production';
   const demoMachine = options?.demoMachine ?? null;
+  const demoShowcase = options?.demoShowcase ?? null;
 
   // Demo mode is a read-only showcase: guard every RPC write path.
   const writeDenied = (res: express.Response): boolean => {
@@ -248,7 +252,9 @@ export function createRouter(
 
   if (demoMachine !== null) {
     router.get('/api/demo/state', (_req, res) => {
-      res.json({ phase: demoMachine.getPhase() });
+      // The showcase player supersedes the step-machine for the scripted
+      // conversation; report its phase when present.
+      res.json({ phase: demoShowcase?.getPhase() ?? demoMachine.getPhase() });
     });
     router.post('/api/demo/start', (_req, res) => {
       res.json({ phase: demoMachine.start() });
@@ -261,6 +267,12 @@ export function createRouter(
     });
     router.post('/api/demo/reset', (_req, res) => {
       res.json({ phase: demoMachine.reset() });
+    });
+    router.post('/api/demo/play', (_req, res) => {
+      res.json({ phase: demoShowcase?.play() ?? 'idle' });
+    });
+    router.post('/api/demo/stop', (_req, res) => {
+      res.json({ phase: demoShowcase?.stop() ?? 'idle' });
     });
   }
 

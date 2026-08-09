@@ -281,6 +281,9 @@ export interface ChatSession {
   setModel: (provider: string, modelId: string) => Promise<void>;
   setThinkingLevel: (level: string) => Promise<void>;
   refreshState: () => Promise<void>;
+  /** Reloads the session's message list from the server (demo showcase
+   *  uses this after resetting the mock conversation). */
+  reload: () => Promise<void>;
   /** Drops all messages from `key` onward (edited-prompt resend). */
   clearAfter: (key: string) => void;
 }
@@ -288,50 +291,45 @@ export interface ChatSession {
 export function useChatSession(): ChatSession {
   const [state, dispatch] = useReducer(chatReducer, undefined, initialState);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      try {
-        const [messagesRes, stateRes] = await Promise.all([api.rpcMessages(), api.rpcState()]);
-        if (cancelled) {
-          return;
-        }
-        // Entry ids are best-effort: a transient failure must not blank the
-        // whole chat — messages and state still load, branch buttons just
-        // stay disabled until the next run provides ids.
-        const entriesRes = await api.rpcEntries().catch(() => null);
-        const rawMessages = Array.isArray(messagesRes.messages) ? messagesRes.messages : [];
-        const chatMessages: ChatMessage[] = rawMessages
-          .filter(isAgentMessage)
-          .map((message) => ({ key: makeKey(), message, isStreaming: false }));
-        // Align the session-tree entry ids (get_entries) with the message
-        // list by order — both sequences follow conversation order.
-        if (entriesRes !== null && Array.isArray(entriesRes.entries)) {
-          const messageEntryIds = entriesRes.entries
-            .filter((entry) => entry.message !== undefined)
-            .map((entry) => entry.id);
-          chatMessages.forEach((chatMessage, index) => {
-            const entryId = messageEntryIds[index];
-            if (entryId !== undefined) {
-              chatMessage.entryId = entryId;
-            }
-          });
-        }
-        dispatch({ type: 'reset', messages: chatMessages, rpcState: stateRes });
-      } catch (error) {
-        if (!cancelled) {
-          dispatch({
-            type: 'error',
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
+  // Shared loader: initial mount and explicit reloads (demo showcase play
+  // resets the mock conversation, then reload sees the empty session and
+  // the streamed showcase events fill it in).
+  const reload = useCallback(async (): Promise<void> => {
+    try {
+      const [messagesRes, stateRes] = await Promise.all([api.rpcMessages(), api.rpcState()]);
+      // Entry ids are best-effort: a transient failure must not blank the
+      // whole chat — messages and state still load, branch buttons just
+      // stay disabled until the next run provides ids.
+      const entriesRes = await api.rpcEntries().catch(() => null);
+      const rawMessages = Array.isArray(messagesRes.messages) ? messagesRes.messages : [];
+      const chatMessages: ChatMessage[] = rawMessages
+        .filter(isAgentMessage)
+        .map((message) => ({ key: makeKey(), message, isStreaming: false }));
+      // Align the session-tree entry ids (get_entries) with the message
+      // list by order — both sequences follow conversation order.
+      if (entriesRes !== null && Array.isArray(entriesRes.entries)) {
+        const messageEntryIds = entriesRes.entries
+          .filter((entry) => entry.message !== undefined)
+          .map((entry) => entry.id);
+        chatMessages.forEach((chatMessage, index) => {
+          const entryId = messageEntryIds[index];
+          if (entryId !== undefined) {
+            chatMessage.entryId = entryId;
+          }
+        });
       }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
+      dispatch({ type: 'reset', messages: chatMessages, rpcState: stateRes });
+    } catch (error) {
+      dispatch({
+        type: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     const source = new EventSource(eventsUrl());
@@ -456,6 +454,7 @@ export function useChatSession(): ChatSession {
     setModel,
     setThinkingLevel,
     refreshState,
+    reload,
     clearAfter: (key: string) => {
       dispatch({ type: 'clearAfter', key });
     },

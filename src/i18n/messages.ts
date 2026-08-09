@@ -447,6 +447,11 @@ export const zhMessages = {
   'lab.settledNotifyHint': 'agent 运行完成时发送浏览器通知',
   'lab.simplifiedOutput': '简化输出',
   'lab.simplifiedOutputHint': '完成的会话自动折叠为结算摘要，并用 ..... 标记被省略的后续内容',
+  'lab.typewriter': '打字机输出',
+  'lab.typewriterHint': '回复文本以打字机逐字揭示（消息内容本身从不被修改）',
+  'lab.settledCollapse': '完成后整块收起',
+  'lab.settledCollapseHint': '工具链处理完成后整块收起，只保留最终总结',
+  'chat.finalSummary': '最终总结',
   'lab.showThinkingLive': '推理过程完整展示',
   'lab.showThinkingLiveHint': '推理进行时实时展示思考正文，推理完成自动收起',
 
@@ -891,6 +896,11 @@ export const enMessages: Record<MessageKey, string> = {
   'lab.settledNotifyHint': 'Browser notification when the agent finishes a run',
   'lab.simplifiedOutput': 'Simplified output',
   'lab.simplifiedOutputHint': 'Settled conversations auto-collapse to a settlement summary; ..... marks folded content',
+  'lab.typewriter': 'Typewriter output',
+  'lab.typewriterHint': 'Reply text reveals character by character (the message content is never altered)',
+  'lab.settledCollapse': 'Auto-collapse settled runs',
+  'lab.settledCollapseHint': 'Completed tool chains fold into one block, leaving the final summary',
+  'chat.finalSummary': 'Final summary',
   'lab.showThinkingLive': 'Show reasoning live',
   'lab.showThinkingLiveHint': 'Reveal the reasoning text while streaming; it collapses automatically once settled',
 

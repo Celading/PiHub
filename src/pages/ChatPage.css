@@ -561,3 +561,60 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---- Showcase sprint: settle-collapse animation + final summary ---- */
+/* The unit body folds with the same grid-rows transition used by the
+   collapse regions, so the whole tool chain retracts as one block. */
+.chat-unit-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
+}
+
+.chat-unit-body[data-collapsed='true'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.chat-unit-body-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.chat-unit-final-summary {
+  display: block;
+  color: var(--text-secondary);
+  letter-spacing: normal;
+  line-height: 1.5;
+  margin-bottom: var(--space-2);
+  animation: summary-in var(--duration-base) var(--ease-out);
+}
+
+@keyframes summary-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Messages enter with a quick rise — pairs with the typewriter reveal. */
+.message {
+  animation: message-in 220ms var(--ease-out);
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
