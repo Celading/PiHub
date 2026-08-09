@@ -23,7 +23,8 @@ interface AppShellProps {
   /** P1-17 E: agent request pending → active session dot blinks. */
   requestPending: boolean;
   onViewChange: (view: View) => void;
-  onSessionChanged: () => void;
+  /** P1-06: session changed under the chat workspace (see Sidebar). */
+  onSessionChanged: (fileName?: string | null, label?: string) => void;
   onThemeToggle: () => void;
   children: ReactNode;
 }

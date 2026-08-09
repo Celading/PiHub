@@ -163,6 +163,10 @@ export const zhMessages = {
   'modelbar.thinking': '思考',
 
   // chat page
+  'chat.tabs.new': '新会话',
+  'chat.tabs.newTab': '新建标签页',
+  'chat.tabs.close': '关闭标签页',
+  'chat.tabs.list': '会话标签页',
   'chat.empty.title': 'π',
   'chat.empty.hint': '与 pi agent 开始对话，消息通过 RPC 桥实时流入。',
   'chat.queued': '队列：{steer} 引导 · {followUp} 跟进',
@@ -613,6 +617,10 @@ export const enMessages: Record<MessageKey, string> = {
 
   'chat.empty.title': 'π',
   'chat.empty.hint': 'Start a conversation with the pi agent. Messages stream here in real time via the RPC bridge.',
+  'chat.tabs.new': 'New chat',
+  'chat.tabs.newTab': 'New tab',
+  'chat.tabs.close': 'Close tab',
+  'chat.tabs.list': 'Chat tabs',
   'chat.queued': 'queued: {steer} steer · {followUp} follow-up',
   'chat.error.prefix': '',
   'chat.retrying': 'Run failed — auto retrying…',

@@ -39,6 +39,12 @@ All notable changes to PiHub are documented here. The format follows
 
 ### Added
 
+- **Multi-tab chat workspace (P1-06)**: sessions open in parallel tabs
+  (sidebar click opens or switches a tab; tabs can be closed and fall back
+  to a fresh draft tab). Each tab keeps its own message flow — activating a
+  tab whose session differs from the RPC's current one switches sessions
+  first, then reloads that session's chat. Draft tabs follow whatever
+  session the RPC currently holds.
 - **Event envelope**: every streamed RPC event now carries a per-process
   monotonic `sequence` plus optional `sessionId` / `runId`, laying the
   groundwork for run isolation and replay tooling (original payload kept

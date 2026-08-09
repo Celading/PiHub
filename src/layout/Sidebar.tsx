@@ -28,7 +28,10 @@ interface SidebarProps {
    *  active session's dot blinks even while it is the current session. */
   requestPending: boolean;
   onViewChange: (view: View) => void;
-  onSessionChanged: () => void;
+  /** P1-06: the RPC session changed — report the target so the app can open
+   *  or switch a chat tab. null = new/current session (draft tab); a file
+   *  name = open that session; undefined = rebind the active tab only. */
+  onSessionChanged: (fileName?: string | null, label?: string) => void;
 }
 
 type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
@@ -385,7 +388,7 @@ export function Sidebar({
         setError(response.error ?? 'failed to start new session');
         return;
       }
-      onSessionChanged();
+      onSessionChanged(null);
       onViewChange('chat');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -405,7 +408,12 @@ export function Sidebar({
           setError(response.error ?? t('sessions.openSessionError'));
           return;
         }
-        onSessionChanged();
+        onSessionChanged(
+          session.fileName,
+          session.name !== undefined && session.name.length > 0
+            ? session.name
+            : shortCwd(session.cwd),
+        );
         onViewChange('chat');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -457,7 +465,7 @@ export function Sidebar({
             return changed ? next : prev;
           });
           setDeleteTick((prev) => prev + 1);
-          onSessionChanged();
+          onSessionChanged(null);
           onViewChange('chat');
         } catch (err) {
           setError(err instanceof Error ? err.message : String(err));
@@ -562,7 +570,9 @@ export function Sidebar({
           setError(response.error ?? 'clone failed');
           return;
         }
-        onSessionChanged();
+        // undefined: the RPC session changed under the current tab (clone
+        // produces a new session) — let the app rebind and reload it.
+        onSessionChanged(undefined);
         onViewChange('chat');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
