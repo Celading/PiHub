@@ -73,6 +73,12 @@ export class RpcBridge extends EventEmitter {
   private buffer = '';
   private restartCount = 0;
   private stopped = false;
+  /** SPRINT-2 B4: per-process monotonic event sequence (event envelope). */
+  private sequence = 0;
+  /** Current pi session id (from session header events), for the envelope. */
+  private sessionId: string | null = null;
+  /** Current pipeline run id, when a pipeline step is driving pi. */
+  private runId: string | null = null;
 
   constructor(
     private readonly piBinary: string,
@@ -118,8 +124,16 @@ export class RpcBridge extends EventEmitter {
     this.child.stderr.on('data', (chunk: string) => {
       this.emit('error', new Error(`pi stderr: ${chunk.trimEnd()}`));
     });
+    const exitedChild = this.child;
     this.child.on('exit', (code) => {
-      this.child = null;
+      // SPRINT-2 A2: only clear the reference if this is still the current
+      // child. A deliberate restart() kills the old process and spawns a new
+      // one; if the old process's exit event fires AFTER the new child was
+      // assigned, unconditionally nulling this.child would drop the new
+      // process (orphan + duplicate pi).
+      if (this.child === exitedChild) {
+        this.child = null;
+      }
       this.emit('exit', code);
       for (const pending of this.pending.values()) {
         clearTimeout(pending.timer);
@@ -307,6 +321,19 @@ export class RpcBridge extends EventEmitter {
     if (!event.success) {
       return;
     }
-    this.emit('event', event.data);
+    // SPRINT-2 B4: stable event envelope — a per-process monotonic sequence
+    // plus optional session/run ids, so parallel runs and replay tooling can
+    // order and correlate frames without guessing from `type` alone. Original
+    // protocol payload is preserved untouched (loose schema).
+    const data = event.data;
+    this.sequence += 1;
+    data.sequence = this.sequence;
+    if (data.sessionId === undefined && this.sessionId !== null) {
+      data.sessionId = this.sessionId;
+    }
+    if (data.runId === undefined && this.runId !== null) {
+      data.runId = this.runId;
+    }
+    this.emit('event', data);
   }
 }

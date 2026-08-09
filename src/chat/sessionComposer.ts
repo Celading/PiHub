@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 
 interface SessionComposerState {
   isRunning: boolean;
@@ -27,7 +28,7 @@ export function useSessionComposer(
   }, [onSettled]);
 
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onPiEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {

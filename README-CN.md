@@ -29,10 +29,19 @@ PiHub 在以下两个同步镜像中开放开发：
 
 PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造的
 浏览器工作台，完全运行在你的机器上。它通过一个轻量 Node 桥与本地
-`pi --mode rpc` 进程通信——无云端、无账号、数据不出本机。
+`pi --mode rpc` 进程通信——无需云账号。PiHub 不使用自有云服务；仅有的
+外发请求发生在明确功能路径上（pi.dev 模型目录查询、以及发给你所配置的
+模型提供商的请求）。
 
 本项目为独立编写的 clean-room 实现——全部从零写出，
 不复用任何外部 UI 源码。
+
+### 本地优先设计
+
+你的对话始终留在你的机器上。面板仅监听回环接口、绝不读取你的 agent
+凭证、不运营任何自有云服务——唯一的外发请求是你显式配置的那些（模型
+目录查询、发给你所选提供商的提示词）。精确边界见
+[`SECURITY.md`](SECURITY.md)。
 
 ## 功能
 
@@ -45,8 +54,16 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 - `/` 唤起扩展、技能与提示词模板建议
 - 图片粘贴
 
+### 文件工作台
+- 会话期间触碰过的文件只读预览（工作区白名单）
+- 改动文件内联 unified diff 高亮
+- 最近文件条：读 / 写 / 编辑 / 补丁调用聚合，一键预览
+
 ### 会话
 - 会话列表实时状态灯（已完成 / 进行中 / 已中断）
+- **多标签工作台**：多个会话并行打开——点击会话即打开或切换到对应标签；
+  标签独立关闭，全部关闭后回落一个全新会话标签
+- **会话树**：分支时间线、节点标签、主线用户消息一键 fork
 - 集合（分组 / 项目）：拖拽入组、自定义集合名
 - 归档（设置页可恢复）与受保护的删除
 - 右键菜单：打开 · 新建分支（克隆）· 归档 · 删除
@@ -68,17 +85,23 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 - 自动化概览：常用开关状态（自动压缩 / 自动重试 / 模式）
 - **工程流（Pipelines）**：PiHub 独家多步编排——prompt / steer / approval /
   setModel / setThinking 步骤序列在同一 pi 会话上执行，支持匹配分支、
-  错误策略、人工确认闸门与实时运行时间线。隶属于 HaomoKit 泛化能力。
+  错误策略、人工确认闸门与实时运行时间线。隶属于内置工作流面。
 - 技能导入：将任意技能转换为工程流——算法转换（零 token）或 agent 辅助转换
   （消耗 token，操作前确认）
+
+### 多 agent 可见性
+- 同机其他 agent CLI 的会话只读视图——Codex rollout 历史、AtomCode 历史、
+  ZCode 模型 I/O 记录，各自独立主题色（设置页「外观」可覆盖）
+- Codex 默认不被拉起；opt-in 的 `exec` 集成以 JSONL 事件流接入，
+  不干扰运行中的 Codex
 
 ## 快速开始
 
 需要 [pi](https://pi.dev)（`pi --version` ≥ 0.83）与 Node.js ≥ 20。
 
 ```bash
-git clone <your-fork-or-local-root>/pi-panel
-cd pi-panel
+git clone https://github.com/HapPub/PiHub.git
+cd PiHub
 npm install
 npm run dev        # Web UI: http://localhost:18384（后端 127.0.0.1:3001）
 ```
@@ -140,7 +163,7 @@ npm run showcase:record
 | `Ctrl+Shift+M` | 自动化 / 技能 / 工程流面板 |
 | `Ctrl+Shift+L` | 循环切换模型 |
 | `⌘`/`Ctrl` + `↑`/`↓` | 切换会话 |
-| `Alt+1..4` | 对话 / 会话 / 统计 / 设置 |
+| `Alt+1..5` | 对话 / 会话 / 统计 / 设置 / 自动化 |
 
 ## 目录结构
 
@@ -154,8 +177,16 @@ public/    PWA manifest、图标、Service Worker
 
 ## 边界
 
-- **仅本机访问**：面板只监听 `127.0.0.1` / `localhost`。
-- **绝不读取凭据**：面板从不读取或暴露 `~/.pi/agent/auth.json`。
+- **仅本机访问**：面板只监听 `127.0.0.1` / `localhost`，并拒绝其他 Host 头。
+  可选的局域网访问（`PIHUB_NET=pair` / `lan`）**默认关闭**；开启后每个
+  远端需一次性配对码，且每类远程能力（prompt / steer / 删除 / shell /
+  审批）各有独立开关，全部默认关闭。
+- **控制令牌**：所有写接口与敏感读接口（模型配置 / 文件预览 / 会话状态 /
+  SSE）都需要随进程生成的随机令牌——页面会自动获得并在请求中携带。
+- **绝不读取凭据**：面板从不读取或暴露 `~/.pi/agent/auth.json`。自定义渠道
+  的 API Key 只存于本地 `~/.pi/agent/models.json`，且只发送给你配置的提供商。
+- **外发流量明确化**：不使用任何云服务；对 pi.dev 公共模型目录与所配置
+  模型提供商的请求仅发生在明确功能路径上。
 - **最小写入**：面板只写你让它写的东西——经 pi RPC 发起的新对话、
   自定义渠道（`models.json`）、以及浏览器 localStorage 中的面板偏好。
 - **Clean-room**：独立实现，全部代码从零编写。

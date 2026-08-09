@@ -1,4 +1,4 @@
-import { readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import express from 'express';
@@ -19,6 +19,10 @@ import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
+import type { CodexSessionDetail } from './adapters/codex-history.js';
+import type { AtomcodeSessionDetail } from './adapters/atomcode-history.js';
+import type { ZcodeSessionDetail, ZcodeSessionMeta } from './adapters/zcode-history.js';
+import type { LanGate } from './security.js';
 import type { PipelineStore } from './pipelines/store.js';
 import { hardConvert, softConvert } from './pipelines/convert.js';
 
@@ -147,6 +151,22 @@ export interface RouterModeOptions {
   reloadModels?: () => 'reloaded' | 'deferred';
   /** P1-03: workspace root the file preview may read from (cwd subtree). */
   allowedRoot?: string;
+  /**
+   * P2-01: registered agent adapters (metadata + codex history surface).
+   * `codexHistory` is the read-only integration (rollout parse); it is
+   * optional so demo mode stays synthetic.
+   */
+  adapters?: {
+    list: () => Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
+    codexSessions?: () => Promise<unknown[]>;
+    codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
+    /** ADAPTER2: atomcode + zcode read-only history surfaces. */
+    atomcodeSession?: () => Promise<AtomcodeSessionDetail | null>;
+    zcodeSessions?: () => Promise<ZcodeSessionMeta[]>;
+    zcodeSessionDetail?: (id: string) => Promise<ZcodeSessionDetail | null>;
+  };
+  /** P2-02: LAN access modes + capability scope. */
+  lanGate?: LanGate;
 }
 
 /** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
@@ -205,6 +225,23 @@ export function createRouter(
     return true;
   };
 
+  // P2-02 B: remote peers (non-loopback) are read-only by default. Writes
+  // require the operator to have enabled the matching capability.
+  const remoteWriteDenied = (
+    req: express.Request,
+    res: express.Response,
+    route: 'approve' | 'prompt' | 'shell',
+  ): boolean => {
+    if (lanGate === undefined || !lanGate.isRemote(req)) {
+      return false;
+    }
+    if (lanGate.remoteCan(req, route)) {
+      return false;
+    }
+    res.status(403).json({ error: 'remote write requires capability: enable it in settings' });
+    return true;
+  };
+
   router.get('/api/mode', (_req, res) => {
     res.json({ mode });
   });
@@ -251,7 +288,7 @@ export function createRouter(
   // (path-traversal guard). Sessions live under cwd-named subdirectories, so
   // the file is located by a bounded recursive search.
   router.post('/api/sessions/delete', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     const body = req.body as Record<string, unknown> | null;
@@ -316,6 +353,145 @@ export function createRouter(
     res.json({ providers });
   });
 
+  /* ---- P2-02: LAN access + capability scope ----
+   * Pairing codes and capability switches are managed locally; remote peers
+   * (non-loopback Host) are gated by the LanGate middleware and can only use
+   * capabilities the operator enabled. */
+  const lanGate = options?.lanGate;
+  router.get('/api/net', (_req, res) => {
+    res.json(
+      lanGate === undefined
+        ? { mode: 'local', caps: { remoteApprove: false, remotePrompt: false, remoteShell: false } }
+        : { mode: lanGate.mode, caps: lanGate.caps, pairs: lanGate.listPairs() },
+    );
+  });
+  router.post('/api/net/pair', (_req, res) => {
+    if (lanGate === undefined || lanGate.mode === 'local') {
+      res.status(503).json({ error: 'pairing disabled in local mode' });
+      return;
+    }
+    res.json({ code: lanGate.createPairCode() });
+  });
+  router.post('/api/net/pair/revoke', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'pairing disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const code = typeof body === 'object' && body !== null ? body['code'] : undefined;
+    if (typeof code !== 'string' || code.length === 0) {
+      res.status(400).json({ error: 'invalid pair code' });
+      return;
+    }
+    lanGate.revoke(code);
+    res.json({ success: true });
+  });
+  router.post('/api/net/caps', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'capability scope disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const key = typeof body === 'object' && body !== null ? body['key'] : undefined;
+    const value = typeof body === 'object' && body !== null ? body['value'] : undefined;
+    if (
+      (key !== 'remoteApprove' && key !== 'remotePrompt' && key !== 'remoteShell') ||
+      typeof value !== 'boolean'
+    ) {
+      res.status(400).json({ error: 'invalid capability switch' });
+      return;
+    }
+    lanGate.setCap(key, value);
+    res.json({ success: true, caps: lanGate.caps });
+  });
+
+  /* ---- P2-01: agent adapters (metadata + codex read-only history) ---- */
+  router.get('/api/adapters', (_req, res) => {
+    res.json({ adapters: options?.adapters?.list() ?? [] });
+  });
+  router.get('/api/codex/sessions', async (_req, res) => {
+    const fn = options?.adapters?.codexSessions;
+    if (fn === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    try {
+      res.json({ sessions: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  router.get('/api/codex/sessions/:id', async (req, res) => {
+    const fn = options?.adapters?.codexSessionDetail;
+    if (fn === undefined) {
+      res.status(404).json({ error: 'codex history unavailable' });
+      return;
+    }
+    const id = req.params['id'];
+    if (typeof id !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(id)) {
+      res.status(400).json({ error: 'invalid session id' });
+      return;
+    }
+    try {
+      const detail = await fn(id);
+      if (detail === null) {
+        res.status(404).json({ error: 'codex session not found' });
+        return;
+      }
+      res.json(detail);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /* ---- ADAPTER2: atomcode + zcode read-only history ---- */
+  router.get('/api/atomcode/sessions', async (_req, res) => {
+    const fn = options?.adapters?.atomcodeSession;
+    if (fn === undefined) {
+      res.json({ session: null });
+      return;
+    }
+    try {
+      res.json({ session: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  router.get('/api/zcode/sessions', async (_req, res) => {
+    const fn = options?.adapters?.zcodeSessions;
+    if (fn === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    try {
+      res.json({ sessions: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  router.get('/api/zcode/sessions/:id', async (req, res) => {
+    const fn = options?.adapters?.zcodeSessionDetail;
+    if (fn === undefined) {
+      res.status(404).json({ error: 'zcode history unavailable' });
+      return;
+    }
+    const id = req.params['id'];
+    if (typeof id !== 'string' || !/^[A-Za-z0-9()._-]{1,128}$/.test(id)) {
+      res.status(400).json({ error: 'invalid session id' });
+      return;
+    }
+    try {
+      const detail = await fn(id);
+      if (detail === null) {
+        res.status(404).json({ error: 'zcode session not found' });
+        return;
+      }
+      res.json(detail);
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   /* ---- official model catalog (P1-15 C) ----
    * pi.dev serves per-provider model catalogs at
    * GET https://pi.dev/api/models/providers/<id> (the same public endpoint
@@ -371,7 +547,7 @@ export function createRouter(
   });
 
   router.post('/api/rpc/prompt', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     const body = promptBodySchema.safeParse(req.body);
@@ -392,7 +568,7 @@ export function createRouter(
   });
 
   router.post('/api/rpc/steer', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     const body = steerBodySchema.safeParse(req.body);
@@ -634,7 +810,7 @@ export function createRouter(
   });
 
   router.post('/api/rpc/bash', async (req, res) => {
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'shell')) {
       return;
     }
     const body = bashBodySchema.safeParse(req.body);
@@ -754,7 +930,18 @@ export function createRouter(
       return;
     }
     try {
-      const info = await stat(resolved);
+      // SPRINT-2 A2: string-prefix containment is not enough — stat/readFile
+      // follow symlinks, so a symlink inside the workspace pointing outside
+      // would escape. Re-verify the REAL path against the real root.
+      const [realRoot, realTarget] = await Promise.all([
+        realpath(rootResolved),
+        realpath(resolved),
+      ]);
+      if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${path.sep}`)) {
+        res.status(400).json({ error: 'path outside workspace' });
+        return;
+      }
+      const info = await stat(realTarget);
       if (!info.isFile()) {
         res.status(400).json({ error: 'not a file' });
         return;
@@ -763,8 +950,8 @@ export function createRouter(
         res.status(413).json({ error: 'file too large for preview', size: info.size });
         return;
       }
-      const content = await readFile(resolved, 'utf8');
-      res.json({ path: resolved, size: info.size, content });
+      const content = await readFile(realTarget, 'utf8');
+      res.json({ path: realTarget, size: info.size, content });
     } catch (error) {
       res.status(404).json({ error: `cannot read file: ${error instanceof Error ? error.message : String(error)}` });
     }
@@ -829,6 +1016,9 @@ export function createRouter(
   });
 
   router.post('/api/models-config', async (req, res) => {
+    if (remoteWriteDenied(req, res, 'prompt')) {
+      return;
+    }
     if (mode === 'demo') {
       // kMode write guard: demo never mutates ~/.pi.
       res.status(503).json({ error: 'demo mode is read-only' });
@@ -905,7 +1095,7 @@ export function createRouter(
   });
 
   router.get('/api/events', (req, res) => {
-    hub.addClient(res);
+    hub.addClient(req, res);
     req.on('close', () => {
       // Client disconnect is handled inside the hub via res 'close'.
     });

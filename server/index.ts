@@ -11,6 +11,11 @@ import { createPipelineStore } from './pipelines/store.js';
 import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
+import { createSecurityGate, LanGate, requiresToken } from './security.js';
+import { PiAdapter } from './adapters/pi-adapter.js';
+import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
+import { getAtomcodeSession } from './adapters/atomcode-history.js';
+import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from './adapters/zcode-history.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
@@ -26,11 +31,96 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 
+// SPRINT-2 A1: local control-plane security gate. Host + Origin checks run
+// for every request; the per-process control token is mandatory in
+// production (injected into the served index.html, read back by the SPA for
+// fetch headers and SSE query params). Demo/debug keep Host/Origin gating
+// but may disable the token via env — demo already has 503 write guards and
+// synthetic data, and the dev tooling (vite origin + curl probes) must keep
+// working.
+const security = createSecurityGate();
+const tokenEnabled = mode === 'production' || process.env.PIHUB_DEV_NO_TOKEN !== '1';
+app.use(security.middleware.bind(security));
+// P2-02: LAN gate runs FIRST — remote peers must present a valid pairing
+// token; once paired, the request is treated as authorized (the pair IS the
+// remote credential). Loopback traffic is untouched.
+const lanGate = new LanGate();
+app.use(lanGate.middleware.bind(lanGate));
+
+app.use((req, res, next) => {
+  // A validated remote pairing satisfies the token requirement for API
+  // access; loopback still needs the control token.
+  const paired = lanGate.isRemote(req) && typeof req.query['pair'] === 'string';
+  if (tokenEnabled && requiresToken(req) && !paired && !security.isAuthorized(req)) {
+    res.status(401).json({ error: 'missing or invalid control token' });
+    return;
+  }
+  next();
+});
+// Sensitive API responses must never be cached (SPRINT-2 A2).
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
+
 // Data isolation: demo mode never touches ~/.pi and never spawns real pi.
 const sessions =
   mode === 'demo' ? createMockSessionProvider() : createFileSessionProvider();
 const hub = new SseHub();
 const bridge = new RpcBridge(PI_BINARY, AGENT_CWD);
+
+// P2-01: adapter surface — pi is the primary adapter (wraps the existing
+// bridge); codex history is a read-only integration (rollout parse) that
+// never spawns codex and never reads ~/.codex/auth.json.
+const piAdapter = new PiAdapter(bridge);
+// Node EventEmitter throws on unhandled 'error' — the adapter re-broadcasts
+// bridge errors, so always attach a handler here.
+piAdapter.on('error', (error) => {
+  console.error(`[adapter:pi] ${error.message}`);
+});
+const adapters = [
+  piAdapter.meta,
+  {
+    kind: 'codex' as const,
+    label: 'Codex',
+    version: 'read-only', // history integration; exec adapter is opt-in
+    defaultColor: '#10a37f',
+  },
+  {
+    kind: 'atomcode' as const,
+    label: 'AtomCode',
+    version: 'read-only', // exec adapter opt-in; history parsed read-only
+    defaultColor: '#e4572e',
+  },
+  {
+    kind: 'zcode' as const,
+    label: 'ZCode',
+    version: 'read-only', // host agent; record consumer only
+    defaultColor: '#7f56d9',
+  },
+];
+
+/** Finds a zcode rollout by session id (read-only, no spawn). */
+async function findZcodeRolloutById(id: string): Promise<ZcodeSessionDetail | null> {
+  const sessions = await listZcodeSessions();
+  const match = sessions.find((session) => session.sessionId === id);
+  if (match === undefined) {
+    return null;
+  }
+  return parseZcodeRollout(match.fileName);
+}
+
+/** Finds a codex rollout by session id (read-only, no spawn). */
+async function parseRolloutFileById(id: string): Promise<CodexSessionDetail | null> {
+  const sessionsList = await listCodexSessions();
+  const match = sessionsList.find((session) => session.sessionId === id);
+  if (match === undefined) {
+    return null;
+  }
+  return parseRolloutFile(match.fileName);
+}
 
 // P1-15: track agent runs so a channel-config save can restart pi when idle
 // (models.json is loaded once at process start) or defer the restart to the
@@ -112,6 +202,20 @@ app.use(
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,
+    lanGate,
+    adapters: {
+      list: () => adapters,
+      // Read-only integrations; demo keeps them empty (synthetic-only).
+      ...(mode === 'demo'
+        ? {}
+        : {
+            codexSessions: () => listCodexSessions(),
+            codexSessionDetail: (id: string) => parseRolloutFileById(id),
+            atomcodeSession: () => getAtomcodeSession(),
+            zcodeSessions: () => listZcodeSessions(),
+            zcodeSessionDetail: (id: string) => findZcodeRolloutById(id),
+          }),
+    },
     ...(mode === 'debug'
       ? {
           debugState: (): Record<string, unknown> => ({
@@ -127,22 +231,49 @@ app.use(
 
 // Production: serve the built SPA with an index.html fallback for client routes.
 // When dist is absent (dev mode), return a JSON hint instead of a 500.
+// The per-process control token is injected into the served HTML (SPRINT-2 A1):
+// the SPA reads window.__PIHUB_TOKEN__ and sends it as X-PiHub-Token on
+// writes / sensitive reads, and as ?token= on the SSE EventSource.
 const distDir = path.resolve(process.cwd(), 'dist');
 const indexFile = path.join(distDir, 'index.html');
-app.use(express.static(distDir));
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
+// Serve index.html ourselves (BEFORE express.static, which would otherwise
+// short-circuit it) so the per-process control token can be injected.
 app.use((req, res, next) => {
   if (req.method !== 'GET' || req.path.startsWith('/api/')) {
     next();
     return;
   }
-  res.sendFile(indexFile, (err) => {
-    if (err !== undefined) {
+  const wantsIndex = req.path === '/' || req.path === '/index.html';
+  if (!wantsIndex) {
+    next();
+    return;
+  }
+  const sendHtml = async (): Promise<void> => {
+    try {
+      const { readFile } = await import('node:fs/promises');
+      let html = await readFile(indexFile, 'utf8');
+      if (tokenEnabled) {
+        html = html.replace(
+          '</head>',
+          `<script>window.__PIHUB_TOKEN__=${JSON.stringify(security.token)};</script></head>`,
+        );
+      }
+      res.type('html').send(html);
+    } catch {
       res.status(404).json({
         error: 'frontend build not found — run `npm run build` or use the Vite dev server on port 18384',
       });
     }
-  });
+  };
+  void sendHtml();
 });
+app.use(express.static(distDir, { index: false }));
 
 // Express 5 forwards rejected async handlers here.
 app.use(

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import './TerminalPanel.css';
 
@@ -23,7 +24,7 @@ export function TerminalPanel(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onPiEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {

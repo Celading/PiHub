@@ -9,10 +9,15 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AutomationPage } from './pages/AutomationPage';
 import { CommandPalette } from './components/CommandPalette';
 import { ExtensionUiHost } from './components/ExtensionUiHost';
+import { TabBar } from './components/TabBar';
 import { useExtensionUi } from './extui/useExtensionUi.js';
 import { api } from './api/client.js';
 import { useSessionWatch } from './chat/sessionWatch.js';
 import { usePref } from './prefs/preferences.js';
+import { useI18n } from './i18n/I18nProvider.js';
+import { findDraftTab, newTabId, type ChatTab } from './chat/tabs.js';
+import type { SessionSummary } from '../shared/types.js';
+import './App.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'pi-panel:sidebar-collapsed';
 
@@ -24,13 +29,29 @@ function loadSidebarCollapsed(): boolean {
   }
 }
 
+function sessionLabel(session: SessionSummary): string {
+  return session.name ?? session.fileName;
+}
+
 export function App(): React.JSX.Element {
+  const { t } = useI18n();
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     return saved === 'dark' ? 'dark' : 'light';
   });
   const [view, setView] = useState<View>('chat');
-  const [chatSessionKey, setChatSessionKey] = useState(0);
+  // P1-06: the chat workspace is a tab strip; each tab binds one session
+  // file (or null for the draft tab that follows the RPC's current session).
+  const [tabs, setTabs] = useState<ChatTab[]>(() => [
+    { id: newTabId(), sessionFile: null, label: '' },
+  ]);
+  const firstTab = tabs[0];
+  const [activeTabId, setActiveTabId] = useState<string>(() => firstTab?.id ?? '');
+  // Per-tab remount epochs: bumping the active tab's epoch reloads its chat
+  // (the same remount semantics the app used for session switches before
+  // tabs). Draft tabs keep binding null — they always mirror the current RPC
+  // session.
+  const [tabEpochs, setTabEpochs] = useState<Readonly<Record<string, number>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
@@ -48,55 +69,166 @@ export function App(): React.JSX.Element {
     }
   }, [sidebarCollapsed]);
 
+  const bumpTab = useCallback((id: string): void => {
+    setTabEpochs((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
+  }, []);
+
+  /** Activate a tab: switch the RPC session first when the tab is bound to a
+   *  different one, then remount its chat so it reloads that session. */
+  const openTab = useCallback(
+    async (tab: ChatTab): Promise<void> => {
+      if (tab.sessionFile !== null) {
+        const state = await api.rpcState().catch(() => null);
+        if (state !== null && state.sessionFile !== tab.sessionFile) {
+          const response = await api.switchSession(tab.sessionFile);
+          if (!response.success) {
+            return; // keep the current tab active on failure
+          }
+        }
+      }
+      setActiveTabId(tab.id);
+      setView('chat');
+      bumpTab(tab.id);
+    },
+    [bumpTab],
+  );
+
+  /** Sidebar session click: open the session in a tab, or switch to the tab
+   *  that already holds it. */
+  const openSessionTab = useCallback(
+    async (fileName: string, label: string): Promise<void> => {
+      const existing = tabs.find((tab) => tab.sessionFile === fileName);
+      if (existing !== undefined) {
+        await openTab(existing);
+        return;
+      }
+      const tab: ChatTab = { id: newTabId(), sessionFile: fileName, label };
+      setTabs((prev) => [...prev, tab]);
+      setActiveTabId(tab.id);
+      setView('chat');
+      bumpTab(tab.id);
+    },
+    [bumpTab, openTab, tabs],
+  );
+
+  /** "New chat" from anywhere: activate the draft tab (created on demand). */
+  const newDraftTab = useCallback(async (): Promise<void> => {
+    const draft = findDraftTab(tabs);
+    if (draft !== undefined) {
+      await openTab(draft);
+      return;
+    }
+    const tab: ChatTab = { id: newTabId(), sessionFile: null, label: t('chat.tabs.new') };
+    setTabs((prev) => [...prev, tab]);
+    setActiveTabId(tab.id);
+    setView('chat');
+    bumpTab(tab.id);
+  }, [bumpTab, openTab, tabs, t]);
+
+  /** Close a tab; never leave the workspace tabless (fresh draft tab). */
+  const closeTab = useCallback(
+    (id: string): void => {
+      const index = tabs.findIndex((tab) => tab.id === id);
+      if (index === -1) {
+        return;
+      }
+      const remaining = tabs.filter((tab) => tab.id !== id);
+      if (remaining.length === 0) {
+        const fresh: ChatTab = { id: newTabId(), sessionFile: null, label: t('chat.tabs.new') };
+        setTabs([fresh]);
+        setActiveTabId(fresh.id);
+        return;
+      }
+      setTabs(remaining);
+      if (id === activeTabId) {
+        const neighbor = remaining[Math.min(index, remaining.length - 1)];
+        if (neighbor !== undefined) {
+          setActiveTabId(neighbor.id);
+        }
+      }
+    },
+    [activeTabId, tabs, t],
+  );
+
   // New session from the sessions empty-state CTA (L008 C-3).
   const handleNewSession = useCallback(async (): Promise<void> => {
     try {
       const response = await api.newSession();
       if (response.success) {
-        setChatSessionKey((prev) => prev + 1);
-        setView('chat');
+        await newDraftTab();
       }
     } catch {
       // offline or idle; ignore
     }
-  }, []);
+  }, [newDraftTab]);
 
   // Run a slash command from the automation center: send it to the RPC
   // session and jump back to the chat view.
-  const handleRunCommand = useCallback(async (commandName: string): Promise<void> => {
-    try {
-      await api.prompt(`/${commandName}`);
-      setChatSessionKey((prev) => prev + 1);
-      setView('chat');
-    } catch {
-      // The chat page surfaces backend errors through its own state.
-    }
-  }, []);
-
-  // Command (optionally Ctrl) + ArrowUp/Down cycles the session list.
-  const switchSessionByOffset = useCallback(async (offset: number): Promise<void> => {
-    try {
-      const [list, state] = await Promise.all([api.sessions(), api.rpcState()]);
-      const sessions = list.sessions;
-      if (sessions.length === 0) {
-        return;
-      }
-      const current = state.sessionFile;
-      const index = sessions.findIndex((session) => session.fileName === current);
-      const base = index === -1 ? 0 : index;
-      const next = sessions[(base + offset + sessions.length) % sessions.length];
-      if (next === undefined) {
-        return;
-      }
-      const response = await api.switchSession(next.fileName);
-      if (response.success) {
-        setChatSessionKey((prev) => prev + 1);
+  const handleRunCommand = useCallback(
+    async (commandName: string): Promise<void> => {
+      try {
+        await api.prompt(`/${commandName}`);
+        bumpTab(activeTabId);
         setView('chat');
+      } catch {
+        // The chat page surfaces backend errors through its own state.
       }
-    } catch {
-      // offline or idle; ignore
-    }
-  }, []);
+    },
+    [activeTabId, bumpTab],
+  );
+
+  // The RPC session may have changed under the active tab (fork/steer):
+  // reload its chat and keep the tab binding + label fresh.
+  const handleChatSessionChanged = useCallback((): void => {
+    bumpTab(activeTabId);
+    void (async () => {
+      try {
+        const [state, list] = await Promise.all([api.rpcState(), api.sessions()]);
+        const byFile = new Map<string, string>(
+          list.sessions.map((session) => [session.fileName, sessionLabel(session)]),
+        );
+        setTabs((prev) =>
+          prev.map((tab) => {
+            if (tab.id !== activeTabId || tab.sessionFile === null) {
+              return tab;
+            }
+            const current = state.sessionFile ?? tab.sessionFile;
+            return { ...tab, sessionFile: current, label: byFile.get(current) ?? tab.label };
+          }),
+        );
+      } catch {
+        // offline or idle; keep the previous binding/label
+      }
+    })();
+  }, [activeTabId, bumpTab]);
+
+  // Command (optionally Ctrl) + ArrowUp/Down cycles the session list; the
+  // target session opens in a tab like a sidebar click.
+  const switchSessionByOffset = useCallback(
+    async (offset: number): Promise<void> => {
+      try {
+        const [list, state] = await Promise.all([api.sessions(), api.rpcState()]);
+        const sessions = list.sessions;
+        if (sessions.length === 0) {
+          return;
+        }
+        const current = state.sessionFile;
+        const index = sessions.findIndex((session) => session.fileName === current);
+        const base = index === -1 ? 0 : index;
+        const next = sessions[(base + offset + sessions.length) % sessions.length];
+        if (next === undefined) {
+          return;
+        }
+        const response = await api.switchSession(next.fileName);
+        if (response.success) {
+          await openSessionTab(next.fileName, sessionLabel(next));
+        }
+      } catch {
+        // offline or idle; ignore
+      }
+    },
+    [openSessionTab],
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -161,17 +293,37 @@ export function App(): React.JSX.Element {
 
   const renderPage = (): React.JSX.Element => {
     switch (view) {
-      case 'chat':
-        // key forces a remount after new/resume so the chat reloads the
-        // switched RPC session's messages.
+      case 'chat': {
+        const active = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+        if (active === undefined) {
+          return <ChatPage onSessionChanged={handleChatSessionChanged} />;
+        }
+        const epoch = tabEpochs[active.id] ?? 0;
         return (
-          <ChatPage
-            key={chatSessionKey}
-            onSessionChanged={() => {
-              setChatSessionKey((prev) => prev + 1);
-            }}
-          />
+          <div className="chat-view">
+            <TabBar
+              tabs={tabs}
+              activeId={active.id}
+              onSelect={(id) => {
+                const tab = tabs.find((item) => item.id === id);
+                if (tab !== undefined) {
+                  void openTab(tab);
+                }
+              }}
+              onClose={closeTab}
+              onNew={() => {
+                void newDraftTab();
+              }}
+            />
+            {/* key remounts the chat whenever the tab or its epoch changes,
+                so each tab reloads its bound session's messages. */}
+            <ChatPage
+              key={`${active.id}:${String(epoch)}`}
+              onSessionChanged={handleChatSessionChanged}
+            />
+          </div>
         );
+      }
       case 'sessions':
         return (
           <SessionsPage
@@ -225,8 +377,14 @@ export function App(): React.JSX.Element {
       sessionStatus={sessionWatch.status}
       requestPending={extensionUi.dialogs.length > 0}
       onViewChange={setView}
-      onSessionChanged={() => {
-        setChatSessionKey(chatSessionKey + 1);
+      onSessionChanged={(fileName, label) => {
+        if (fileName === undefined) {
+          handleChatSessionChanged();
+        } else if (fileName === null) {
+          void newDraftTab();
+        } else {
+          void openSessionTab(fileName, label ?? fileName);
+        }
       }}
       onThemeToggle={() => {
         setTheme(theme === 'light' ? 'dark' : 'light');
@@ -248,7 +406,7 @@ export function App(): React.JSX.Element {
           void (async () => {
             try {
               await api.prompt(`/${commandName}`);
-              setChatSessionKey(chatSessionKey + 1);
+              bumpTab(activeTabId);
               setView('chat');
             } catch {
               // The chat page surfaces backend errors through its own state.

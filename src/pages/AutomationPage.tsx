@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { PiCommand, RpcState, RpcStreamEvent } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { LoadingHint } from '../components/LoadingHint.js';
 import { PipelinesTab } from '../pipelines/PipelinesTab.js';
@@ -129,7 +130,7 @@ export function AutomationPage({ onRunCommand }: { onRunCommand: (name: string) 
     };
     void refreshState();
 
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onPiEvent = (event: MessageEvent<string>): void => {
       let parsed: unknown;
       try {

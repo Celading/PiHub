@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ExtensionUiRequest, ExtensionUiResponse } from '../../shared/types.js';
 import { api } from '../api/client.js';
+import { eventsUrl } from '../api/controlToken.js';
 
 export interface UiToast {
   id: string;
@@ -47,7 +48,7 @@ export function useExtensionUi(): ExtensionUiState {
 
   // Fire-and-forget frames arrive over SSE (they are not held pending).
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    const source = new EventSource(eventsUrl());
     const onFrame = (event: Event): void => {
       let frame: ExtensionUiRequest;
       try {

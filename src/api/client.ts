@@ -13,10 +13,18 @@ import type {
   SessionSummary,
   SessionTreeResponse,
 } from '../../shared/types.js';
+import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
+import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
+import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
+import { controlTokenHeader } from './controlToken.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
+  // SPRINT-2 A1: attach the control token when the server injected one.
+  for (const [name, value] of Object.entries(controlTokenHeader())) {
+    headers.set(name, value);
+  }
   const response = await fetch(path, { ...init, headers });
   const raw = await response.text();
   const parsed = (raw.length === 0 ? null : (JSON.parse(raw) as unknown)) as
@@ -79,6 +87,62 @@ export const api = {
 
   settings(): Promise<Record<string, unknown>> {
     return request<Record<string, unknown>>('/api/settings');
+  },
+
+  // P2-02: LAN access modes + capability scope.
+  net(): Promise<{
+    mode: 'local' | 'pair' | 'lan';
+    caps: { remoteApprove: boolean; remotePrompt: boolean; remoteShell: boolean };
+    pairs: Array<{ code: string; expiresAt: number }>;
+  }> {
+    return request('/api/net');
+  },
+
+  netPair(): Promise<{ code: string }> {
+    return request('/api/net/pair', { method: 'POST' });
+  },
+
+  netRevokePair(code: string): Promise<{ success: boolean }> {
+    return request('/api/net/pair/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  netSetCap(key: string, value: boolean): Promise<{ success: boolean; caps: unknown }> {
+    return request('/api/net/caps', {
+      method: 'POST',
+      body: JSON.stringify({ key, value }),
+    });
+  },
+
+  // P2-01: registered agent adapters (metadata for the appearance section).
+  adapters(): Promise<{
+    adapters: Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
+  }> {
+    return request('/api/adapters');
+  },
+
+  // P2-01: read-only codex session records (never spawns codex).
+  codexSessions(): Promise<{ sessions: CodexSessionMeta[] }> {
+    return request('/api/codex/sessions');
+  },
+
+  codexSessionDetail(id: string): Promise<CodexSessionDetail> {
+    return request(`/api/codex/sessions/${encodeURIComponent(id)}`);
+  },
+
+  // ADAPTER2: atomcode + zcode read-only history.
+  atomcodeSession(): Promise<{ session: AtomcodeSessionDetail | null }> {
+    return request('/api/atomcode/sessions');
+  },
+
+  zcodeSessions(): Promise<{ sessions: ZcodeSessionMeta[] }> {
+    return request('/api/zcode/sessions');
+  },
+
+  zcodeSessionDetail(id: string): Promise<ZcodeSessionDetail> {
+    return request(`/api/zcode/sessions/${encodeURIComponent(id)}`);
   },
 
   models(): Promise<ModelsResponse> {
