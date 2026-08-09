@@ -414,9 +414,15 @@ export async function recordShowcase(steps) {
     await browser.close();
     demo.close();
   }
+  return renderVideo(keyframes, 'showcase');
+}
 
-  // Key frames are written once, then expanded to FRAMERATE via a concat
-  // list with per-frame durations — no redundant encode of identical frames.
+/**
+ * Writes the key frames once, then expands them to FRAMERATE via a concat
+ * list with per-frame durations. Interactive mode only encodes changed
+ * frames (holds extend); movie mode feeds a uniform continuous sample.
+ */
+async function renderVideo(keyframes, name) {
   let index = 0;
   for (const frame of keyframes) {
     const file = path.join(SHOT_DIR, `frame-${String(index).padStart(5, '0')}.jpg`);
@@ -431,7 +437,7 @@ export async function recordShowcase(steps) {
   const listLines = [];
   for (let i = 0; i < keyframes.length; i += 1) {
     listLines.push(`file 'frame-${String(i).padStart(5, '0')}.jpg'`);
-    listLines.push(`duration ${String(Math.max(keyframes[i].holdMs, 100) / 1000)}`);
+    listLines.push(`duration ${String(Math.max(keyframes[i].holdMs, 40) / 1000)}`);
   }
   // The last entry needs an extra duplicate for ffmpeg concat to honor its
   // duration.
@@ -439,7 +445,7 @@ export async function recordShowcase(steps) {
   await (await import('node:fs/promises')).writeFile(listPath, listLines.join('\n'));
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const output = path.join(OUT_DIR, `showcase-${timestamp}.mp4`);
+  const output = path.join(OUT_DIR, `${name}-${timestamp}.mp4`);
   const result = spawnSync(
     'ffmpeg',
     [
@@ -465,7 +471,9 @@ export async function recordShowcase(steps) {
     output,
     keyframes: keyframes.length,
     durationSec: totalHoldMs / 1000,
-    fingerprints: keyframes.map((frame) => frame.fingerprint),
+    // Movie-mode frames carry no fingerprint (uniform sampling) — the CLI
+    // anchor report then degrades gracefully to an empty list.
+    fingerprints: keyframes.map((frame) => frame.fingerprint ?? {}),
   };
 }
 
@@ -504,44 +512,130 @@ export async function runDefaultShowcase() {
  * Showcase movie (director script, docs/showcase-director-script.md): the
  * demo panel auto-plays the scripted conversation on mount, so the recorder
  * only has to follow the timeline — pretend-send, thinking, tool chain,
- * typewriter reveal (dense sampling), settle collapse + final summary,
- * expand, then the feature-matrix views. ~22s at the timeline below.
+ * typewriter reveal, settle collapse + final summary, expand, then the
+ * feature-matrix views.
+ *
+ * Unlike the interactive mode (change-driven key frames), the movie samples
+ * at a UNIFORM tick (~15 fps) for its whole duration: every frame carries
+ * the same hold, so the rendered video is a continuous stream — no
+ * 3s/2s/1s jumps between static slides. Headless screenshots run ~35ms, so
+ * tick + shot lands around 15fps, which reads as fluid motion at 30fps out.
  */
+const MOVIE_TICK_MS = 66;
+
+async function movieCapture(page, keyframes, label) {
+  const shot = await page.screenshot({ type: 'jpeg', quality: 85 });
+  keyframes.push({ shot, label, holdMs: MOVIE_TICK_MS });
+}
+
+/** Uniform sampling for `ms` of wall-clock time. */
+async function sampleHold(page, keyframes, ms, label) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    await movieCapture(page, keyframes, label);
+    // Screenshot takes ~35ms; keep the frame cadence near MOVIE_TICK_MS.
+    await sleep(Math.max(10, MOVIE_TICK_MS - 40));
+  }
+}
+
+/** Absolute-coordinate click + ripple, then keep sampling. */
+async function movieClick(page, keyframes, selector, label) {
+  const box = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (el === null) {
+      return null;
+    }
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, selector);
+  if (box === null) {
+    throw new Error(`movieClick: selector not found: ${selector}`);
+  }
+  await page.mouse.click(box.x, box.y);
+  await rippleAt(page, box.x, box.y);
+  await sampleHold(page, keyframes, 800, label);
+  await clearRipple(page);
+}
+
 export async function runShowcaseMovie() {
-  const typewriterTicks = Array.from({ length: 7 }, (_, index) => ({
-    action: 'wait',
-    ms: 450,
-    real: true,
-    label: `typewriter ${String(index + 1)}`,
-  }));
-  const steps = [
-    { action: 'wait', ms: 2000, real: true, label: 'boot' },
-    // The demo player streams the scripted user message ~1.5s after mount;
-    // match its text so the seeded dataset can never satisfy this wait.
-    { action: 'waitFor', selector: '.message-user', text: '看看 PiHub 能为我做什么', timeout: 12000, hold: 1500, label: 'pretend-send' },
-    { action: 'wait', ms: 1500, real: true, label: 'thinking' },
-    // Tool chain (bash → get_commands → file_read) + results.
-    { action: 'wait', ms: 1000, real: true, label: 'tool 1' },
-    { action: 'wait', ms: 1000, real: true, label: 'tool 2' },
-    { action: 'wait', ms: 1000, real: true, label: 'tool 3' },
-    { action: 'wait', ms: 1000, real: true, label: 'results' },
-    // Final reply: dense sampling so the typewriter reads smoothly.
-    ...typewriterTicks,
-    // Settle → whole tool chain collapses, final summary fades in. The
-    // waitFor polls at 250ms, so the collapse frame is captured the moment
-    // the settled unit folds (selector appears).
-    { action: 'waitFor', selector: '.chat-unit[data-collapsed="true"]', timeout: 10000, hold: 2000, label: 'settle + collapse' },
-    { action: 'wait', ms: 1400, real: true, label: 'final summary' },
-    // One click re-expands the block — nothing was trimmed.
-    { action: 'clickSel', selector: '.chat-unit-summary-line', hold: 1400, label: 'expand block' },
-    { action: 'wait', ms: 900, real: true, label: 'expanded' },
-    // Feature matrix: cost insights, automation center. (No "back to chat":
-    // re-entering the chat view restarts the demo player — the movie ends
-    // on the automation center instead.)
-    { action: 'clickSel', selector: 'button[aria-label="统计"]', hold: 1600, label: 'stats view' },
-    { action: 'clickSel', selector: '.sidebar-feature', hold: 1600, label: 'automation center' },
-  ];
-  return recordShowcase(steps);
+  const chromePath = await findChrome();
+  const demo = await startDemoStack();
+  await mkdir(SHOT_DIR, { recursive: true });
+  await rm(SHOT_DIR, { recursive: true, force: true });
+  await mkdir(SHOT_DIR, { recursive: true });
+  await mkdir(OUT_DIR, { recursive: true });
+
+  const browser = await puppeteer.launch({
+    executablePath: chromePath,
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-gpu',
+      '--hide-scrollbars',
+      `--window-size=${String(WIDTH)},${String(HEIGHT)}`,
+    ],
+    defaultViewport: { width: WIDTH, height: HEIGHT },
+  });
+
+  const keyframes = [];
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://localhost:${String(WEB_PORT)}/`, { waitUntil: 'domcontentloaded' });
+
+    // Phase A — boot, then wait for the scripted user message (continuous
+    // sampling from the first frame; the seeded dataset can never match the
+    // scripted prompt text).
+    const userDeadline = Date.now() + 12000;
+    let userSeen = false;
+    while (Date.now() < userDeadline) {
+      userSeen = await page.evaluate(() => {
+        const el = document.querySelector('.message-user');
+        return el !== null && (el.textContent ?? '').includes('看看 PiHub 能为我做什么');
+      });
+      await movieCapture(page, keyframes, 'boot');
+      if (userSeen) {
+        break;
+      }
+      await sleep(MOVIE_TICK_MS);
+    }
+    if (!userSeen) {
+      throw new Error('movie: scripted user message never appeared');
+    }
+
+    // Phase B — sample the whole run (thinking → tool chain → typewriter →
+    // settle) until the unit auto-collapses and the final summary fades in.
+    const settleDeadline = Date.now() + 15000;
+    let collapsed = false;
+    while (Date.now() < settleDeadline) {
+      collapsed = await page.evaluate(
+        () => document.querySelector('.chat-unit[data-collapsed="true"]') !== null,
+      );
+      await movieCapture(page, keyframes, 'movie');
+      if (collapsed) {
+        break;
+      }
+      await sleep(MOVIE_TICK_MS);
+    }
+    if (!collapsed) {
+      throw new Error('movie: settle collapse never appeared');
+    }
+    await sampleHold(page, keyframes, 1600, 'final summary');
+
+    // Phase C — one click re-expands the block (nothing was trimmed).
+    await movieClick(page, keyframes, '.chat-unit-summary-line', 'expand block');
+    await sampleHold(page, keyframes, 1400, 'expanded');
+
+    // Phase D/E — feature matrix: cost insights, automation center. (No
+    // "back to chat": re-entering the chat view restarts the demo player.)
+    await movieClick(page, keyframes, 'button[aria-label="统计"]', 'stats view');
+    await sampleHold(page, keyframes, 2200, 'stats charts');
+    await movieClick(page, keyframes, '.sidebar-feature', 'automation center');
+    await sampleHold(page, keyframes, 2200, 'automation tabs');
+  } finally {
+    await browser.close();
+    demo.close();
+  }
+  return renderVideo(keyframes, 'showcase-movie');
 }
 
 /* ---- CLI entry ---------------------------------------------------- */
