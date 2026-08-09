@@ -147,7 +147,11 @@ Requirements: Google Chrome (or `CHROME_PATH`) and `ffmpeg` on PATH.
 
 ```sh
 npm run showcase:record
-# output: out/showcase-<timestamp>.mp4 (h264, 1280×800, 30fps)
+# output: out/showcase-<timestamp>.mp4 (h264, 1920×1080, 30fps)
+
+# the showcase movie: demo auto-play + typewriter + settle collapse
+# (see docs/showcase-director-script.md for the storyboard)
+npm run showcase:record -- --movie
 ```
 
 How it works:

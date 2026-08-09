@@ -30,8 +30,9 @@ const WEB_PORT = Number(process.env.PIHUB_WEB_PORT ?? 5199);
 const FRAMERATE = 30;
 const OUT_DIR = path.join(ROOT, 'out');
 const SHOT_DIR = path.join(os.tmpdir(), 'pihub-showcase-frames');
-const WIDTH = 1280;
-const HEIGHT = 800;
+// 16:9 1080p — suitable for Bilibili / Douyin horizontal uploads.
+const WIDTH = 1920;
+const HEIGHT = 1080;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -128,7 +129,15 @@ async function startDemoStack() {
     'demo-backend',
     process.execPath,
     ['--import', 'tsx', 'server/index.ts'],
-    { PIHUB_MODE: 'demo', PORT: String(DEMO_PORT) },
+    {
+      PIHUB_MODE: 'demo',
+      PORT: String(DEMO_PORT),
+      // SPRINT-2 regression fix: the control token gate would 401 the demo
+      // frontend (vite page carries no injected token) and break every
+      // sensitive read + SSE. Demo is synthetic-only with 503 write guards,
+      // so the token is disabled for the recording stack.
+      PIHUB_DEV_NO_TOKEN: '1',
+    },
   );
   start(
     'demo-web',
@@ -198,9 +207,18 @@ async function captureFingerprint(page) {
             w: Math.round(rect.width),
             h: Math.round(rect.height),
             text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60),
+            // Total content length: catches streaming growth (typewriter,
+            // appended messages) even when the leading 60 chars are stable.
+            len: (el.textContent ?? '').length,
           }
         : { visible: false };
     }
+    // UI-state signals that text content cannot express (visual-only folds,
+    // fade-ins): the settled collapse and the final summary line.
+    out['__ui'] = {
+      collapsedUnits: document.querySelectorAll('.chat-unit[data-collapsed="true"]').length,
+      summaryLines: document.querySelectorAll('.chat-unit-final-summary').length,
+    };
     return out;
   });
 }
@@ -328,8 +346,55 @@ export async function recordShowcase(steps) {
           await recordHold(page, keyframes, fingerprint, step.hold ?? 700, step.label);
           break;
         }
+        case 'pressChord': {
+          // Modifier chord (e.g. Alt+1): down modifiers, press the key, up.
+          for (const key of step.keys ?? []) {
+            await page.keyboard.down(key);
+          }
+          await page.keyboard.press(step.key ?? '');
+          for (const key of [...(step.keys ?? [])].reverse()) {
+            await page.keyboard.up(key);
+          }
+          await recordHold(page, keyframes, fingerprint, step.hold ?? 700, step.label);
+          break;
+        }
         case 'wait': {
           await recordHold(page, keyframes, fingerprint, step.ms ?? 800, step.label);
+          if (step.real === true) {
+            // Movie mode: streamed content (typewriter, tool results, the
+            // settle) only advances in real wall-clock time — the hold is a
+            // virtual video duration, but the page must actually wait.
+            await sleep(step.ms ?? 800);
+          }
+          break;
+        }
+        case 'waitFor': {
+          // Wait for a selector (optionally matching `text`) with per-tick
+          // fingerprint sampling, so the movie captures the streaming state
+          // (typewriter etc.) at the recorder's resolution instead of a gap.
+          const deadline = Date.now() + (step.timeout ?? 8000);
+          let found = false;
+          while (Date.now() < deadline) {
+            found = await page.evaluate(
+              (selector, text) => {
+                const el = document.querySelector(selector ?? '');
+                if (el === null) {
+                  return false;
+                }
+                return text === undefined || (el.textContent ?? '').includes(text);
+              },
+              step.selector ?? '',
+              step.text,
+            );
+            if (found) {
+              break;
+            }
+            await recordHold(page, keyframes, fingerprint, 250, `${String(step.label)} (waiting)`);
+          }
+          if (!found) {
+            throw new Error(`waitFor: selector not found: ${String(step.selector)}`);
+          }
+          await recordHold(page, keyframes, fingerprint, step.hold ?? 800, step.label);
           break;
         }
         case 'shot': {
@@ -435,9 +500,57 @@ export async function runDefaultShowcase() {
   return recordShowcase(steps);
 }
 
+/**
+ * Showcase movie (director script, docs/showcase-director-script.md): the
+ * demo panel auto-plays the scripted conversation on mount, so the recorder
+ * only has to follow the timeline — pretend-send, thinking, tool chain,
+ * typewriter reveal (dense sampling), settle collapse + final summary,
+ * expand, then the feature-matrix views. ~22s at the timeline below.
+ */
+export async function runShowcaseMovie() {
+  const typewriterTicks = Array.from({ length: 7 }, (_, index) => ({
+    action: 'wait',
+    ms: 450,
+    real: true,
+    label: `typewriter ${String(index + 1)}`,
+  }));
+  const steps = [
+    { action: 'wait', ms: 2000, real: true, label: 'boot' },
+    // The demo player streams the scripted user message ~1.5s after mount;
+    // match its text so the seeded dataset can never satisfy this wait.
+    { action: 'waitFor', selector: '.message-user', text: '看看 PiHub 能为我做什么', timeout: 12000, hold: 1500, label: 'pretend-send' },
+    { action: 'wait', ms: 1500, real: true, label: 'thinking' },
+    // Tool chain (bash → get_commands → file_read) + results.
+    { action: 'wait', ms: 1000, real: true, label: 'tool 1' },
+    { action: 'wait', ms: 1000, real: true, label: 'tool 2' },
+    { action: 'wait', ms: 1000, real: true, label: 'tool 3' },
+    { action: 'wait', ms: 1000, real: true, label: 'results' },
+    // Final reply: dense sampling so the typewriter reads smoothly.
+    ...typewriterTicks,
+    // Settle → whole tool chain collapses, final summary fades in. The
+    // waitFor polls at 250ms, so the collapse frame is captured the moment
+    // the settled unit folds (selector appears).
+    { action: 'waitFor', selector: '.chat-unit[data-collapsed="true"]', timeout: 10000, hold: 2000, label: 'settle + collapse' },
+    { action: 'wait', ms: 1400, real: true, label: 'final summary' },
+    // One click re-expands the block — nothing was trimmed.
+    { action: 'clickSel', selector: '.chat-unit-summary-line', hold: 1400, label: 'expand block' },
+    { action: 'wait', ms: 900, real: true, label: 'expanded' },
+    // Feature matrix: cost insights, automation center. (No "back to chat":
+    // re-entering the chat view restarts the demo player — the movie ends
+    // on the automation center instead.)
+    { action: 'clickSel', selector: 'button[aria-label="统计"]', hold: 1600, label: 'stats view' },
+    { action: 'clickSel', selector: '.sidebar-feature', hold: 1600, label: 'automation center' },
+  ];
+  return recordShowcase(steps);
+}
+
 /* ---- CLI entry ---------------------------------------------------- */
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runDefaultShowcase()
+  // --movie runs the director-script showcase movie (demo auto-play +
+  // typewriter + settle collapse + feature matrix); default keeps the
+  // classic interactive walkthrough.
+  const runner = process.argv.includes('--movie') ? runShowcaseMovie() : runDefaultShowcase();
+  runner
     .then(({ output, keyframes, durationSec, fingerprints }) => {
       // eslint-disable-next-line no-console
       console.log(
