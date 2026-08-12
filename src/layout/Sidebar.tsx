@@ -3,6 +3,7 @@ import type { SessionSummary } from '../../shared/types.js';
 import { SETTINGS_SECTIONS, type SettingsSectionId, type View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
+import { loadAdapterColors } from '../adapters/adapterColors.js';
 import type { CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
@@ -40,14 +41,20 @@ interface SidebarProps {
 type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
 
 /** Agents whose sessions converge in the sidebar (default: all shown). */
-type SidebarAgent = 'pi' | 'codex' | 'atomcode' | 'zcode';
+type SidebarAgent = 'pi' | 'codex' | 'atomcode' | 'zcode' | 'claude';
 
 const AGENT_GLYPHS: Record<SidebarAgent, string> = {
   pi: 'π',
   codex: '⌘',
   atomcode: 'A',
   zcode: 'Z',
+  claude: 'C',
 };
+
+/** Badge background follows the user's custom adapter colors. */
+function badgeColor(agent: SidebarAgent): string {
+  return loadAdapterColors()[agent] ?? '#666666';
+}
 
 /** One unified sidebar row across every agent's session records. */
 interface AgentSessionRow {
@@ -178,23 +185,13 @@ function SessionRow({
         title={row.cwd.length > 0 ? row.cwd : row.label}
       >
         <span className="sidebar-session-head">
-          <span className="agent-badge" data-agent={row.agent} aria-hidden="true">
-            {row.agent === 'codex' ? (
-              <img src="/icons/agents/codex.svg" alt="" className="agent-badge-img" />
-            ) : row.agent === 'atomcode' ? (
-              <img src="/icons/agents/atomcode.svg" alt="" className="agent-badge-img" />
-            ) : row.agent === 'pi' ? (
-              <svg className="agent-badge-img pi-logo-mark" viewBox="0 0 800 800" aria-hidden="true" focusable="false">
-                <path
-                  fill="currentColor"
-                  fillRule="evenodd"
-                  d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-                />
-                <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
-              </svg>
-            ) : (
-              AGENT_GLYPHS[row.agent]
-            )}
+          <span
+            className="agent-badge"
+            data-agent={row.agent}
+            style={{ backgroundColor: badgeColor(row.agent) }}
+            aria-hidden="true"
+          >
+            {AGENT_GLYPHS[row.agent]}
           </span>
           <span className="sidebar-session-cwd mono">{row.label}</span>
           {imported ? (
@@ -360,11 +357,12 @@ export function Sidebar({
       try {
         // Multi-agent convergence: pi sessions + codex rollout records +
         // atomcode history + zcode model-I/O records, unified into rows.
-        const [pi, codex, atomcode, zcode] = await Promise.all([
+        const [pi, codex, atomcode, zcode, claude] = await Promise.all([
           api.sessions().catch(() => null),
           api.codexSessions().catch(() => null),
           api.atomcodeSession().catch(() => null),
           api.zcodeSessions().catch(() => null),
+          api.claudeSessions().catch(() => null),
         ]);
         if (cancelled) {
           return;
@@ -386,9 +384,24 @@ export function Sidebar({
           });
         }
         for (const meta of codex?.sessions ?? []) {
+          if (meta.placeholder === true) {
+            continue; // 0-message unclassifiable old records stay hidden
+          }
           rows.push({
             key: `codex:${meta.sessionId}`,
             agent: 'codex',
+            cwd: meta.cwd,
+            label: shortCwd(meta.cwd),
+            messageCount: meta.messageCount,
+            lastActivityAt: meta.lastActivityAt,
+            status: 'done',
+            target: meta,
+          });
+        }
+        for (const meta of claude?.sessions ?? []) {
+          rows.push({
+            key: `claude:${meta.sessionId}`,
+            agent: 'claude',
             cwd: meta.cwd,
             label: shortCwd(meta.cwd),
             messageCount: meta.messageCount,
@@ -907,6 +920,7 @@ export function Sidebar({
                 { value: 'codex', glyph: AGENT_GLYPHS.codex },
                 { value: 'atomcode', glyph: AGENT_GLYPHS.atomcode },
                 { value: 'zcode', glyph: AGENT_GLYPHS.zcode },
+                { value: 'claude', glyph: AGENT_GLYPHS.claude },
               ] as ReadonlyArray<{ value: 'all' | SidebarAgent; glyph: string }>
             ).map((option) => (
               <button

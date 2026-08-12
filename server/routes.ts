@@ -201,6 +201,7 @@ export interface RouterModeOptions {
   adapters?: {
     list: () => Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
     codexSessions?: () => Promise<unknown[]>;
+    claudeSessions?: () => Promise<unknown[]>;
     codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
     /** ADAPTER2: atomcode + zcode read-only history surfaces. */
     atomcodeSession?: () => Promise<AtomcodeSessionDetail | null>;
@@ -463,6 +464,19 @@ export function createRouter(
 
   /* ---- codex exec adapter (ACTIVE 2026-08-12) ---- */
   const codexExec = options?.codexExec ?? null;
+
+  router.get('/api/claude/sessions', async (_req, res) => {
+    const fn = options?.adapters?.claudeSessions;
+    if (fn === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    try {
+      res.json({ sessions: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
 
   router.get('/api/codex/state', async (_req, res) => {
     if (codexExec === null) {

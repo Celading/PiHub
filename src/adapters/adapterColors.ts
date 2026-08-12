@@ -16,6 +16,9 @@ export interface AdapterInfo {
 const DEFAULTS: Record<string, string> = {
   pi: '#005fb8',
   codex: '#10a37f',
+  atomcode: '#e4572e',
+  zcode: '#7f56d9',
+  claude: '#d97757',
 };
 
 export function loadAdapterColors(): Record<string, string> {

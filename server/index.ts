@@ -8,6 +8,7 @@ import { createMockSessionProvider } from './providers/mock-session-provider.js'
 import { DemoStateMachine } from './demo/state-machine.js';
 import { CodexAdapter, resolveCodexBinary } from './adapters/codex-adapter.js';
 import { backfillCodexSessions, listCodexSessionsFast } from './adapters/codex-history.js';
+import { listClaudeSessions } from './adapters/claude-history.js';
 import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
@@ -105,6 +106,12 @@ const adapters = [
     label: 'Codex',
     version: codexAdapter === null ? 'read-only' : 'exec (resume)',
     defaultColor: '#10a37f',
+  },
+  {
+    kind: 'claude' as const,
+    label: 'Claude',
+    version: 'read-only', // ~/.claude transcripts; never spawns claude
+    defaultColor: '#d97757',
   },
   {
     kind: 'atomcode' as const,
@@ -265,6 +272,7 @@ app.use(
       ...(mode === 'demo'
         ? {}
         : {
+            claudeSessions: () => listClaudeSessions(),
             codexSessions: () => {
               const fast = listCodexSessionsFast();
               // Newest-first fast list renders immediately; the heavy

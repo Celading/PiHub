@@ -8,6 +8,43 @@ import { summarizeToolCall } from './toolSummary.js';
 import { linkifyPaths } from './filePaths.js';
 import './MessageItem.css';
 
+/** Long content (big diffs, logs, long replies) collapses below a max
+ *  height with a gradient + "expand all" button — content is never trimmed,
+ *  only visually capped. */
+function LongContent({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el !== null) {
+      setOverflowing(el.scrollHeight > 640);
+    }
+  }, [children]);
+  return (
+    <div className="long-content" data-expanded={expanded} ref={ref}>
+      {children}
+      {overflowing && !expanded ? (
+        <button
+          type="button"
+          className="long-content-expand mono"
+          onClick={() => {
+            setExpanded(true);
+          }}
+        >
+          {label}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export type ThinkingStatus = 'active' | 'done' | 'interrupted';
 
 function ToolCallBlock({
@@ -148,6 +185,7 @@ function ContentBlocks({
    *  reveal (markdown takes over once the reveal completes). */
   typewriter?: boolean;
 }): React.JSX.Element {
+  const { t } = useI18n();
   return (
     <>
       {blocks.map((block, index) => {
@@ -169,13 +207,18 @@ function ContentBlocks({
             // Runtime guard: the loose provider-tolerant schema can keep a
             // malformed block alive; never crash the stream on it.
             const textValue: unknown = (known as { text?: unknown }).text;
-            return typeof textValue === 'string' ? (
-              typewriter === true ? (
-                <TypewriterText key={index} text={textValue} />
-              ) : (
-                <Markdown key={index} text={textValue} />
-              )
-            ) : null;
+            if (typeof textValue !== 'string') {
+              return null;
+            }
+            return (
+              <LongContent key={index} label={t('chat.expandAll')}>
+                {typewriter === true ? (
+                  <TypewriterText text={textValue} />
+                ) : (
+                  <Markdown text={textValue} />
+                )}
+              </LongContent>
+            );
           }
           case 'thinking': {
             const thinkingValue: unknown = (known as { thinking?: unknown }).thinking;

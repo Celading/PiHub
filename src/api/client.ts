@@ -15,6 +15,7 @@ import type {
   AgentMessage,
 } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
+import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
 import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { controlTokenHeader } from './controlToken.js';
@@ -436,6 +437,10 @@ export const api = {
   },
 
   /* ---- codex exec adapter (ACTIVE) ---- */
+
+  claudeSessions(): Promise<{ sessions: ClaudeSessionMeta[] }> {
+    return request<{ sessions: ClaudeSessionMeta[] }>('/api/claude/sessions');
+  },
 
   codexState(): Promise<{ running: boolean; sessionId: string | null }> {
     return request<{ running: boolean; sessionId: string | null }>('/api/codex/state');

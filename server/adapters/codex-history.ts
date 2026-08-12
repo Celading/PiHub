@@ -36,6 +36,8 @@ export interface CodexSessionMeta {
   sessionId: string;
   fileName: string;
   cwd: string;
+  /** Fast-list placeholder (old record not yet parsed / no session_meta). */
+  placeholder?: boolean;
   forkedFromId?: string;
   modelProvider?: string;
   source?: string;
@@ -406,6 +408,7 @@ export async function listCodexSessionsFast(limit: number = FAST_PARSE_LIMIT): P
       messageCount: 0,
       toolCalls: 0,
       tokens: 0,
+      placeholder: true,
     });
   }
   sessions.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
