@@ -99,12 +99,21 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 
 需要 [pi](https://pi.dev)（`pi --version` ≥ 0.83）与 Node.js ≥ 20。
 
-### 经 npm（生产构建）
+### 安装并运行（经 npm）
 
 ```bash
-npm install -g pi-panel
-pihub        # 启动面板：http://127.0.0.1:3001（浏览器打开）
+npm install -g @celading/pihub
+pihub
 ```
+
+然后浏览器打开 **http://127.0.0.1:3001**。`pihub` 会自行拉起
+`pi --mode rpc`——之后无需再开终端。面板仅监听回环接口。
+
+- 常驻运行：让 `pihub` 在终端标签页/后台服务中运行（如 `pihub &` 或
+  launchd 配置）。
+- 更换端口：`PORT=4000 pihub`。
+- 完整用法、功能与故障排查见 [使用手册](MANUAL.zh-CN.md)
+  （[English manual](MANUAL.md)）。
 
 ### 从源码（开发）
 

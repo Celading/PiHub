@@ -414,6 +414,7 @@ export const zhMessages = {
   'settings.nav.permissions': '权限管理',
   'settings.nav.favorites': '提示词收藏夹',
   'settings.nav.lab': '实验室能力',
+  'settings.nav.about': '关于',
 
   // permissions section
   'permissions.notify': '通知',
@@ -452,6 +453,15 @@ export const zhMessages = {
   'lab.settledCollapse': '完成后整块收起',
   'lab.settledCollapseHint': '工具链处理完成后整块收起，只保留最终总结',
   'chat.finalSummary': '最终总结',
+  'about.tagline': '你的π，由此汇聚 —— pi coding agent 的本地网页控制台。',
+  'about.version': '版本',
+  'about.install': '安装（npm）',
+  'about.installHint': '全局安装后运行 pihub，浏览器打开 http://127.0.0.1:3001。',
+  'about.docs': '文档',
+  'about.source': '源码',
+  'about.manual': '使用手册',
+  'about.security': '安全边界',
+  'about.securityHint': '仅监听 127.0.0.1 / localhost；绝不读取 ~/.pi/agent/auth.json；无自有云服务。',
   'lab.showThinkingLive': '推理过程完整展示',
   'lab.showThinkingLiveHint': '推理进行时实时展示思考正文，推理完成自动收起',
 
@@ -863,6 +873,7 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.nav.permissions': 'Permissions',
   'settings.nav.favorites': 'Prompt Favorites',
   'settings.nav.lab': 'Lab',
+  'settings.nav.about': 'About',
 
   // permissions section
   'permissions.notify': 'Notifications',
@@ -901,6 +912,15 @@ export const enMessages: Record<MessageKey, string> = {
   'lab.settledCollapse': 'Auto-collapse settled runs',
   'lab.settledCollapseHint': 'Completed tool chains fold into one block, leaving the final summary',
   'chat.finalSummary': 'Final summary',
+  'about.tagline': 'Your π, connecting everything — a local web console for the pi coding agent.',
+  'about.version': 'Version',
+  'about.install': 'Install (npm)',
+  'about.installHint': 'Install globally, then run pihub and open http://127.0.0.1:3001.',
+  'about.docs': 'Documentation',
+  'about.source': 'Source',
+  'about.manual': 'Manual',
+  'about.security': 'Security boundary',
+  'about.securityHint': 'Binds 127.0.0.1 / localhost only; never reads ~/.pi/agent/auth.json; no cloud service of its own.',
   'lab.showThinkingLive': 'Show reasoning live',
   'lab.showThinkingLiveHint': 'Reveal the reasoning text while streaming; it collapses automatically once settled',
 

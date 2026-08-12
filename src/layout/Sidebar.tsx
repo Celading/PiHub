@@ -44,6 +44,7 @@ const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
   permissions: 'settings.nav.permissions',
   favorites: 'settings.nav.favorites',
   lab: 'settings.nav.lab',
+  about: 'settings.nav.about',
 };
 
 function settingsSectionLabelKey(id: SettingsSectionId): MessageKey {

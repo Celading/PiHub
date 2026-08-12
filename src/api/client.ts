@@ -433,4 +433,10 @@ export const api = {
   demoStop(): Promise<{ phase: string }> {
     return request<{ phase: string }>('/api/demo/stop', { method: 'POST' });
   },
+
+  /* ---- about (published version) ---- */
+
+  health(): Promise<{ status: string; name: string; version: string; time: string }> {
+    return request<{ status: string; name: string; version: string; time: string }>('/api/health');
+  },
 };

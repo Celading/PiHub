@@ -1,8 +1,37 @@
 import { readFile, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { z } from 'zod';
+
+// Published version, read once from package.json. The module sits at
+// different depths between dev (server/) and the compiled npm package
+// (dist-server/server/), and the npm bin may run from any cwd — so walk up
+// from the module file until a package.json is found.
+function loadPackageVersion(): string {
+  let dir = fileURLToPath(new URL('.', import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(path.join(dir, 'package.json'), 'utf8'),
+      ) as { version?: unknown };
+      if (typeof pkg.version === 'string') {
+        return pkg.version;
+      }
+    } catch {
+      // keep walking up
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return '0.0.0';
+}
+const PKG_VERSION = loadPackageVersion();
 import {
   modelStoreFileSchema,
   pipelineApproveBodySchema,
@@ -285,8 +314,8 @@ export function createRouter(
   router.get('/api/health', (_req, res) => {
     res.json({
       status: 'ok',
-      name: 'pi-panel',
-      version: '0.1.0',
+      name: 'pihub',
+      version: PKG_VERSION,
       time: new Date().toISOString(),
     });
   });

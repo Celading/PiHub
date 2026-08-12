@@ -22,6 +22,7 @@ import {
 import { ChannelsSection } from './ChannelsSection.js';
 import { FavoritesSection } from './FavoritesSection.js';
 import { LabSection } from './LabSection.js';
+import { AboutSection } from './AboutSection.js';
 import { PermissionsSection } from './PermissionsSection.js';
 import './SettingsPage.css';
 
@@ -383,7 +384,9 @@ export function SettingsPage({
               ? t('settings.nav.permissions')
               : section === 'favorites'
                 ? t('settings.nav.favorites')
-                : t('settings.nav.lab');
+                : section === 'about'
+                  ? t('settings.nav.about')
+                  : t('settings.nav.lab');
 
   return (
     <section className="settings-page" data-shot="settings">
@@ -813,6 +816,7 @@ export function SettingsPage({
           />
         ) : null}
         {section === 'lab' ? <LabSection /> : null}
+        {section === 'about' ? <AboutSection /> : null}
       </div>
 
       {deleteTarget !== null ? (
