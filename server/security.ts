@@ -137,18 +137,38 @@ function isLoopbackHost(host: string): boolean {
   return LOOPBACK_HOSTS.has(bareHost(host));
 }
 
-/** Routes that mutate agent state — denied for remote (non-loopback) peers
- *  unless the capability switch explicitly allows them (P2-02 B). */
-export function isRemoteWriteRoute(p: string): boolean {
-  return (
-    p === '/api/rpc/prompt' ||
-    p === '/api/rpc/steer' ||
-    p === '/api/rpc/abort' ||
-    p === '/api/rpc/bash' ||
-    p === '/api/rpc/abort-bash' ||
-    p === '/api/sessions/delete' ||
-    p === '/api/models-config'
-  );
+/** Capability families a remote peer may unlock explicitly. */
+export type WriteFamily = 'prompt' | 'shell' | 'approve';
+
+/**
+ * Maps a request to its remote capability family (audit P0 fix):
+ *  - 'prompt' / 'shell' / 'approve' — allowed for remote peers only when
+ *    the matching capability switch is on;
+ *  - 'never' — every OTHER non-read /api route (session switch/new/fork/
+ *    model/thinking, codex abort/session, pipelines run/abort/save,
+ *    sessions/delete, models-config, system-prompt PUT, net management…):
+ *    remote peers are ALWAYS denied. Fail-closed: a future write route
+ *    that forgets to classify is denied by default;
+ *  - null — reads (GET/HEAD/OPTIONS) and /api/demo/* (they keep their own
+ *    503 write guards) pass without a capability.
+ */
+export function writeFamilyOf(method: string, p: string): WriteFamily | 'never' | null {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    return null;
+  }
+  if (p.startsWith('/api/demo/')) {
+    return null;
+  }
+  if (p === '/api/rpc/prompt' || p === '/api/rpc/steer' || p === '/api/codex/prompt') {
+    return 'prompt';
+  }
+  if (p === '/api/rpc/bash' || p === '/api/rpc/abort-bash') {
+    return 'shell';
+  }
+  if (p.startsWith('/api/pipelines/runs/') && p.endsWith('/approve')) {
+    return 'approve';
+  }
+  return 'never';
 }
 
 export interface CapabilitySwitches {
@@ -242,6 +262,15 @@ export class LanGate {
       const pair = req.query['pair'];
       if (typeof pair !== 'string' || !this.validate(pair)) {
         res.status(403).json({ error: 'remote access requires pairing' });
+        return;
+      }
+      // Capability scope (audit P0): pairing alone never unlocks agent-
+      // controlling writes. Non-read routes map to a capability family;
+      // 'never' routes are always denied, and classified families require
+      // the matching switch (remote default is read-only).
+      const family = writeFamilyOf(req.method, req.path);
+      if (family === 'never' || (family !== null && !this.remoteCan(req, family))) {
+        res.status(403).json({ error: 'remote capability not enabled' });
         return;
       }
     }
