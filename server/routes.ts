@@ -1,8 +1,37 @@
 import { readFile, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { z } from 'zod';
+
+// Published version, read once from package.json. The module sits at
+// different depths between dev (server/) and the compiled npm package
+// (dist-server/server/), and the npm bin may run from any cwd — so walk up
+// from the module file until a package.json is found.
+function loadPackageVersion(): string {
+  let dir = fileURLToPath(new URL('.', import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(path.join(dir, 'package.json'), 'utf8'),
+      ) as { version?: unknown };
+      if (typeof pkg.version === 'string') {
+        return pkg.version;
+      }
+    } catch {
+      // keep walking up
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return '0.0.0';
+}
+const PKG_VERSION = loadPackageVersion();
 import {
   modelStoreFileSchema,
   pipelineApproveBodySchema,
@@ -14,6 +43,7 @@ import {
 } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
+import type { DemoShowcase } from './demo/showcase.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
@@ -136,6 +166,8 @@ async function withBridge(
 export interface RouterModeOptions {
   mode: 'production' | 'debug' | 'demo';
   demoMachine?: DemoStateMachine | null;
+  /** Showcase sprint: scripted demo conversation player (demo mode only). */
+  demoShowcase?: DemoShowcase | null;
   debugState?: () => Record<string, unknown>;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
   pipelines?: {
@@ -215,6 +247,7 @@ export function createRouter(
   const router = express.Router();
   const mode = options?.mode ?? 'production';
   const demoMachine = options?.demoMachine ?? null;
+  const demoShowcase = options?.demoShowcase ?? null;
 
   // Demo mode is a read-only showcase: guard every RPC write path.
   const writeDenied = (res: express.Response): boolean => {
@@ -248,7 +281,9 @@ export function createRouter(
 
   if (demoMachine !== null) {
     router.get('/api/demo/state', (_req, res) => {
-      res.json({ phase: demoMachine.getPhase() });
+      // The showcase player supersedes the step-machine for the scripted
+      // conversation; report its phase when present.
+      res.json({ phase: demoShowcase?.getPhase() ?? demoMachine.getPhase() });
     });
     router.post('/api/demo/start', (_req, res) => {
       res.json({ phase: demoMachine.start() });
@@ -262,6 +297,12 @@ export function createRouter(
     router.post('/api/demo/reset', (_req, res) => {
       res.json({ phase: demoMachine.reset() });
     });
+    router.post('/api/demo/play', (_req, res) => {
+      res.json({ phase: demoShowcase?.play() ?? 'idle' });
+    });
+    router.post('/api/demo/stop', (_req, res) => {
+      res.json({ phase: demoShowcase?.stop() ?? 'idle' });
+    });
   }
 
   if (mode === 'debug') {
@@ -273,8 +314,8 @@ export function createRouter(
   router.get('/api/health', (_req, res) => {
     res.json({
       status: 'ok',
-      name: 'pi-panel',
-      version: '0.1.0',
+      name: 'pihub',
+      version: PKG_VERSION,
       time: new Date().toISOString(),
     });
   });

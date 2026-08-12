@@ -30,8 +30,9 @@ const WEB_PORT = Number(process.env.PIHUB_WEB_PORT ?? 5199);
 const FRAMERATE = 30;
 const OUT_DIR = path.join(ROOT, 'out');
 const SHOT_DIR = path.join(os.tmpdir(), 'pihub-showcase-frames');
-const WIDTH = 1280;
-const HEIGHT = 800;
+// 16:9 1080p — suitable for Bilibili / Douyin horizontal uploads.
+const WIDTH = 1920;
+const HEIGHT = 1080;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -128,7 +129,15 @@ async function startDemoStack() {
     'demo-backend',
     process.execPath,
     ['--import', 'tsx', 'server/index.ts'],
-    { PIHUB_MODE: 'demo', PORT: String(DEMO_PORT) },
+    {
+      PIHUB_MODE: 'demo',
+      PORT: String(DEMO_PORT),
+      // SPRINT-2 regression fix: the control token gate would 401 the demo
+      // frontend (vite page carries no injected token) and break every
+      // sensitive read + SSE. Demo is synthetic-only with 503 write guards,
+      // so the token is disabled for the recording stack.
+      PIHUB_DEV_NO_TOKEN: '1',
+    },
   );
   start(
     'demo-web',
@@ -198,9 +207,18 @@ async function captureFingerprint(page) {
             w: Math.round(rect.width),
             h: Math.round(rect.height),
             text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60),
+            // Total content length: catches streaming growth (typewriter,
+            // appended messages) even when the leading 60 chars are stable.
+            len: (el.textContent ?? '').length,
           }
         : { visible: false };
     }
+    // UI-state signals that text content cannot express (visual-only folds,
+    // fade-ins): the settled collapse and the final summary line.
+    out['__ui'] = {
+      collapsedUnits: document.querySelectorAll('.chat-unit[data-collapsed="true"]').length,
+      summaryLines: document.querySelectorAll('.chat-unit-final-summary').length,
+    };
     return out;
   });
 }
@@ -328,8 +346,55 @@ export async function recordShowcase(steps) {
           await recordHold(page, keyframes, fingerprint, step.hold ?? 700, step.label);
           break;
         }
+        case 'pressChord': {
+          // Modifier chord (e.g. Alt+1): down modifiers, press the key, up.
+          for (const key of step.keys ?? []) {
+            await page.keyboard.down(key);
+          }
+          await page.keyboard.press(step.key ?? '');
+          for (const key of [...(step.keys ?? [])].reverse()) {
+            await page.keyboard.up(key);
+          }
+          await recordHold(page, keyframes, fingerprint, step.hold ?? 700, step.label);
+          break;
+        }
         case 'wait': {
           await recordHold(page, keyframes, fingerprint, step.ms ?? 800, step.label);
+          if (step.real === true) {
+            // Movie mode: streamed content (typewriter, tool results, the
+            // settle) only advances in real wall-clock time — the hold is a
+            // virtual video duration, but the page must actually wait.
+            await sleep(step.ms ?? 800);
+          }
+          break;
+        }
+        case 'waitFor': {
+          // Wait for a selector (optionally matching `text`) with per-tick
+          // fingerprint sampling, so the movie captures the streaming state
+          // (typewriter etc.) at the recorder's resolution instead of a gap.
+          const deadline = Date.now() + (step.timeout ?? 8000);
+          let found = false;
+          while (Date.now() < deadline) {
+            found = await page.evaluate(
+              (selector, text) => {
+                const el = document.querySelector(selector ?? '');
+                if (el === null) {
+                  return false;
+                }
+                return text === undefined || (el.textContent ?? '').includes(text);
+              },
+              step.selector ?? '',
+              step.text,
+            );
+            if (found) {
+              break;
+            }
+            await recordHold(page, keyframes, fingerprint, 250, `${String(step.label)} (waiting)`);
+          }
+          if (!found) {
+            throw new Error(`waitFor: selector not found: ${String(step.selector)}`);
+          }
+          await recordHold(page, keyframes, fingerprint, step.hold ?? 800, step.label);
           break;
         }
         case 'shot': {
@@ -349,9 +414,15 @@ export async function recordShowcase(steps) {
     await browser.close();
     demo.close();
   }
+  return renderVideo(keyframes, 'showcase');
+}
 
-  // Key frames are written once, then expanded to FRAMERATE via a concat
-  // list with per-frame durations — no redundant encode of identical frames.
+/**
+ * Writes the key frames once, then expands them to FRAMERATE via a concat
+ * list with per-frame durations. Interactive mode only encodes changed
+ * frames (holds extend); movie mode feeds a uniform continuous sample.
+ */
+async function renderVideo(keyframes, name) {
   let index = 0;
   for (const frame of keyframes) {
     const file = path.join(SHOT_DIR, `frame-${String(index).padStart(5, '0')}.jpg`);
@@ -366,7 +437,7 @@ export async function recordShowcase(steps) {
   const listLines = [];
   for (let i = 0; i < keyframes.length; i += 1) {
     listLines.push(`file 'frame-${String(i).padStart(5, '0')}.jpg'`);
-    listLines.push(`duration ${String(Math.max(keyframes[i].holdMs, 100) / 1000)}`);
+    listLines.push(`duration ${String(Math.max(keyframes[i].holdMs, 40) / 1000)}`);
   }
   // The last entry needs an extra duplicate for ffmpeg concat to honor its
   // duration.
@@ -374,7 +445,7 @@ export async function recordShowcase(steps) {
   await (await import('node:fs/promises')).writeFile(listPath, listLines.join('\n'));
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const output = path.join(OUT_DIR, `showcase-${timestamp}.mp4`);
+  const output = path.join(OUT_DIR, `${name}-${timestamp}.mp4`);
   const result = spawnSync(
     'ffmpeg',
     [
@@ -400,7 +471,9 @@ export async function recordShowcase(steps) {
     output,
     keyframes: keyframes.length,
     durationSec: totalHoldMs / 1000,
-    fingerprints: keyframes.map((frame) => frame.fingerprint),
+    // Movie-mode frames carry no fingerprint (uniform sampling) — the CLI
+    // anchor report then degrades gracefully to an empty list.
+    fingerprints: keyframes.map((frame) => frame.fingerprint ?? {}),
   };
 }
 
@@ -435,9 +508,143 @@ export async function runDefaultShowcase() {
   return recordShowcase(steps);
 }
 
+/**
+ * Showcase movie (director script, docs/showcase-director-script.md): the
+ * demo panel auto-plays the scripted conversation on mount, so the recorder
+ * only has to follow the timeline — pretend-send, thinking, tool chain,
+ * typewriter reveal, settle collapse + final summary, expand, then the
+ * feature-matrix views.
+ *
+ * Unlike the interactive mode (change-driven key frames), the movie samples
+ * at a UNIFORM tick (~15 fps) for its whole duration: every frame carries
+ * the same hold, so the rendered video is a continuous stream — no
+ * 3s/2s/1s jumps between static slides. Headless screenshots run ~35ms, so
+ * tick + shot lands around 15fps, which reads as fluid motion at 30fps out.
+ */
+const MOVIE_TICK_MS = 66;
+
+async function movieCapture(page, keyframes, label) {
+  const shot = await page.screenshot({ type: 'jpeg', quality: 85 });
+  keyframes.push({ shot, label, holdMs: MOVIE_TICK_MS });
+}
+
+/** Uniform sampling for `ms` of wall-clock time. */
+async function sampleHold(page, keyframes, ms, label) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    await movieCapture(page, keyframes, label);
+    // Screenshot takes ~35ms; keep the frame cadence near MOVIE_TICK_MS.
+    await sleep(Math.max(10, MOVIE_TICK_MS - 40));
+  }
+}
+
+/** Absolute-coordinate click + ripple, then keep sampling. */
+async function movieClick(page, keyframes, selector, label) {
+  const box = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (el === null) {
+      return null;
+    }
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, selector);
+  if (box === null) {
+    throw new Error(`movieClick: selector not found: ${selector}`);
+  }
+  await page.mouse.click(box.x, box.y);
+  await rippleAt(page, box.x, box.y);
+  await sampleHold(page, keyframes, 800, label);
+  await clearRipple(page);
+}
+
+export async function runShowcaseMovie() {
+  const chromePath = await findChrome();
+  const demo = await startDemoStack();
+  await mkdir(SHOT_DIR, { recursive: true });
+  await rm(SHOT_DIR, { recursive: true, force: true });
+  await mkdir(SHOT_DIR, { recursive: true });
+  await mkdir(OUT_DIR, { recursive: true });
+
+  const browser = await puppeteer.launch({
+    executablePath: chromePath,
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-gpu',
+      '--hide-scrollbars',
+      `--window-size=${String(WIDTH)},${String(HEIGHT)}`,
+    ],
+    defaultViewport: { width: WIDTH, height: HEIGHT },
+  });
+
+  const keyframes = [];
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://localhost:${String(WEB_PORT)}/`, { waitUntil: 'domcontentloaded' });
+
+    // Phase A — boot, then wait for the scripted user message (continuous
+    // sampling from the first frame; the seeded dataset can never match the
+    // scripted prompt text).
+    const userDeadline = Date.now() + 12000;
+    let userSeen = false;
+    while (Date.now() < userDeadline) {
+      userSeen = await page.evaluate(() => {
+        const el = document.querySelector('.message-user');
+        return el !== null && (el.textContent ?? '').includes('看看 PiHub 能为我做什么');
+      });
+      await movieCapture(page, keyframes, 'boot');
+      if (userSeen) {
+        break;
+      }
+      await sleep(MOVIE_TICK_MS);
+    }
+    if (!userSeen) {
+      throw new Error('movie: scripted user message never appeared');
+    }
+
+    // Phase B — sample the whole run (thinking → tool chain → typewriter →
+    // settle) until the unit auto-collapses and the final summary fades in.
+    const settleDeadline = Date.now() + 15000;
+    let collapsed = false;
+    while (Date.now() < settleDeadline) {
+      collapsed = await page.evaluate(
+        () => document.querySelector('.chat-unit[data-collapsed="true"]') !== null,
+      );
+      await movieCapture(page, keyframes, 'movie');
+      if (collapsed) {
+        break;
+      }
+      await sleep(MOVIE_TICK_MS);
+    }
+    if (!collapsed) {
+      throw new Error('movie: settle collapse never appeared');
+    }
+    await sampleHold(page, keyframes, 1600, 'final summary');
+
+    // Phase C — one click re-expands the block (nothing was trimmed).
+    await movieClick(page, keyframes, '.chat-unit-summary-line', 'expand block');
+    await sampleHold(page, keyframes, 1400, 'expanded');
+
+    // Phase D/E — feature matrix: cost insights, automation center. (No
+    // "back to chat": re-entering the chat view restarts the demo player.)
+    await movieClick(page, keyframes, 'button[aria-label="统计"]', 'stats view');
+    await sampleHold(page, keyframes, 2200, 'stats charts');
+    await movieClick(page, keyframes, '.sidebar-feature', 'automation center');
+    await sampleHold(page, keyframes, 2200, 'automation tabs');
+  } finally {
+    await browser.close();
+    demo.close();
+  }
+  return renderVideo(keyframes, 'showcase-movie');
+}
+
 /* ---- CLI entry ---------------------------------------------------- */
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runDefaultShowcase()
+  // --movie runs the director-script showcase movie (demo auto-play +
+  // typewriter + settle collapse + feature matrix); default keeps the
+  // classic interactive walkthrough.
+  const runner = process.argv.includes('--movie') ? runShowcaseMovie() : runDefaultShowcase();
+  runner
     .then(({ output, keyframes, durationSec, fingerprints }) => {
       // eslint-disable-next-line no-console
       console.log(

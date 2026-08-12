@@ -8,6 +8,7 @@ import { FilePreview } from '../components/FilePreview.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
+import { useMode } from '../kMode/useMode.js';
 import { api } from '../api/client.js';
 import type { AgentMessage } from '../../shared/types.js';
 import './ChatPage.css';
@@ -58,6 +59,20 @@ function extractAssistantMarkdown(message: AgentMessage): string {
     .map((block) => (block.type === 'text' ? block.text : ''))
     .join('\n')
     .trim();
+}
+
+/** Showcase sprint: the one-line final summary of a settled unit — the last
+ *  assistant reply, whitespace-collapsed and capped for the settle line. */
+function finalReplySummary(unit: ChatUnit): string | null {
+  const last = [...unit.rest].reverse().find((item) => item.message.role === 'assistant');
+  if (last === undefined) {
+    return null;
+  }
+  const text = extractAssistantMarkdown(last.message).replace(/\s+/g, ' ').trim();
+  if (text.length === 0) {
+    return null;
+  }
+  return text.length > 96 ? `${text.slice(0, 96)}…` : text;
 }
 
 /** Extracts the user prompt text (copy + edit primitives, P1-13 D/E). */
@@ -223,10 +238,33 @@ interface ChatPageProps {
 export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element {
   const chat = useChatSession();
   const { t, locale } = useI18n();
+  const mode = useMode();
   const settledNotify = useLabFlag('settledNotify');
   const simplifiedOutput = useLabFlag('simplifiedOutput');
+  // Showcase sprint: a settled run folds into one block (with a final
+  // summary line) instead of leaving the whole tool chain visible.
+  const settledCollapse = useLabFlag('settledCollapse');
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
+
+  // Showcase sprint: in demo mode, auto-play the scripted conversation so
+  // the panel performs the whole feature showcase (typewriter, tool chain,
+  // settle collapse) without any input. The play resets the mock session;
+  // reload then sees an empty conversation and the SSE stream fills it.
+  const chatReload = chat.reload;
+  useEffect(() => {
+    if (mode !== 'demo') {
+      return;
+    }
+    void (async () => {
+      try {
+        await api.demoPlay();
+      } catch {
+        // demo backend offline; the pre-seeded dataset stays visible
+      }
+      await chatReload();
+    })();
+  }, [mode, chatReload]);
   const [terminalOpen, setTerminalOpen] = useState(false);
   // P1-18: composer morphs into a bottom bar while the chat scroll is not
   // at the bottom; clicking the bar or Cmd/Ctrl+R expands it (forced).
@@ -365,7 +403,9 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
         : 'done';
 
   const toggleCollapsed = (key: string): void => {
-    if (simplifiedOutput) {
+    // Auto-collapse (simplified output or the showcase settle-collapse) is
+    // overridden through userExpanded; manual folds go through collapsedUnits.
+    if (simplifiedOutput || settledCollapse) {
       setUserExpanded((prev) => {
         const next = new Set(prev);
         if (next.has(key)) {
@@ -555,10 +595,15 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
               const isSettledUnit = isLast && !chat.isAgentRunning && runSummary !== null && unit.user !== null;
               const showSummary =
                 (isRunningUnit || isSettledUnit) && unit.user !== null;
-              // Simplified output auto-collapses settled workflows; the
-              // "....." marker then hints that more content is folded.
+              const finalSummary = isSettledUnit ? finalReplySummary(unit) : null;
+              // Simplified output / settle-collapse: settled workflows fold
+              // automatically; the "....." marker then hints that more
+              // content is folded, and a final summary line summarizes the
+              // last assistant reply.
               const autoCollapsed =
-                simplifiedOutput && isSettledUnit && !userExpanded.has(unit.key);
+                (simplifiedOutput || settledCollapse) &&
+                isSettledUnit &&
+                !userExpanded.has(unit.key);
               const collapsed =
                 autoCollapsed || collapsedUnits.has(unit.key);
               return (
@@ -567,8 +612,8 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                   className="chat-unit"
                   data-collapsed={collapsed}
                 >
-                  {!collapsed ? (
-                    <div className="chat-unit-body">
+                  <div className="chat-unit-body" data-collapsed={collapsed}>
+                    <div className="chat-unit-body-inner">
                       {unit.user !== null ? (
                         editingUnitKey === unit.key ? (
                           <div className="chat-unit-edit">
@@ -690,7 +735,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                         );
                       })()}
                     </div>
-                  ) : null}
+                  </div>
                   {(() => {
                     // Reply footer (P1-10 B / P1-11 B): branch at this reply's
                     // tree node + copy as markdown. Hidden until hover; pure
@@ -774,8 +819,13 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                           {/* Full-width divider line closing the workflow */}
                           <div className="chat-unit-divider" aria-hidden="true" />
                           {collapsed ? (
-                            <div className="chat-unit-settle mono" aria-hidden="true">
-                              .....
+                            <div className="chat-unit-settle mono">
+                              {isSettledUnit && finalSummary !== null ? (
+                                <span className="chat-unit-final-summary">
+                                  {t('chat.finalSummary')}：{finalSummary}
+                                </span>
+                              ) : null}
+                              <span aria-hidden="true">.....</span>
                             </div>
                           ) : null}
                         </>

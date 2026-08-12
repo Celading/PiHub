@@ -8,7 +8,9 @@ export type LabFlag =
   | 'compactTools'
   | 'settledNotify'
   | 'simplifiedOutput'
-  | 'showThinkingLive';
+  | 'showThinkingLive'
+  | 'typewriter'
+  | 'settledCollapse';
 
 const LAB_DEFAULTS: Record<LabFlag, boolean> = {
   streamAnimation: true,
@@ -18,6 +20,10 @@ const LAB_DEFAULTS: Record<LabFlag, boolean> = {
   // L005 owner spec stays the default: reasoning text is hidden while
   // streaming; the option reveals it live until the run settles.
   showThinkingLive: false,
+  // Showcase sprint: the typewriter reveal and the settle-collapse are on
+  // by default — both only affect rendering, never the message data.
+  typewriter: true,
+  settledCollapse: true,
 };
 
 export function getLabFlag(flag: LabFlag): boolean {

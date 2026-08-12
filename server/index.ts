@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import express from 'express';
 import path from 'node:path';
 import { RpcBridge } from './rpc-bridge.js';
@@ -5,6 +6,7 @@ import { createRouter } from './routes.js';
 import { createFileSessionProvider } from './providers/file-session-provider.js';
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
+import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
 import { createPipelineStore } from './pipelines/store.js';
@@ -178,6 +180,10 @@ if (mode !== 'demo') {
 }
 
 const demoMachine = mode === 'demo' ? new DemoStateMachine(hub, sessions) : null;
+// Showcase sprint: the scripted demo conversation player (same SSE hub, so
+// the typewriter / tool-chain collapse / final summary are all production
+// components reacting to ordinary events).
+const demoShowcase = mode === 'demo' ? new DemoShowcase(hub, sessions) : null;
 
 // Pipelines (P1-02-C): demo mode uses a throwaway temp store so the showcase
 // never writes PiHub-owned state on this machine; demo seeds show the surface
@@ -199,6 +205,7 @@ app.use(
   createRouter(bridge, sessions, hub, {
     mode,
     demoMachine,
+    demoShowcase,
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,

@@ -11,13 +11,13 @@ const prefix = (name, color, data) => {
   }
 };
 
-const run = (name, color, cmd, args) => {
+const run = (name, color, cmd, args, extraEnv = {}) => {
   const child = spawn(cmd, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     // Polling-based file watching: reliable under sandboxed runtimes where
     // native watchers (fsevents/inotify) are unavailable (vite uses its own
     // config flag; tsx/chokidar honors this env var).
-    env: { ...process.env, CHOKIDAR_USEPOLLING: 'true' },
+    env: { ...process.env, CHOKIDAR_USEPOLLING: 'true', ...extraEnv },
   });
   child.stdout?.on('data', (d) => prefix(name, color, d));
   child.stderr?.on('data', (d) => prefix(name, color, d));
@@ -30,5 +30,14 @@ const run = (name, color, cmd, args) => {
 
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-run('server', '34', npmCmd, ['run', 'dev:server']);
+// SPRINT-2 regression fix: the dev backend ran in production mode (default
+// PIHUB_MODE), so the control-token gate 401'd every write and sensitive
+// read from the vite page (no injected token there) — "missing or invalid
+// control token" on every action. The dev stack runs as `debug` mode (the
+// kMode escape hatch the server documents for tooling): Host / Origin / LAN
+// gating stay on, only the per-process token is disabled for the local page.
+run('server', '34', npmCmd, ['run', 'dev:server'], {
+  PIHUB_MODE: 'debug',
+  PIHUB_DEV_NO_TOKEN: '1',
+});
 run('web', '36', npmCmd, ['run', 'dev:web']);

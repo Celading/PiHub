@@ -37,7 +37,7 @@ export function Header({ theme, onThemeToggle, onMenuClick }: HeaderProps): Reac
           </span>
         ) : null}
         <span className="header-brand-mark" aria-hidden="true">
-          π
+          <img src="/icons/pihub-icon.svg" alt="" className="header-brand-mark-img" />
         </span>
         <div className="header-brand-text">
           <span className="header-brand-name">{t('brand.name')}</span>

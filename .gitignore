@@ -12,3 +12,4 @@ pi-session-*.html
 
 # showcase video exports (generated)
 out/
+*.tgz

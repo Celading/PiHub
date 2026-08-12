@@ -363,3 +363,25 @@
   overflow: auto;
   border-top: 1px dashed var(--border);
 }
+
+/* ---- Showcase sprint: typewriter reveal ---- */
+.typewriter {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.typewriter-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--primary);
+  animation: typewriter-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes typewriter-blink {
+  to {
+    visibility: hidden;
+  }
+}

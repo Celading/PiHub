@@ -106,6 +106,25 @@ Permissions · Prompt Favorites · Lab
 
 Requires [pi](https://pi.dev) (`pi --version` ≥ 0.83) and Node.js ≥ 20.
 
+### Install & run (via npm)
+
+```bash
+npm install -g @celading/pihub
+pihub
+```
+
+Then open **http://127.0.0.1:3001** in your browser. `pihub` spawns
+`pi --mode rpc` itself — no terminal window needed afterwards. The panel
+binds to the loopback interface only.
+
+- To keep it always available, run `pihub` in a terminal tab or as a
+  background service (e.g. `pihub &` / launchd).
+- Change the port with `PORT=4000 pihub`.
+- Full usage, features and troubleshooting: the [manual](MANUAL.md)
+  (中文版 [使用手册](MANUAL.zh-CN.md)).
+
+### From source (development)
+
 ```bash
 git clone https://github.com/HapPub/PiHub.git
 cd PiHub
@@ -147,7 +166,11 @@ Requirements: Google Chrome (or `CHROME_PATH`) and `ffmpeg` on PATH.
 
 ```sh
 npm run showcase:record
-# output: out/showcase-<timestamp>.mp4 (h264, 1280×800, 30fps)
+# output: out/showcase-<timestamp>.mp4 (h264, 1920×1080, 30fps)
+
+# the showcase movie: demo auto-play + typewriter + settle collapse
+# (see docs/showcase-director-script.md for the storyboard)
+npm run showcase:record -- --movie
 ```
 
 How it works:

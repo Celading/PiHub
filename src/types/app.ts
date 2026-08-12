@@ -11,7 +11,8 @@ export type SettingsSectionId =
   | 'sessions'
   | 'permissions'
   | 'favorites'
-  | 'lab';
+  | 'lab'
+  | 'about';
 
 export const VIEW_LABELS: Record<View, string> = {
   chat: 'Chat',
@@ -35,4 +36,5 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   { id: 'permissions', icon: 'hico-lock' },
   { id: 'favorites', icon: 'hico-bookmark' },
   { id: 'lab', icon: 'hico-flask' },
+  { id: 'about', icon: 'hico-questionmark-circle' },
 ];
