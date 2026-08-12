@@ -1,7 +1,7 @@
-/* Swiss grid shell: header spans full width; sidebar + resizer + main below. */
+/* Swiss grid shell: header spans full width; sidebar + resizer + main + right panel below. */
 .shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr) 6px 0px;
   grid-template-rows: var(--header-height) minmax(0, 1fr);
   height: 100%;
 }
