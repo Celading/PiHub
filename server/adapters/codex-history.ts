@@ -224,12 +224,67 @@ export async function listCodexSessions(): Promise<CodexSessionMeta[]> {
 const rolloutCache = new Map<string, { mtimeMs: number; detail: CodexSessionDetail | null }>();
 
 /** Locates a rollout file by thread id WITHOUT parsing the whole store —
- *  rollout file names embed the thread id (rollout-<ts>-<threadId>.jsonl). */
+ *  rollout file names embed the thread id (rollout-<ts>-<threadId>.jsonl).
+ *  The targeted lookup scans the FULL tree (no MAX_FILES cap — the listing
+ *  cap previously hid files beyond the 200th, making old threads unfindable)
+ *  and stops at the first name match; file names are immutable per thread,
+ *  so positive lookups are cached and repeats are instant. */
+const rolloutFileCache = new Map<string, string>();
+
 export async function findRolloutFile(threadId: string): Promise<string | null> {
-  const found: string[] = [];
-  await collectRolloutFiles(sessionsDir(), found, 0);
-  const match = found.find((file) => path.basename(file).includes(threadId));
-  return match ?? null;
+  const hit = rolloutFileCache.get(threadId);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const match = await findRolloutByName(sessionsDir(), threadId, 0);
+  if (match !== null) {
+    rolloutFileCache.set(threadId, match);
+    return match;
+  }
+  return null;
+}
+
+/** Depth-first name search without the listing cap (bounded by depth 4).
+ *  A resumed thread has MULTIPLE rollout files sharing the thread id; the
+ *  LATEST one (by mtime) is the live conversation — picking the first match
+ *  could land on an old multi-hundred-MB file. */
+async function findRolloutByName(dir: string, threadId: string, depth: number): Promise<string | null> {
+  if (depth > 4) {
+    return null;
+  }
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return null;
+  }
+  let best: { file: string; mtimeMs: number } | null = null;
+  for (const entry of entries) {
+    if (entry.startsWith('.')) {
+      continue;
+    }
+    const full = path.join(dir, entry);
+    let info;
+    try {
+      info = await stat(full);
+    } catch {
+      continue;
+    }
+    if (info.isDirectory()) {
+      const nested = await findRolloutByName(full, threadId, depth + 1);
+      if (nested !== null) {
+        const nestedInfo = await stat(nested).catch(() => null);
+        if (nestedInfo !== null && (best === null || nestedInfo.mtimeMs > best.mtimeMs)) {
+          best = { file: nested, mtimeMs: nestedInfo.mtimeMs };
+        }
+      }
+    } else if (info.isFile() && entry.endsWith('.jsonl') && entry.includes(threadId)) {
+      if (best === null || info.mtimeMs > best.mtimeMs) {
+        best = { file: full, mtimeMs: info.mtimeMs };
+      }
+    }
+  }
+  return best?.file ?? null;
 }
 
 /** Parses one rollout file into a lightweight session record. */
