@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SettingsSectionId, Theme, View } from './types/app';
 import { nextTheme, THEME_STORAGE_KEY } from './types/app';
 import { AppShell } from './layout/AppShell';
@@ -18,6 +18,7 @@ import { useI18n } from './i18n/I18nProvider.js';
 import { findDraftTab, newTabId, type ChatTab } from './chat/tabs.js';
 import type { PanelAgent } from './chat/chatState.js';
 import type { SessionSummary } from '../shared/types.js';
+import { parseRoute, serializeRoute } from './router.js';
 import './App.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'pi-panel:sidebar-collapsed';
@@ -161,6 +162,83 @@ export function App(): React.JSX.Element {
     },
     [bumpTab],
   );
+
+  // Hash routing: the initial hash is captured before any effect writes, so
+  // a refresh restores the view + selected session; state → hash sync only
+  // starts AFTER the initial hydration completes (otherwise the default
+  // state would clobber the incoming hash).
+  const initialHashRef = useRef<string>(window.location.hash);
+  const hydratedRef = useRef(false);
+
+  /** Apply a route to the app state (initial load + hashchange). */
+  const hydrateFromHash = useCallback(
+    async (hash: string): Promise<void> => {
+      const route = parseRoute(hash);
+      if (route === null) {
+        return;
+      }
+      if (route.view === 'chat') {
+        if (route.kind === 'draft') {
+          setAgent('pi');
+          setClaudeThread(null);
+          await newDraftTab();
+        } else if (route.kind === 'pi') {
+          setAgent('pi');
+          setClaudeThread(null);
+          const list = await api.sessions().catch(() => null);
+          const found = list?.sessions.find((session) => session.fileName === route.sessionFile);
+          await openSessionTab(
+            route.sessionFile,
+            found !== undefined ? sessionLabel(found) : route.sessionFile,
+          );
+        } else if (route.kind === 'codex') {
+          handleOpenCodexSession(route.threadId);
+        } else {
+          handleOpenClaudeSession(route.sessionId, route.label);
+        }
+        return;
+      }
+      setView(route.view);
+      if (route.view === 'settings') {
+        setSettingsSection(route.section);
+      }
+    },
+    [handleOpenClaudeSession, handleOpenCodexSession, newDraftTab, openSessionTab],
+  );
+
+  useEffect(() => {
+    void hydrateFromHash(initialHashRef.current).finally(() => {
+      hydratedRef.current = true;
+    });
+    const onHashChange = (): void => {
+      void hydrateFromHash(window.location.hash);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+    };
+  }, [hydrateFromHash]);
+
+  // Keep the address bar in sync with the app state (replaceState — no
+  // history spam, no hashchange loop; manual edits still work via the
+  // listener above).
+  useEffect(() => {
+    if (!hydratedRef.current) {
+      return;
+    }
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    const target = serializeRoute({
+      view,
+      agent,
+      codexThread,
+      claudeThread,
+      sessionFile: activeTab?.sessionFile ?? null,
+      settingsSection,
+    });
+    if (target !== window.location.hash) {
+      window.history.replaceState(null, '', target);
+    }
+  }, [view, agent, codexThread, claudeThread, tabs, activeTabId, settingsSection]);
 
   /** Close a tab; never leave the workspace tabless (fresh draft tab). */
   const closeTab = useCallback(
