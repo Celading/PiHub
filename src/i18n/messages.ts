@@ -488,6 +488,8 @@ export const zhMessages = {
   'about.manual': '使用手册',
   'about.security': '安全边界',
   'about.securityHint': '仅监听 127.0.0.1 / localhost；绝不读取 ~/.pi/agent/auth.json；无自有云服务。',
+  'about.home': '数据目录',
+  'about.configFile': '配置文件',
   'lab.showThinkingLive': '推理过程完整展示',
   'lab.showThinkingLiveHint': '推理进行时实时展示思考正文，推理完成自动收起',
 
@@ -974,6 +976,8 @@ export const enMessages: Record<MessageKey, string> = {
   'about.manual': 'Manual',
   'about.security': 'Security boundary',
   'about.securityHint': 'Binds 127.0.0.1 / localhost only; never reads ~/.pi/agent/auth.json; no cloud service of its own.',
+  'about.home': 'Data home',
+  'about.configFile': 'Config file',
   'lab.showThinkingLive': 'Show reasoning live',
   'lab.showThinkingLiveHint': 'Reveal the reasoning text while streaming; it collapses automatically once settled',
 

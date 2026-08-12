@@ -7,6 +7,9 @@ interface HealthInfo {
   name: string;
   version: string;
   time: string;
+  home?: string;
+  configFile?: string | null;
+  url?: string;
 }
 
 /** Settings → About: published version, install/run instructions, docs and
@@ -72,6 +75,16 @@ export function AboutSection(): React.JSX.Element {
       <div className="about-block">
         <div className="about-label mono">{t('about.security')}</div>
         <p className="settings-hint">{t('about.securityHint')}</p>
+        {info?.home !== undefined ? (
+          <p className="settings-hint mono">
+            {t('about.home')}: {info.home}
+          </p>
+        ) : null}
+        {info?.configFile !== undefined && info.configFile !== null ? (
+          <p className="settings-hint mono">
+            {t('about.configFile')}: {info.configFile}
+          </p>
+        ) : null}
       </div>
     </section>
   );

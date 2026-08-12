@@ -54,6 +54,29 @@ PIHUB_PORT=4000 npm start    # from source
 deployment platforms inject automatically). The About section in Settings
 always shows the port you are actually on.
 
+### Configuration & data home
+
+Every PiHub-owned artifact (config, stored data, databases, hardcoded
+content) lives under ONE dedicated home, resolved in this order:
+
+1. `$PIHUB_HOME` — explicit override,
+2. `~/.pihub` — default,
+3. `./itData` — runtime directory, used when the primary home cannot be
+   created or written (no permission).
+
+`<home>/config.toml` holds the server options (TOML subset):
+
+```toml
+# PiHub config — dedicated home: ~/.pihub (fallback ./itData)
+[server]
+port = 4000            # number — overridden by PIHUB_PORT/PORT env
+host = "127.0.0.1"     # bind host
+url = "http://127.0.0.1:4000"  # optional display/base url (derived by default)
+```
+
+The Settings → About section shows the resolved data home and config file.
+Nothing PiHub-owned is ever written into `~/.pi`.
+
 ### Versions
 
 PiHub follows [Semantic Versioning](https://semver.org/). The changelog

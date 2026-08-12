@@ -51,6 +51,27 @@ PIHUB_PORT=4000 npm start    # 源码运行
 `PIHUB_PORT` 优先于通用 `PORT` 环境变量（很多部署平台会自动注入 `PORT`）。
 设置页「关于」区始终显示当前实际端口。
 
+### 配置与数据目录
+
+PiHub 的所有自有产物（配置、数据存储、数据库、硬编码内容）统一存放于一个
+专属家目录，按以下顺序解析：
+
+1. `$PIHUB_HOME` —— 显式指定优先，
+2. `~/.pihub` —— 默认，
+3. `./itData` —— 运行目录；当家目录无法创建/写入（无权限）时回退。
+
+`<home>/config.toml` 保存服务器选项（TOML 子集）：
+
+```toml
+# PiHub 配置 —— 专属家目录：~/.pihub（回退 ./itData）
+[server]
+port = 4000            # 数字 —— 被 PIHUB_PORT/PORT 环境变量覆盖
+host = "127.0.0.1"     # 绑定地址
+url = "http://127.0.0.1:4000"  # 可选展示/基础地址（默认由 host+port 推导）
+```
+
+设置页「关于」区会显示解析到的数据目录与配置文件路径。PiHub 绝不写入 `~/.pi`。
+
 ### 版本
 
 PiHub 遵循[语义化版本](https://semver.org/lang/zh-CN/)。每次发布的完整

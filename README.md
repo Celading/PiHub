@@ -121,6 +121,20 @@ binds to the loopback interface only.
   background service (e.g. `pihub &` / launchd).
 - Change the port with `PIHUB_PORT=4000 pihub` (the generic `PORT` env var
   also works). The panel binds to the loopback interface only.
+
+### Configuration & data home
+
+Every PiHub-owned artifact lives in ONE dedicated home directory:
+
+1. `$PIHUB_HOME` when set (explicit override),
+2. `~/.pihub` by default,
+3. `./itData` (runtime directory) when the primary home has no write
+   permission.
+
+`config.toml` inside that home holds the server options (see the
+[manual](MANUAL.md) for the full table); future stored data, hardcoded
+content and databases use the same home. Nothing PiHub-owned is ever
+written into `~/.pi`.
 - Full usage, features and troubleshooting: the [manual](MANUAL.md)
   (中文版 [使用手册](MANUAL.zh-CN.md)).
 

@@ -21,12 +21,18 @@ import { PiAdapter } from './adapters/pi-adapter.js';
 import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
 import { getAtomcodeSession } from './adapters/atomcode-history.js';
 import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from './adapters/zcode-history.js';
+import { effectiveServerConfig, loadPihubConfig } from './config.js';
+import { configFileOf, resolvePihubHome } from './pihub-home.js';
 
-// Port precedence: PIHUB_PORT (PiHub-specific) → PORT (generic) → 3001.
-// The generic PORT is commonly injected by deployment platforms, so the
-// dedicated variable wins when both are present.
-const PORT = Number(process.env.PIHUB_PORT ?? process.env.PORT ?? 3001);
-const HOST = '127.0.0.1';
+// PIHUB_HOME → ~/.pihub (fallback ./itData when no permission); config.toml
+// inside it holds the server options. Env (PIHUB_PORT/PORT) wins over the
+// file; the generic PORT is commonly injected by deployment platforms, so
+// the dedicated variable takes precedence when both are present.
+const pihubConfigPromise = loadPihubConfig();
+const pihubHomePromise = resolvePihubHome();
+const effectiveConfig = effectiveServerConfig(await pihubConfigPromise);
+const PORT = effectiveConfig.port;
+const HOST = effectiveConfig.host;
 const PI_BINARY = process.env.PI_BINARY ?? 'pi';
 const AGENT_CWD = process.env.PI_CWD ?? process.cwd();
 
@@ -214,8 +220,9 @@ const demoShowcase = mode === 'demo' ? new DemoShowcase(hub, sessions) : null;
 // Pipelines (P1-02-C): demo mode uses a throwaway temp store so the showcase
 // never writes PiHub-owned state on this machine; demo seeds show the surface
 // (runs stay read-only via the 503 write guards).
+const pihubHome = await pihubHomePromise;
 const pipelineStore = createPipelineStore(
-  mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : undefined,
+  mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : pihubHome.dir,
 );
 if (mode === 'demo') {
   seedDemoPipelines(pipelineStore);
@@ -235,6 +242,11 @@ app.use(
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,
+    runtimeInfo: () => ({
+      home: pihubHome.dir,
+      configFile: configFileOf(pihubHome.dir),
+      url: effectiveConfig.url,
+    }),
     lanGate,
     codexExec:
       codexAdapter === null

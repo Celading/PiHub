@@ -197,6 +197,8 @@ export interface RouterModeOptions {
   reloadModels?: () => 'reloaded' | 'deferred';
   /** P1-03: workspace root the file preview may read from (cwd subtree). */
   allowedRoot?: string;
+  /** P1-08c: runtime info surfaced by /api/health (home dir, config file, url). */
+  runtimeInfo?: () => { home?: string; configFile?: string | null; url?: string };
   /**
    * P2-01: registered agent adapters (metadata + codex history surface).
    * `codexHistory` is the read-only integration (rollout parse); it is
@@ -333,6 +335,7 @@ export function createRouter(
       name: 'pihub',
       version: PKG_VERSION,
       time: new Date().toISOString(),
+      ...(options?.runtimeInfo !== undefined ? options.runtimeInfo() : {}),
     });
   });
 

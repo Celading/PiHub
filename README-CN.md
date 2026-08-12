@@ -112,6 +112,17 @@ pihub
 - 常驻运行：让 `pihub` 在终端标签页/后台服务中运行（如 `pihub &` 或
   launchd 配置）。
 - 更换端口：`PIHUB_PORT=4000 pihub`（通用 `PORT` 环境变量同样生效）。面板仅监听回环接口。
+
+### 配置与数据目录
+
+PiHub 的所有自有产物统一存放于一个专属家目录：
+
+1. `$PIHUB_HOME`（显式指定时优先），
+2. `~/.pihub`（默认），
+3. `./itData`（运行目录；家目录无写权限时回退）。
+
+家目录内的 `config.toml` 保存服务器选项（完整字段见[使用手册](MANUAL.zh-CN.md)）；
+后续的数据存储、硬编码内容、数据库统一使用同一家目录。PiHub 绝不写入 `~/.pi`。
 - 完整用法、功能与故障排查见 [使用手册](MANUAL.zh-CN.md)
   （[English manual](MANUAL.md)）。
 
