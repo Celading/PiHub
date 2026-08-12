@@ -119,7 +119,8 @@ binds to the loopback interface only.
 
 - To keep it always available, run `pihub` in a terminal tab or as a
   background service (e.g. `pihub &` / launchd).
-- Change the port with `PORT=4000 pihub`.
+- Change the port with `PIHUB_PORT=4000 pihub` (the generic `PORT` env var
+  also works). The panel binds to the loopback interface only.
 - Full usage, features and troubleshooting: the [manual](MANUAL.md)
   (中文版 [使用手册](MANUAL.zh-CN.md)).
 

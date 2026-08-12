@@ -14,6 +14,8 @@ interface HealthInfo {
 export function AboutSection(): React.JSX.Element {
   const { t } = useI18n();
   const [info, setInfo] = useState<HealthInfo | null>(null);
+  // The actual serving port (a custom PIHUB_PORT/PORT shows up here too).
+  const port = typeof window !== 'undefined' && window.location.port.length > 0 ? window.location.port : '3001';
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +48,7 @@ export function AboutSection(): React.JSX.Element {
         <div className="about-label mono">{t('about.install')}</div>
         <pre className="about-code mono">npm install -g @celading/pihub</pre>
         <pre className="about-code mono">pihub</pre>
-        <p className="settings-hint">{t('about.installHint')}</p>
+        <p className="settings-hint">{t('about.installHint', { port })}</p>
         <p className="settings-hint">{t('about.pwaHint')}</p>
       </div>
 

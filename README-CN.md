@@ -111,7 +111,7 @@ pihub
 
 - 常驻运行：让 `pihub` 在终端标签页/后台服务中运行（如 `pihub &` 或
   launchd 配置）。
-- 更换端口：`PORT=4000 pihub`。
+- 更换端口：`PIHUB_PORT=4000 pihub`（通用 `PORT` 环境变量同样生效）。面板仅监听回环接口。
 - 完整用法、功能与故障排查见 [使用手册](MANUAL.zh-CN.md)
   （[English manual](MANUAL.md)）。
 

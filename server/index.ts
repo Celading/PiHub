@@ -22,7 +22,10 @@ import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './
 import { getAtomcodeSession } from './adapters/atomcode-history.js';
 import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from './adapters/zcode-history.js';
 
-const PORT = Number(process.env.PORT ?? 3001);
+// Port precedence: PIHUB_PORT (PiHub-specific) → PORT (generic) → 3001.
+// The generic PORT is commonly injected by deployment platforms, so the
+// dedicated variable wins when both are present.
+const PORT = Number(process.env.PIHUB_PORT ?? process.env.PORT ?? 3001);
 const HOST = '127.0.0.1';
 const PI_BINARY = process.env.PI_BINARY ?? 'pi';
 const AGENT_CWD = process.env.PI_CWD ?? process.cwd();

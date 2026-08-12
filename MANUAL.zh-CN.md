@@ -34,6 +34,23 @@ npm run dev
 生产构建：`npm run build` → 由 Node 服务托管 `dist/`（`npm start`）。
 测试：`npm test`。
 
+> **为什么是 18384 而不是 3001？** 18384 只是 Vite 开发服务器端口（第 14 章：
+> `npm run dev` 时界面在 http://localhost:18384，`/api` 代理到后端
+> 127.0.0.1:3001）。打包后的 `pihub`/`npm start` 是单进程：Node 服务自行
+> 托管界面，默认端口 **3001**。
+
+### 端口
+
+服务器仅监听 `127.0.0.1`。更换端口：
+
+```bash
+PIHUB_PORT=4000 pihub        # 打包 CLI
+PIHUB_PORT=4000 npm start    # 源码运行
+```
+
+`PIHUB_PORT` 优先于通用 `PORT` 环境变量（很多部署平台会自动注入 `PORT`）。
+设置页「关于」区始终显示当前实际端口。
+
 ### 版本
 
 PiHub 遵循[语义化版本](https://semver.org/lang/zh-CN/)。每次发布的完整
