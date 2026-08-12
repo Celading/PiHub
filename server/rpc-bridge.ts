@@ -199,6 +199,12 @@ export class RpcBridge extends EventEmitter {
     return this.child !== null;
   }
 
+  /** Current pi session file (from get_state responses; null before the
+   *  first state read). Consumers use it to correlate events to a session. */
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
   /** Number of in-flight RPC requests awaiting a response (debug channel). */
   pendingRequestCount(): number {
     return this.pending.size;
@@ -325,6 +331,20 @@ export class RpcBridge extends EventEmitter {
           this.pending.delete(id);
           pending.resolve(response.data);
         }
+      }
+      // Correlation entry (audit P1 fix): pi RPC events carry NO session/run
+      // ids (probe-verified), so the session id is captured from the
+      // get_state response instead — every subsequent event envelope gets it
+      // injected (handleLine below), which lets consumers (pipeline engine)
+      // filter events per session. runId has no protocol source yet; it is a
+      // Run Kernel concern (next phase).
+      const data = response.data.data as { sessionFile?: unknown } | undefined;
+      if (
+        typeof data?.sessionFile === 'string' &&
+        data.sessionFile.length > 0 &&
+        data.sessionFile !== this.sessionId
+      ) {
+        this.sessionId = data.sessionFile;
       }
       this.emit('response', response.data);
       return;

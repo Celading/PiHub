@@ -36,6 +36,10 @@ export interface PipelineBridgeLike {
   send(command: RpcCommand): Promise<RpcResponse>;
   on(event: 'event', listener: (event: RpcStreamEvent) => void): unknown;
   off(event: 'event', listener: (event: RpcStreamEvent) => void): unknown;
+  /** Current session file for correlation (audit P1 fix): when available,
+   *  settle/output events from OTHER sessions are ignored, so concurrent
+   *  runs cannot steal each other's events. */
+  getSessionId?: () => string | null;
 }
 
 interface EngineEvents {
@@ -340,7 +344,12 @@ export class PipelineEngine extends EventEmitter {
             if (!sent.success) {
               throw new Error(sent.error ?? 'prompt 被 pi 拒绝');
             }
-            const settled = await this.waitForSettle(run, record, vars);
+            const settled = await this.waitForSettle(
+              run,
+              record,
+              vars,
+              this.bridge.getSessionId?.() ?? null,
+            );
             if (settled === 'aborted') {
               return 'stop';
             }
@@ -356,7 +365,12 @@ export class PipelineEngine extends EventEmitter {
             if (!sent.success) {
               throw new Error(sent.error ?? 'steer 被 pi 拒绝');
             }
-            const settled = await this.waitForSettle(run, record, vars);
+            const settled = await this.waitForSettle(
+              run,
+              record,
+              vars,
+              this.bridge.getSessionId?.() ?? null,
+            );
             if (settled === 'aborted') {
               return 'stop';
             }
@@ -409,11 +423,15 @@ export class PipelineEngine extends EventEmitter {
     });
   }
 
-  /** Waits for `agent_settled` while collecting the step's assistant/tool text. */
+  /** Waits for `agent_settled` while collecting the step's assistant/tool text.
+   *  Events are filtered by session (audit P1 fix): when the bridge knows the
+   *  current session AND the event carries a different sessionId, the event
+   *  belongs to another concurrent run and is ignored. */
   private waitForSettle(
     run: PipelineRunRecord,
     record: PipelineStepRecord,
     vars: Record<string, string>,
+    runSessionId: string | null,
   ): Promise<'settled' | 'aborted' | 'uncertain'> {
     return new Promise<'settled' | 'aborted' | 'uncertain'>((resolve) => {
       let done = false;
@@ -431,6 +449,13 @@ export class PipelineEngine extends EventEmitter {
         resolve(result);
       };
       const onEvent = (event: RpcStreamEvent): void => {
+        if (
+          runSessionId !== null &&
+          typeof event.sessionId === 'string' &&
+          event.sessionId !== runSessionId
+        ) {
+          return; // another session's run — not ours
+        }
         if (event.type === 'agent_settled') {
           finish('settled');
           return;

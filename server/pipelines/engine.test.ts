@@ -13,6 +13,12 @@ import type { RpcResponse } from '../../shared/types.js';
 class FakeBridge extends EventEmitter implements PipelineBridgeLike {
   public sent: RpcCommand[] = [];
   public failPrompt = false;
+  /** getSessionId() result (audit P1 correlation). */
+  public sessionId: string | null = null;
+
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
 
   send(command: RpcCommand): Promise<RpcResponse> {
     this.sent.push(command);
@@ -22,9 +28,10 @@ class FakeBridge extends EventEmitter implements PipelineBridgeLike {
     return Promise.resolve({ type: 'response', command: command.type, success: true });
   }
 
-  assistantText(text: string): void {
+  assistantText(text: string, sessionId?: string): void {
     this.emit('event', {
       type: 'message_update',
+      ...(sessionId !== undefined ? { sessionId } : {}),
       message: { role: 'assistant', content: [{ type: 'text', text }] },
     });
   }
@@ -36,8 +43,11 @@ class FakeBridge extends EventEmitter implements PipelineBridgeLike {
     });
   }
 
-  settle(): void {
-    this.emit('event', { type: 'agent_settled' });
+  settle(sessionId?: string): void {
+    this.emit('event', {
+      type: 'agent_settled',
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    });
   }
 }
 
@@ -358,5 +368,46 @@ describe('pipeline engine', () => {
     engine.start(pipeline, 'x', {});
     await tick();
     expect(bridge.sent).toContainEqual({ type: 'prompt', message: 'hi', streamingBehavior: 'followUp' });
+  });
+
+  it('ignores settle/output events from other sessions (audit P1 correlation)', async () => {
+    const pipeline = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridge = new FakeBridge();
+    bridge.sessionId = 'sess-A';
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(pipeline, 'x', {});
+    await tick(); // let the prompt step register its settle listener
+
+    // Another session's stream: output must not be collected, settle must
+    // not finish our run.
+    bridge.assistantText('foreign output', 'sess-B');
+    bridge.settle('sess-B');
+    await tick();
+    const stillRunning = engine.getRun(run.runId);
+    expect(stillRunning?.status).toBe('running');
+    expect(stillRunning?.steps[0]?.output ?? '').not.toContain('foreign output');
+
+    // Our session settles → the run completes with our own output.
+    bridge.assistantText('our output', 'sess-A');
+    bridge.settle('sess-A');
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    expect(finalRun.steps[0]?.output).toContain('our output');
+  });
+
+  it('keeps legacy behavior when correlation is unavailable', async () => {
+    const pipeline = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridge = new FakeBridge();
+    bridge.sessionId = null; // no get_state yet — events carry no ids either
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(pipeline, 'x', {});
+    await tick();
+    bridge.assistantText('legacy output');
+    bridge.settle();
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    expect(finalRun.steps[0]?.output).toContain('legacy output');
   });
 });
