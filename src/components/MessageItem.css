@@ -386,26 +386,52 @@
   }
 }
 
-/* ---- long content: visual cap + expand ---- */
+/* ---- long content: visual cap + fog reveal ---- */
 .long-content {
   position: relative;
   max-height: 40rem;
   overflow: hidden;
+  /* 雾气还原：内容上屏时从高斯模糊散开聚拢为实。data-expanded 切换
+     animation-name 使展开时动画重新播放。 */
+  animation: long-content-fog-in 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .long-content[data-expanded='true'] {
   max-height: none;
   overflow: visible;
+  animation-name: long-content-fog-reveal;
 }
 
+@keyframes long-content-fog-in {
+  from {
+    filter: blur(15px);
+  }
+  to {
+    filter: blur(0px);
+  }
+}
+
+@keyframes long-content-fog-reveal {
+  from {
+    filter: blur(15px);
+  }
+  to {
+    filter: blur(0px);
+  }
+}
+
+/* 折叠底部雾气：backdrop blur 让被遮内容呈雾气般模糊，mask 使雾气
+   自下而上渐浓（纯雾，非渐变遮罩）。 */
 .long-content:not([data-expanded='true'])::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 4rem;
-  background: linear-gradient(to bottom, transparent, var(--surface));
+  height: 6rem;
+  backdrop-filter: blur(15px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 55%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 55%);
   pointer-events: none;
 }
 

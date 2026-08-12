@@ -9,8 +9,8 @@ import { linkifyPaths } from './filePaths.js';
 import './MessageItem.css';
 
 /** Long content (big diffs, logs, long replies) collapses below a max
- *  height with a gradient + "expand all" button — content is never trimmed,
- *  only visually capped. */
+ *  height with a fog blur + "expand all" button — content is never trimmed,
+ *  only visually capped. Reveal animates blur(15px) → blur(0px). */
 function LongContent({
   children,
   label,
