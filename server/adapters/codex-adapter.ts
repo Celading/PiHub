@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
+import type { AgentMessage } from '../../shared/types.js';
+import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './codex-history.js';
 import {
   type AgentAdapter,
   type AgentAdapterEvents,
@@ -83,6 +85,65 @@ export function resolveCodexBinary(): string {
   return 'codex';
 }
 
+/** Converts parsed rollout entries into chat messages (session sync). */
+export function rolloutEntriesToMessages(entries: CodexSessionDetail['entries']): AgentMessage[] {
+  const out: AgentMessage[] = [];
+  for (const entry of entries) {
+    const timestamp = Date.parse(entry.timestamp);
+    const ts = Number.isNaN(timestamp) ? 0 : timestamp;
+    if (entry.type === 'input_text' && entry.text !== undefined) {
+      out.push({ role: 'user', content: entry.text, timestamp: ts });
+    } else if (entry.type === 'agent_message' && entry.text !== undefined) {
+      out.push({
+        role: 'assistant',
+        content: [{ type: 'text', text: entry.text }],
+        timestamp: ts,
+      });
+    } else if (entry.type === 'command_execution') {
+      out.push({
+        role: 'bashExecution',
+        command: '',
+        output: entry.text ?? '',
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+        fullOutputPath: null,
+        timestamp: ts,
+      });
+    } else if (entry.type === 'error' && entry.text !== undefined) {
+      out.push({
+        role: 'toolResult',
+        toolCallId: '',
+        toolName: 'codex.error',
+        content: [{ type: 'text', text: entry.text }],
+        isError: true,
+        timestamp: ts,
+      });
+    } else if (entry.toolName !== undefined && entry.text !== undefined) {
+      out.push({
+        role: 'toolResult',
+        toolCallId: '',
+        toolName: entry.toolName,
+        content: [{ type: 'text', text: entry.text }],
+        isError: entry.isError ?? false,
+        timestamp: ts,
+      });
+    }
+  }
+  return out;
+}
+
+/** Locates the rollout file for a thread and parses it. */
+export async function loadRolloutMessages(threadId: string): Promise<AgentMessage[] | null> {
+  const sessions = await listCodexSessions();
+  const match = sessions.find((session) => session.sessionId === threadId);
+  if (match === undefined) {
+    return null;
+  }
+  const detail = await parseRolloutFile(match.fileName);
+  return detail === null ? null : rolloutEntriesToMessages(detail.entries);
+}
+
 export class CodexAdapter extends EventEmitter implements AgentAdapter {
   readonly meta: AgentMeta = {
     kind: 'codex',
@@ -100,6 +161,10 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
   private resumeId: string | null = null;
   /** Per-process monotonic sequence for the event envelope. */
   private sequence = 0;
+  /** Rollout-loaded history for the current thread (session sync). */
+  private loadedMessages: AgentMessage[] = [];
+  /** Messages of the live (in-process) turns, appended as events arrive. */
+  private liveMessages: AgentMessage[] = [];
 
   constructor(
     private readonly binaryPath: string,
@@ -212,8 +277,15 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
     }
     if (command.type === 'switch_session') {
       // Remember the thread to resume on the next prompt — codex keeps its
-      // conversation context across processes via `exec resume`.
+      // conversation context across processes via `exec resume`. Also load
+      // its rollout history so the chat view can show the full conversation.
       this.resumeId = command.sessionId;
+      const history = await loadRolloutMessages(command.sessionId);
+      if (history !== null) {
+        this.loadedMessages = history;
+        this.threadId = command.sessionId;
+        this.liveMessages = [];
+      }
       return { type: 'response', command: 'switch_session', success: true };
     }
     if (command.type === 'get_state') {
@@ -230,6 +302,20 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
       success: false,
       error: `codex adapter: unsupported command ${command.type}`,
     };
+  }
+
+  /** Session sync: rollout history + live turns for the current thread. */
+  async getMessages(threadId?: string): Promise<AgentMessage[]> {
+    if (threadId !== undefined && threadId !== this.threadId && threadId !== this.resumeId) {
+      const history = await loadRolloutMessages(threadId);
+      if (history !== null) {
+        this.loadedMessages = history;
+        this.threadId = threadId;
+        this.resumeId = threadId;
+        this.liveMessages = [];
+      }
+    }
+    return [...this.loadedMessages, ...this.liveMessages];
   }
 
   private async sendPrompt(message: string): Promise<AgentResponse> {
@@ -288,10 +374,17 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
         }
       };
       this.on('event', onSettled);
+      this.liveMessages.push({ role: 'user', content: message, timestamp: Date.now() });
       child.stdin.write(`${message}\n`);
       // codex exec reads the whole prompt from stdin — EOF triggers the run.
       child.stdin.end();
     });
+  }
+
+  /** Broadcasts a message_update AND appends it to the live session list. */
+  private emitUpdate(envelope: Record<string, unknown>, message: AgentMessage): void {
+    this.liveMessages.push(message);
+    this.emit('event', { type: 'message_update', ...envelope, message });
   }
 
   private handleLine(line: string): void {
@@ -328,20 +421,18 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
         const runId = `${this.threadId ?? 'codex'}#${String(this.sequence)}`;
         this.emit('event', { type: 'agent_settled', ...envelope, runId });
         if (usage !== undefined) {
-          this.emit('event', {
-            type: 'message_update',
-            ...envelope,
-            runId,
-            message: {
-              role: 'toolResult',
-              toolName: 'codex.usage',
-              content: [
-                {
-                  type: 'text',
-                  text: `tokens in=${String(usage.input_tokens ?? 0)} out=${String(usage.output_tokens ?? 0)} reasoning=${String(usage.reasoning_output_tokens ?? 0)}`,
-                },
-              ],
-            },
+          this.emitUpdate(envelope, {
+            role: 'toolResult',
+            toolCallId: '',
+            toolName: 'codex.usage',
+            timestamp: Date.now(),
+            content: [
+              {
+                type: 'text',
+                text: `tokens in=${String(usage.input_tokens ?? 0)} out=${String(usage.output_tokens ?? 0)} reasoning=${String(usage.reasoning_output_tokens ?? 0)}`,
+              },
+            ],
+            isError: false,
           });
         }
         break;
@@ -353,40 +444,34 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
         const item = parsed.item;
         const itemType = item?.type ?? 'unknown';
         if (itemType === 'agent_message' && typeof item?.text === 'string') {
-          this.emit('event', {
-            type: 'message_update',
-            ...envelope,
-            message: {
-              role: 'assistant',
-              content: [{ type: 'text', text: item.text }],
-            },
+          this.emitUpdate(envelope, {
+            role: 'assistant',
+            content: [{ type: 'text', text: item.text }],
+            timestamp: Date.now(),
           });
         } else if (itemType === 'command_execution') {
           // Real frame shape (probe): { command, aggregated_output,
           // exit_code, status } — not name/text.
-          this.emit('event', {
-            type: 'message_update',
-            ...envelope,
-            message: {
-              role: 'bashExecution',
-              toolName: 'command',
-              output:
-                typeof item?.aggregated_output === 'string' ? item.aggregated_output : '',
-              exitCode: typeof item?.exit_code === 'number' ? item.exit_code : 0,
-            },
+          this.emitUpdate(envelope, {
+            role: 'bashExecution',
+            command: '',
+            output: typeof item?.aggregated_output === 'string' ? item.aggregated_output : '',
+            exitCode: typeof item?.exit_code === 'number' ? item.exit_code : 0,
+            cancelled: false,
+            truncated: false,
+            fullOutputPath: null,
+            timestamp: Date.now(),
           });
           // The command itself rides along as a toolResult frame so the UI
           // shows what was executed.
           if (typeof item?.command === 'string') {
-            this.emit('event', {
-              type: 'message_update',
-              ...envelope,
-              message: {
-                role: 'toolResult',
-                toolName: 'codex.command',
-                content: [{ type: 'text', text: item.command }],
-                isError: false,
-              },
+            this.emitUpdate(envelope, {
+              role: 'toolResult',
+              toolCallId: '',
+              toolName: 'codex.command',
+              content: [{ type: 'text', text: item.command }],
+              isError: false,
+              timestamp: Date.now(),
             });
           }
         } else if (itemType === 'error') {
@@ -397,15 +482,13 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
           if (errorText.includes('no rollout found')) {
             this.resumeId = null;
           }
-          this.emit('event', {
-            type: 'message_update',
-            ...envelope,
-            message: {
-              role: 'toolResult',
-              toolName: 'codex.error',
-              content: [{ type: 'text', text: errorText }],
-              isError: true,
-            },
+          this.emitUpdate(envelope, {
+            role: 'toolResult',
+            toolCallId: '',
+            toolName: 'codex.error',
+            content: [{ type: 'text', text: errorText }],
+            isError: true,
+            timestamp: Date.now(),
           });
         } else {
           this.emit('event', {

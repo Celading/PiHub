@@ -256,6 +256,7 @@ app.use(
                 ...(typeof response.error === 'string' ? { error: response.error } : {}),
               };
             },
+            messages: (threadId?: string) => codexAdapter.getMessages(threadId),
           },
     adapters: {
       list: () => adapters,

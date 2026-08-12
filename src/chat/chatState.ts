@@ -298,10 +298,20 @@ export function useChatSession(agent: PanelAgent): ChatSession {
 
   // Shared loader: initial mount and explicit reloads (demo showcase play
   // resets the mock conversation, then reload sees the empty session and
-  // the streamed showcase events fill it in).
+  // the streamed showcase events fill it in). In codex mode the messages
+  // come from the codex adapter (rollout history + live turns), so switching
+  // agents or refreshing keeps the full conversation visible.
   const reload = useCallback(async (): Promise<void> => {
     try {
-      const [messagesRes, stateRes] = await Promise.all([api.rpcMessages(), api.rpcState()]);
+      let messagesRes: { messages: unknown[] };
+      let stateRes: RpcState | null = null;
+      if (agent === 'codex') {
+        messagesRes = await api.codexMessages();
+      } else {
+        const [piMessages, piState] = await Promise.all([api.rpcMessages(), api.rpcState()]);
+        messagesRes = piMessages;
+        stateRes = piState;
+      }
       // Entry ids are best-effort: a transient failure must not blank the
       // whole chat — messages and state still load, branch buttons just
       // stay disabled until the next run provides ids.
@@ -323,14 +333,18 @@ export function useChatSession(agent: PanelAgent): ChatSession {
           }
         });
       }
-      dispatch({ type: 'reset', messages: chatMessages, rpcState: stateRes });
+      dispatch({
+        type: 'reset',
+        messages: chatMessages,
+        rpcState: agent === 'codex' ? null : stateRes,
+      });
     } catch (error) {
       dispatch({
         type: 'error',
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, []);
+  }, [agent]);
 
   useEffect(() => {
     void reload();

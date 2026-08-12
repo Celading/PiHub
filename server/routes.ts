@@ -175,6 +175,7 @@ export interface RouterModeOptions {
     abort: () => Promise<{ success: boolean }>;
     state: () => Promise<{ success: boolean; data?: { isStreaming: boolean; sessionId?: string | null } }>;
     switchSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+    messages: (threadId?: string) => Promise<import('../shared/types.js').AgentMessage[]>;
   } | null;
   debugState?: () => Record<string, unknown>;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
@@ -499,6 +500,16 @@ export function createRouter(
     }
     await codexExec.abort();
     res.json({ success: true });
+  });
+
+  router.get('/api/codex/messages', async (req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const thread = typeof req.query['thread'] === 'string' ? req.query['thread'] : undefined;
+    const messages = await codexExec.messages(thread);
+    res.json({ messages });
   });
 
   router.post('/api/codex/session', async (req, res) => {

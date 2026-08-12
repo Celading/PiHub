@@ -12,6 +12,7 @@ import type {
   SessionStats,
   SessionSummary,
   SessionTreeResponse,
+  AgentMessage,
 } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
@@ -449,6 +450,11 @@ export const api = {
 
   codexAbort(): Promise<{ success: boolean }> {
     return request<{ success: boolean }>('/api/codex/abort', { method: 'POST' });
+  },
+
+  codexMessages(threadId?: string): Promise<{ messages: AgentMessage[] }> {
+    const query = threadId === undefined ? '' : `?thread=${encodeURIComponent(threadId)}`;
+    return request<{ messages: AgentMessage[] }>(`/api/codex/messages${query}`);
   },
 
   codexSwitchSession(sessionId: string): Promise<{ success: boolean }> {
