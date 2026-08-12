@@ -5,6 +5,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { FilePreview } from '../components/FilePreview.js';
+import { PromptTimeline } from '../components/PromptTimeline.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
@@ -14,7 +15,7 @@ import type { AgentMessage } from '../../shared/types.js';
 import './ChatPage.css';
 
 /** One user prompt and everything that followed it until the next prompt. */
-interface ChatUnit {
+export interface ChatUnit {
   key: string;
   user: ChatMessage | null;
   rest: ChatMessage[];
@@ -312,6 +313,12 @@ export function ChatPage({
     () => new Set(),
   );
 
+  // Prompt timeline: jump the message stream to the clicked prompt unit.
+  const jumpToPrompt = useCallback((key: string): void => {
+    const target = document.querySelector(`[data-unit-key="${key}"]`);
+    target?.scrollIntoView({ block: 'start' });
+  }, []);
+
   const updateAtBottom = useCallback((): void => {
     const element = scrollRef.current;
     if (element === null) {
@@ -573,7 +580,9 @@ export function ChatPage({
   };
 
   return (
-    <section className="chatpage" data-shot="chat">
+    <div className="chat-workspace">
+      <PromptTimeline units={units} onJump={jumpToPrompt} />
+      <section className="chatpage" data-shot="chat">
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
@@ -651,6 +660,7 @@ export function ChatPage({
                   key={unit.key}
                   className="chat-unit"
                   data-collapsed={collapsed}
+                  data-unit-key={unit.key}
                 >
                   <div className="chat-unit-body" data-collapsed={collapsed}>
                     <div className="chat-unit-body-inner">
@@ -968,6 +978,7 @@ export function ChatPage({
           }}
         />
       ) : null}
-    </section>
+      </section>
+    </div>
   );
 }

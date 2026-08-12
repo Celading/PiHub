@@ -16,6 +16,7 @@ import type {
 } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
+import type { PromptRecord } from '../../server/prompts.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
 import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { controlTokenHeader } from './controlToken.js';
@@ -437,6 +438,27 @@ export const api = {
   },
 
   /* ---- codex exec adapter (ACTIVE) ---- */
+
+  claudeSessionDetail(sessionId: string): Promise<{ turns: Array<{ role: string; text: string; timestamp: string }> }> {
+    return request<{ turns: Array<{ role: string; text: string; timestamp: string }> }>(
+      `/api/claude/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  prompts(query?: { q?: string; agent?: string; limit?: number }): Promise<{ prompts: PromptRecord[] }> {
+    const params = new URLSearchParams();
+    if (query?.q !== undefined) {
+      params.set('q', query.q);
+    }
+    if (query?.agent !== undefined) {
+      params.set('agent', query.agent);
+    }
+    if (query?.limit !== undefined) {
+      params.set('limit', String(query.limit));
+    }
+    const suffix = params.toString().length > 0 ? `?${params.toString()}` : '';
+    return request<{ prompts: PromptRecord[] }>(`/api/prompts${suffix}`);
+  },
 
   claudeSessions(): Promise<{ sessions: ClaudeSessionMeta[] }> {
     return request<{ sessions: ClaudeSessionMeta[] }>('/api/claude/sessions');

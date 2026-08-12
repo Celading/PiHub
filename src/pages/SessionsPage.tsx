@@ -4,6 +4,7 @@ const CODEX_IMPORTED_KEY = 'pi-panel:codex-imported';
 import type { SessionSummary } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
+import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
 import type { ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { loadAdapterColors } from '../adapters/adapterColors.js';
 import { api } from '../api/client.js';
@@ -77,6 +78,9 @@ export function SessionsPage({
   const [reloadKey, setReloadKey] = useState(0);
   // P2-01 B/D: read-only codex records + per-adapter accent color.
   const [codexSessions, setCodexSessions] = useState<CodexSessionMeta[] | null>(null);
+  const [claudeSessions, setClaudeSessions] = useState<ClaudeSessionMeta[] | null>(null);
+  const [claudeOpenDetail, setClaudeOpenDetail] = useState<string | null>(null);
+  const [claudeDetail, setClaudeDetail] = useState<Array<{ role: string; text: string; timestamp: string }> | null>(null);
   const [codexError, setCodexError] = useState<string | null>(null);
   const [codexOpenDetail, setCodexOpenDetail] = useState<CodexSessionDetail | null>(null);
   /** "录入" (import): pin a codex record into the sidebar 会话 area. */
@@ -177,6 +181,25 @@ export function SessionsPage({
         }
       } catch {
         // adapter sections stay empty when unavailable
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // claude adapter: transcript records load once.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const response = await api.claudeSessions();
+        if (!cancelled) {
+          setClaudeSessions(response.sessions);
+        }
+      } catch {
+        // claude section stays empty when unavailable
       }
     };
     void load();
@@ -404,6 +427,62 @@ export function SessionsPage({
                     {String(session.totalTokens)} {t('adapter.tokens')} · {session.modelId}
                   </span>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="codex-sessions">
+        <div className="codex-sessions-head">
+          <h2 className="codex-sessions-title mono">{t('adapter.sessions', { label: 'Claude' })}</h2>
+          <p className="codex-sessions-hint mono">~/.claude/projects</p>
+        </div>
+        {claudeSessions === null ? (
+          <p className="sessions-hint">
+            <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
+          </p>
+        ) : claudeSessions.length === 0 ? (
+          <p className="sessions-hint">{t('sessions.hint.empty')}</p>
+        ) : (
+          <div className="codex-sessions-list">
+            {claudeSessions.map((session) => (
+              <div key={session.sessionId} className="codex-session-row" style={{ borderLeftColor: '#d97757' }}>
+                <div className="codex-session-main">
+                  <span className="codex-session-cwd mono" title={session.sessionId}>
+                    {session.cwd}
+                  </span>
+                  <span className="codex-session-meta mono">
+                    {String(session.messageCount)} {t('codex.messages')} ·{' '}
+                    {String(session.toolCalls)} {t('codex.tools')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary codex-session-open"
+                  onClick={() => {
+                    void (async () => {
+                      setClaudeOpenDetail(session.sessionId);
+                      try {
+                        const detail = await api.claudeSessionDetail(session.sessionId);
+                        setClaudeDetail(detail.turns);
+                      } catch {
+                        setClaudeDetail(null);
+                      }
+                    })();
+                  }}
+                >
+                  {t('codex.open')}
+                </button>
+                {claudeOpenDetail === session.sessionId && claudeDetail !== null ? (
+                  <div className="codex-session-detail">
+                    {claudeDetail.slice(0, 8).map((turn, index) => (
+                      <p key={index} className="codex-session-line mono" data-type={turn.role}>
+                        {turn.role}: {turn.text.slice(0, 120)}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

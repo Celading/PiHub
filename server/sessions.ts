@@ -15,7 +15,7 @@ import type {
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_LINES = 20_000;
-const SESSION_DIR = path.join(os.homedir(), '.pi', 'agent', 'sessions');
+export const SESSION_DIR = path.join(os.homedir(), '.pi', 'agent', 'sessions');
 /** P1-04: how many top-cost sessions the stats endpoint reports. */
 const TOP_SESSIONS_LIMIT = 5;
 
@@ -64,7 +64,7 @@ function costOf(message: AgentMessage): number {
   return message.usage?.cost?.total ?? 0;
 }
 
-async function collectSessionFiles(dir: string): Promise<string[]> {
+export async function collectSessionFiles(dir: string): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -86,7 +86,7 @@ async function collectSessionFiles(dir: string): Promise<string[]> {
   return files;
 }
 
-async function parseSessionFile(fileName: string): Promise<SessionDetail | null> {
+export async function parseSessionFile(fileName: string): Promise<SessionDetail | null> {
   let info;
   try {
     info = await stat(fileName);

@@ -643,3 +643,15 @@
   background-color: var(--surface-hover);
   color: var(--text-primary);
 }
+
+/* ---- chat workspace: prompt timeline rail (left) + chat content ---- */
+.chat-workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.chat-workspace > .chatpage {
+  flex: 1;
+  min-width: 0;
+}

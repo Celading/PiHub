@@ -8,7 +8,7 @@ import { createMockSessionProvider } from './providers/mock-session-provider.js'
 import { DemoStateMachine } from './demo/state-machine.js';
 import { CodexAdapter, resolveCodexBinary } from './adapters/codex-adapter.js';
 import { backfillCodexSessions, listCodexSessionsFast } from './adapters/codex-history.js';
-import { listClaudeSessions } from './adapters/claude-history.js';
+import { findClaudeTranscript, listClaudeSessions, parseClaudeDetail } from './adapters/claude-history.js';
 import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
@@ -273,6 +273,10 @@ app.use(
         ? {}
         : {
             claudeSessions: () => listClaudeSessions(),
+            claudeSessionDetail: async (id: string) => {
+              const file = await findClaudeTranscript(id);
+              return file === null ? [] : parseClaudeDetail(file);
+            },
             codexSessions: () => {
               const fast = listCodexSessionsFast();
               // Newest-first fast list renders immediately; the heavy

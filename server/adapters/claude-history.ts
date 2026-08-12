@@ -162,6 +162,55 @@ export async function parseClaudeTranscript(file: string): Promise<ClaudeSession
   };
 }
 
+/** Transcript detail: user/assistant text turns (read-only view). */
+export interface ClaudeTurn {
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+}
+
+export async function parseClaudeDetail(file: string): Promise<ClaudeTurn[]> {
+  let content: string;
+  try {
+    content = await readFile(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const turns: ClaudeTurn[] = [];
+  for (const line of content.split('\n')) {
+    if (line.trim().length === 0) {
+      continue;
+    }
+    let parsed: ClaudeLine;
+    try {
+      parsed = JSON.parse(line) as ClaudeLine;
+    } catch {
+      continue;
+    }
+    if (parsed.type !== 'user' && parsed.type !== 'assistant') {
+      continue;
+    }
+    const text = textOfContent(parsed.message?.content).trim();
+    if (text.length === 0) {
+      continue;
+    }
+    turns.push({
+      role: parsed.type,
+      text: text.slice(0, 400),
+      timestamp: parsed.timestamp ?? '',
+    });
+  }
+  return turns;
+}
+
+/** Locates a transcript by session id. */
+export async function findClaudeTranscript(sessionId: string): Promise<string | null> {
+  const files: string[] = [];
+  await collectTranscripts(files);
+  const match = files.find((file) => path.basename(file, '.jsonl') === sessionId);
+  return match ?? null;
+}
+
 /** Lists claude records, newest activity first. */
 export async function listClaudeSessions(): Promise<ClaudeSessionMeta[]> {
   const files: string[] = [];

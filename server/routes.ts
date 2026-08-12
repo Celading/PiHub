@@ -45,6 +45,7 @@ import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
 import type { AgentMessage } from '../shared/types.js';
 import type { DemoShowcase } from './demo/showcase.js';
+import { collectPrompts } from './prompts.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
@@ -202,6 +203,7 @@ export interface RouterModeOptions {
     list: () => Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
     codexSessions?: () => Promise<unknown[]>;
     claudeSessions?: () => Promise<unknown[]>;
+    claudeSessionDetail?: (id: string) => Promise<unknown[]>;
     codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
     /** ADAPTER2: atomcode + zcode read-only history surfaces. */
     atomcodeSession?: () => Promise<AtomcodeSessionDetail | null>;
@@ -464,6 +466,35 @@ export function createRouter(
 
   /* ---- codex exec adapter (ACTIVE 2026-08-12) ---- */
   const codexExec = options?.codexExec ?? null;
+
+  router.get('/api/claude/sessions/:id', async (req, res) => {
+    const fn = options?.adapters?.claudeSessionDetail;
+    if (fn === undefined) {
+      res.json({ turns: [] });
+      return;
+    }
+    try {
+      res.json({ turns: await fn(req.params.id) });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/prompts', async (req, res) => {
+    try {
+      const q = typeof req.query['q'] === 'string' ? req.query['q'] : undefined;
+      const agent = typeof req.query['agent'] === 'string' ? req.query['agent'] : undefined;
+      const limitRaw = typeof req.query['limit'] === 'string' ? Number(req.query['limit']) : NaN;
+      const records = await collectPrompts({
+        ...(q !== undefined ? { q } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(Number.isFinite(limitRaw) ? { limit: limitRaw } : {}),
+      });
+      res.json({ prompts: records });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
 
   router.get('/api/claude/sessions', async (_req, res) => {
     const fn = options?.adapters?.claudeSessions;
