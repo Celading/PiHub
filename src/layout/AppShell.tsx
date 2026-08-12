@@ -34,8 +34,13 @@ interface AppShellProps {
   onThemeToggle: () => void;
   /** Active agent (pi RPC or codex exec) — the right sidebar tree tab is pi-only. */
   agent: 'pi' | 'codex';
+  /** Right panel open state — owned by App so the TabBar toggle shares it. */
+  rightOpen: boolean;
+  onToggleRight: () => void;
   /** Open a codex record in the codex chat (from the sidebar). */
   onOpenCodexSession: (threadId: string, label: string) => void;
+  /** Open a claude transcript read-only (from the sidebar). */
+  onOpenClaudeSession: (sessionId: string, label: string) => void;
   children: ReactNode;
 }
 
@@ -83,12 +88,14 @@ export function AppShell({
   onSessionChanged,
   onThemeToggle,
   agent,
+  rightOpen,
+  onToggleRight,
   onOpenCodexSession,
+  onOpenClaudeSession,
   children,
 }: AppShellProps): React.JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
   const [rightWidth, setRightWidth] = useState<number>(() => loadRightWidth());
-  const [rightOpen, setRightOpen] = useState(true);
   // P1-08d: docked (edge-attached with the grid resizer) or floating
   // (top-right card). Persisted so the choice survives reloads.
   const [rightMode, setRightMode] = useState<'docked' | 'float'>(() => {
@@ -209,6 +216,8 @@ export function AppShell({
         onMenuClick={() => {
           setMobileOpen(true);
         }}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={onToggleCollapsed}
       />
       {isMobile && mobileOpen ? (
         <div
@@ -233,6 +242,7 @@ export function AppShell({
           onViewChange={onViewChange}
           onSessionChanged={onSessionChanged}
           onOpenCodexSession={onOpenCodexSession}
+          onOpenClaudeSession={onOpenClaudeSession}
         />
       </div>
       <div
@@ -264,9 +274,7 @@ export function AppShell({
             setRightMode(mode);
           }}
           onResizeStart={startRightResize}
-          onClose={() => {
-            setRightOpen(false);
-          }}
+          onClose={onToggleRight}
         />
       ) : null}
     </div>

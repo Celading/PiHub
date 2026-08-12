@@ -8,6 +8,9 @@ interface TabBarProps {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNew: () => void;
+  /** Right workbench visibility (toggle shown at the strip's far right). */
+  rightOpen: boolean;
+  onToggleRight: () => void;
 }
 
 /** Top tab strip of the multi-session chat workspace (P1-06). */
@@ -17,6 +20,8 @@ export function TabBar({
   onSelect,
   onClose,
   onNew,
+  rightOpen,
+  onToggleRight,
 }: TabBarProps): React.JSX.Element {
   const { t } = useI18n();
   return (
@@ -55,6 +60,15 @@ export function TabBar({
         onClick={onNew}
       >
         +
+      </button>
+      <button
+        type="button"
+        className="tabbar-right-toggle mono"
+        title={rightOpen ? t('rightSidebar.close') : t('rightSidebar.open')}
+        data-active={rightOpen}
+        onClick={onToggleRight}
+      >
+        {rightOpen ? '⇱' : '⇲'}
       </button>
     </div>
   );

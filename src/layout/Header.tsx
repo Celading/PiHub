@@ -8,12 +8,17 @@ interface HeaderProps {
   theme: Theme;
   onThemeToggle: () => void;
   onMenuClick: () => void;
+  /** Sidebar expand/collapse — toggled by clicking the brand logo. */
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
 }
 
 export function Header({
   theme,
   onThemeToggle,
   onMenuClick,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: HeaderProps): React.JSX.Element {
   const serverStatus = useServerHealth();
   const mode = useMode();
@@ -47,9 +52,15 @@ export function Header({
             {modeLabel}
           </span>
         ) : null}
-        <span className="header-brand-mark" aria-hidden="true">
+        <button
+          type="button"
+          className="header-brand-mark"
+          title={sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+          data-collapsed={sidebarCollapsed}
+          onClick={onToggleSidebar}
+        >
           <img src="/icons/pihub-icon.svg" alt="" className="header-brand-mark-img" />
-        </span>
+        </button>
         <div className="header-brand-text">
           <span className="header-brand-name">{t('brand.name')}</span>
           <span className="header-brand-sub" title={t('brand.tagline')}>

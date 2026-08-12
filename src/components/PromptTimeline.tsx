@@ -51,6 +51,7 @@ export function PromptTimeline({
         const key = unit.key;
         const summary = promptSummary(unit);
         const span = workingSpan(unit);
+        const time = promptTime(unit);
         const showTip = hovered?.key === key;
         return (
           <div
@@ -61,9 +62,8 @@ export function PromptTimeline({
               onJump(key);
             }}
             onMouseEnter={(event) => {
-              // Fixed-position tooltip anchored to the tick's rect: escapes
-              // the rail's overflow clip AND paints above the chat stream
-              // (which would otherwise cover an absolutely positioned tip).
+              // Fixed-position tooltip anchored to the item's rect: escapes
+              // the rail's overflow clip AND paints above the chat stream.
               const rect = event.currentTarget.getBoundingClientRect();
               setHovered({ key, left: rect.left - 8 - 240, top: rect.top + rect.height / 2 });
             }}
@@ -71,7 +71,10 @@ export function PromptTimeline({
               setHovered(null);
             }}
           >
-            <span className="prompt-timeline-tick" aria-hidden="true" />
+            <span className="prompt-timeline-time mono" aria-hidden="true">
+              {time}
+            </span>
+            <span className="prompt-timeline-text">{summary}</span>
             {hovered !== null && hovered.key === key ? (
               <div
                 className="prompt-timeline-tip mono"
@@ -90,6 +93,18 @@ export function PromptTimeline({
       })}
     </div>
   );
+}
+
+/** HH:MM of the prompt (the unit's user message timestamp). */
+function promptTime(unit: ChatUnit): string {
+  const ts = unit.user?.message.timestamp;
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) {
+    return '';
+  }
+  const date = new Date(ts);
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 /** Working time of a prompt unit (first to last message span). */

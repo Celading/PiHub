@@ -5,6 +5,7 @@ import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
 import { loadAdapterColors } from '../adapters/adapterColors.js';
 import type { CodexSessionMeta } from '../../server/adapters/codex-history.js';
+import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
 import { ContextMenu } from '../components/ContextMenu.js';
@@ -36,6 +37,8 @@ interface SidebarProps {
   onSessionChanged: (fileName?: string | null, label?: string) => void;
   /** Open a codex record in the codex chat (switch agent + resume thread). */
   onOpenCodexSession: (threadId: string, label: string) => void;
+  /** Open a claude transcript read-only in the chat. */
+  onOpenClaudeSession: (sessionId: string, label: string) => void;
 }
 
 type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
@@ -274,6 +277,7 @@ export function Sidebar({
   onViewChange,
   onSessionChanged,
   onOpenCodexSession,
+  onOpenClaudeSession,
 }: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -675,10 +679,14 @@ export function Sidebar({
         onOpenCodexSession((row.target as CodexSessionMeta).sessionId, row.label);
         return;
       }
+      if (row.agent === 'claude') {
+        onOpenClaudeSession((row.target as ClaudeSessionMeta).sessionId, row.label);
+        return;
+      }
       // atomcode / zcode are read-only records.
       onViewChange('sessions');
     },
-    [handleResume, onOpenCodexSession, onViewChange],
+    [handleResume, onOpenCodexSession, onOpenClaudeSession, onViewChange],
   );
 
   const handleArchive = useCallback((sessionId: string): void => {

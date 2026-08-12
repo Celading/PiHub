@@ -255,14 +255,64 @@ interface ChatPageProps {
   agent: PanelAgent;
   /** Codex thread to resume on mount (sidebar "open record"). */
   codexThread?: string | null;
+  /** Claude transcript to render read-only (sidebar "open record"). */
+  claudeThread?: { sessionId: string; label: string } | null;
 }
 
 export function ChatPage({
   onSessionChanged,
   agent,
   codexThread = null,
+  claudeThread = null,
 }: ChatPageProps): React.JSX.Element {
   const chat = useChatSession(agent);
+  const transcriptMode = claudeThread != null;
+  const [transcript, setTranscript] = useState<ChatMessage[] | null>(null);
+
+  // Claude transcript loader (read-only): turns → chat messages.
+  useEffect(() => {
+    if (!transcriptMode) {
+      setTranscript(null);
+      return;
+    }
+    let cancelled = false;
+    setTranscript(null);
+    api
+      .claudeSessionDetail(claudeThread.sessionId)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        const messages: ChatMessage[] = (Array.isArray(response.turns) ? response.turns : [])
+          .filter((turn) => (turn.role === 'user' || turn.role === 'assistant') && turn.text.trim().length > 0)
+          .map((turn, index) => {
+            const parsed = Date.parse(turn.timestamp);
+            return {
+              key: `claude-${claudeThread.sessionId}-${String(index)}`,
+              message: {
+                role: turn.role,
+                // Assistant messages render content as BLOCKS (ContentBlocks
+                // maps over it) — wrap the transcript text accordingly.
+                content:
+                  turn.role === 'assistant'
+                    ? [{ type: 'text', text: turn.text }]
+                    : turn.text,
+                timestamp: Number.isFinite(parsed) ? parsed : Date.now(),
+              } as AgentMessage,
+              isStreaming: false,
+            };
+          });
+        setTranscript(messages);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTranscript([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [transcriptMode, claudeThread]);
   const { t, locale } = useI18n();
   const mode = useMode();
   const settledNotify = useLabFlag('settledNotify');
@@ -447,7 +497,8 @@ export function ChatPage({
     }
   }, [chat.isAgentRunning, settledNotify, t]);
 
-  const units = buildUnits(chat.messages);
+  const viewMessages = transcriptMode ? (transcript ?? []) : chat.messages;
+  const units = buildUnits(viewMessages);
   const lastUnit = units[units.length - 1];
 
   // Right workbench session tree: jumping a user entry scrolls the chat to
@@ -621,7 +672,6 @@ export function ChatPage({
 
   return (
     <div className="chat-workspace">
-      <PromptTimeline units={units} onJump={jumpToPrompt} />
       <section className="chatpage" data-shot="chat">
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
@@ -645,8 +695,8 @@ export function ChatPage({
         ) : null}
         {/* P1-09: fog skeleton while the switched session's messages load;
             the real content then condenses in (fog themes). */}
-        <FogLoading loading={!chat.hasLoaded}>
-        {chat.messages.length === 0 ? (
+        <FogLoading loading={transcriptMode ? transcript === null : !chat.hasLoaded}>
+        {viewMessages.length === 0 ? (
           <div className="chatpage-empty">
             <h2 className="panel-title">{t('chat.empty.title')}</h2>
             <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
@@ -954,6 +1004,11 @@ export function ChatPage({
         >
           {terminalOpen ? '▾' : '▴'} {t('terminal.title')}
         </button>
+        {transcriptMode ? (
+          <div className="chat-transcript-banner mono">
+            {t('chat.transcriptReadOnly', { label: (claudeThread as { label: string } | null)?.label ?? '' })}
+          </div>
+        ) : (
         <Composer
           isAgentRunning={chat.isAgentRunning}
           rpcState={chat.rpcState}
@@ -978,6 +1033,7 @@ export function ChatPage({
             void chat.setThinkingLevel(level);
           }}
         />
+        )}
       </div>
 
       {branchConfirm !== null ? (
@@ -1004,6 +1060,7 @@ export function ChatPage({
         />
       ) : null}
       </section>
+      <PromptTimeline units={units} onJump={jumpToPrompt} />
     </div>
   );
 }

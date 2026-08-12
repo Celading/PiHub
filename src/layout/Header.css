@@ -145,3 +145,15 @@
 .header-theme-toggle:hover {
   background-color: var(--surface-hover);
 }
+
+/* P1-08e: brand logo doubles as the sidebar expand/collapse toggle. */
+.header-brand-mark {
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.header-brand-mark:hover {
+  outline: 2px solid var(--primary-subtle);
+  outline-offset: 1px;
+}
