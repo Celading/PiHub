@@ -3,6 +3,7 @@ import type { SessionSummary } from '../../shared/types.js';
 import { SETTINGS_SECTIONS, type SettingsSectionId, type View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
+import type { CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
 import { ContextMenu } from '../components/ContextMenu.js';
@@ -32,9 +33,35 @@ interface SidebarProps {
    *  or switch a chat tab. null = new/current session (draft tab); a file
    *  name = open that session; undefined = rebind the active tab only. */
   onSessionChanged: (fileName?: string | null, label?: string) => void;
+  /** Open a codex record in the codex chat (switch agent + resume thread). */
+  onOpenCodexSession: (threadId: string, label: string) => void;
 }
 
 type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
+
+/** Agents whose sessions converge in the sidebar (default: all shown). */
+type SidebarAgent = 'pi' | 'codex' | 'atomcode' | 'zcode';
+
+const AGENT_GLYPHS: Record<SidebarAgent, string> = {
+  pi: 'π',
+  codex: '⌘',
+  atomcode: 'A',
+  zcode: 'Z',
+};
+
+/** One unified sidebar row across every agent's session records. */
+interface AgentSessionRow {
+  key: string;
+  agent: SidebarAgent;
+  /** Grouping unit (folder): cwd for pi/codex, empty for record-only agents. */
+  cwd: string;
+  label: string;
+  messageCount: number;
+  lastActivityAt: string;
+  status: SessionStatus;
+  /** Original record (SessionSummary / CodexSessionMeta / ...). */
+  target: unknown;
+}
 
 const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
   general: 'settings.nav.general',
@@ -80,7 +107,7 @@ function loadJson(key: string, fallback: string): string {
 }
 
 interface SessionRowProps {
-  session: SessionSummary;
+  row: AgentSessionRow;
   intlTag: string;
   active: boolean;
   status: SessionStatus;
@@ -88,13 +115,15 @@ interface SessionRowProps {
   unread: boolean;
   /** P1-17 E: the agent has a pending request for this session — blink. */
   blink: boolean;
-  onOpen: (session: SessionSummary) => void;
-  onContextMenu: (event: React.MouseEvent, session: SessionSummary) => void;
-  t: (key: Parameters<ReturnType<typeof useI18n>['t']>[0], params?: Record<string, string | number>) => string;
+  onOpen: (row: AgentSessionRow) => void;
+  onContextMenu: (event: React.MouseEvent, row: AgentSessionRow) => void;
+  /** Codex record imported ("录入") into the 会话 area — show a pin. */
+  imported: boolean;
+  t: ReturnType<typeof useI18n>['t'];
 }
 
 function SessionRow({
-  session,
+  row,
   intlTag,
   active,
   status,
@@ -102,6 +131,7 @@ function SessionRow({
   blink,
   onOpen,
   onContextMenu,
+  imported,
   t,
 }: SessionRowProps): React.JSX.Element {
   const [dragId, setDragId] = useState<string | null>(null);
@@ -116,38 +146,53 @@ function SessionRow({
           : t('session.status.done');
 
   // P1-17 E: dot shows for unseen sessions; the active session hides it
-  // unless it is busy or has a pending agent request (blink).
-  const showDot = active
-    ? status !== 'done' || blink
-    : unread || status === 'running';
+  // unless it is busy or has a pending agent request (blink). The dot sits
+  // on the RIGHT of the row (agent badge on the left), space-between.
+  const showDot =
+    row.agent === 'pi' && (active ? status !== 'done' || blink : unread || status === 'running');
 
   return (
     <div
       className="sidebar-session-row"
       data-active={active}
-      draggable
+      draggable={row.agent === 'pi'}
       onDragStart={(event) => {
-        setDragId(session.id);
-        event.dataTransfer.setData('text/plain', session.id);
+        setDragId(row.key);
+        event.dataTransfer.setData('text/plain', row.key);
         event.dataTransfer.effectAllowed = 'move';
       }}
       onDragEnd={() => {
         setDragId(null);
       }}
-      data-dragging={dragId === session.id}
+      data-dragging={dragId === row.key}
     >
       <button
         type="button"
         className="sidebar-session-item"
         onClick={() => {
-          onOpen(session);
+          onOpen(row);
         }}
         onContextMenu={(event) => {
-          onContextMenu(event, session);
+          onContextMenu(event, row);
         }}
-        title={session.cwd}
+        title={row.cwd.length > 0 ? row.cwd : row.label}
       >
         <span className="sidebar-session-head">
+          <span className="agent-badge" data-agent={row.agent} aria-hidden="true">
+            {AGENT_GLYPHS[row.agent]}
+          </span>
+          <span className="sidebar-session-cwd mono">{row.label}</span>
+          {imported ? (
+            <span className="agent-pin" title={t('sidebar.imported')}>
+              ✓
+            </span>
+          ) : null}
+        </span>
+        <span className="sidebar-session-meta mono">
+          <span>
+            {String(row.messageCount)} {t('sidebar.msgs')} ·{' '}
+            {formatTime(row.lastActivityAt, intlTag)}
+          </span>
           {showDot ? (
             <span
               className="session-status-dot"
@@ -157,14 +202,6 @@ function SessionRow({
               aria-label={blink ? t('session.status.request') : statusLabel}
             />
           ) : null}
-          <span className="sidebar-session-cwd mono">
-            {session.name !== undefined && session.name.length > 0
-              ? session.name
-              : shortCwd(session.cwd)}
-          </span>
-        </span>
-        <span className="sidebar-session-meta mono">
-          {String(session.messageCount)} {t('sidebar.msgs')} · {formatTime(session.lastActivityAt, intlTag)}
         </span>
       </button>
     </div>
@@ -183,9 +220,42 @@ export function Sidebar({
   requestPending,
   onViewChange,
   onSessionChanged,
+  onOpenCodexSession,
 }: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  /** All-agent rows (pi + codex + atomcode + zcode) converged in one list. */
+  const [agentRows, setAgentRows] = useState<AgentSessionRow[]>(() => []);
+  /** Sidebar filter: 'all' shows every agent's records (default). */
+  const [agentFilter, setAgentFilter] = useState<'all' | SidebarAgent>('all');
+  /** Codex records "录入" (imported) from the history page — pinned on top. */
+  const [importedCodex, setImportedCodex] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('pi-panel:codex-imported');
+      const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const sync = (): void => {
+      try {
+        const raw = localStorage.getItem('pi-panel:codex-imported');
+        const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+        setImportedCodex(
+          Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [],
+        );
+      } catch {
+        // storage unavailable
+      }
+    };
+    window.addEventListener('pihub:codex-imported-changed', sync);
+    return () => {
+      window.removeEventListener('pihub:codex-imported-changed', sync);
+    };
+  }, []);
   const [query, setQuery] = useState('');
   const [userId, setUserId] = useState<string>(() => {
     return localStorage.getItem(USER_ID_STORAGE_KEY) ?? 'guest';
@@ -261,10 +331,74 @@ export function Sidebar({
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const response = await api.sessions();
-        if (!cancelled) {
-          setSessions(response.sessions.slice(0, MAX_SESSIONS));
+        // Multi-agent convergence: pi sessions + codex rollout records +
+        // atomcode history + zcode model-I/O records, unified into rows.
+        const [pi, codex, atomcode, zcode] = await Promise.all([
+          api.sessions().catch(() => null),
+          api.codexSessions().catch(() => null),
+          api.atomcodeSession().catch(() => null),
+          api.zcodeSessions().catch(() => null),
+        ]);
+        if (cancelled) {
+          return;
         }
+        const rows: AgentSessionRow[] = [];
+        for (const session of (pi?.sessions ?? []).slice(0, MAX_SESSIONS)) {
+          rows.push({
+            key: `pi:${session.id}`,
+            agent: 'pi',
+            cwd: session.cwd,
+            label:
+              session.name !== undefined && session.name.length > 0
+                ? session.name
+                : shortCwd(session.cwd),
+            messageCount: session.messageCount,
+            lastActivityAt: session.lastActivityAt,
+            status: statusOf(session),
+            target: session,
+          });
+        }
+        for (const meta of codex?.sessions ?? []) {
+          rows.push({
+            key: `codex:${meta.sessionId}`,
+            agent: 'codex',
+            cwd: meta.cwd,
+            label: shortCwd(meta.cwd),
+            messageCount: meta.messageCount,
+            lastActivityAt: meta.lastActivityAt,
+            status: 'done',
+            target: meta,
+          });
+        }
+        if (atomcode?.session !== null && atomcode?.session !== undefined) {
+          rows.push({
+            key: `atomcode:${atomcode.session.id}`,
+            agent: 'atomcode',
+            cwd: '',
+            label:
+              atomcode.session.lastText.length > 0
+                ? atomcode.session.lastText.slice(0, 24)
+                : 'AtomCode',
+            messageCount: atomcode.session.messageCount,
+            lastActivityAt: atomcode.session.startedAt,
+            status: 'done',
+            target: atomcode.session,
+          });
+        }
+        for (const meta of zcode?.sessions ?? []) {
+          rows.push({
+            key: `zcode:${meta.sessionId}`,
+            agent: 'zcode',
+            cwd: '',
+            label: meta.modelId.length > 0 ? meta.modelId : 'ZCode',
+            messageCount: meta.turns,
+            lastActivityAt: meta.completedAt,
+            status: 'done',
+            target: meta,
+          });
+        }
+        rows.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
+        setAgentRows(rows);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
@@ -279,7 +413,8 @@ export function Sidebar({
     // enough for the unread watermark.
     // P1-deletefix: also reload after a deletion, since removing a session
     // file does not emit any pi SSE status change.
-  }, [sessionStatus, deleteTick]);
+  }, [sessionStatus, deleteTick]); // eslint-disable-line react-hooks/exhaustive-deps -- statusOf is a stable in-component helper
+
 
   // P1-13 B: new sessions auto-join a collection named after their cwd
   // folder (created on demand). Existing sessions are left untouched — only
@@ -421,6 +556,24 @@ export function Sidebar({
       }
     },
     [markRead, onSessionChanged, onViewChange, t],
+  );
+
+  /** Multi-agent row click: pi resumes the session, codex switches agent +
+   *  resumes the thread, record-only agents open the history page. */
+  const handleOpenRow = useCallback(
+    (row: AgentSessionRow): void => {
+      if (row.agent === 'pi') {
+        void handleResume(row.target as SessionSummary);
+        return;
+      }
+      if (row.agent === 'codex') {
+        onOpenCodexSession((row.target as CodexSessionMeta).sessionId, row.label);
+        return;
+      }
+      // atomcode / zcode are read-only records.
+      onViewChange('sessions');
+    },
+    [handleResume, onOpenCodexSession, onViewChange],
   );
 
   const handleArchive = useCallback((sessionId: string): void => {
@@ -600,6 +753,19 @@ export function Sidebar({
 
   const isActive = (fileName: string): boolean => fileName === (pendingActive ?? sessionFile);
 
+  // Folder grouping supersedes the legacy collection UI; keep the data
+  // helpers referenced so their semantics survive future re-enablement.
+  void setSessions;
+  void editingCollection;
+  void collectionDraft;
+  void ungrouped;
+  void collectionEntries;
+  void addCollection;
+  void renameCollection;
+  void deleteCollection;
+  void dropIntoCollection;
+  void sessionRowProps;
+
   if (collapsed) {
     return (
       <nav className="sidebar sidebar-collapsed" aria-label="Sidebar collapsed">
@@ -702,124 +868,159 @@ export function Sidebar({
 
       <div className="sidebar-sessions scroll-area">
         <div className="sidebar-section-row">
-          <span className="sidebar-section-label swiss-section-label">{t('sidebar.sessions')}</span>
-          <IconButton
-            icon="hico-folder-badge-plus"
-            label={t('sidebar.addCollection')}
-            placement="bottom"
-            onClick={addCollection}
-          />
-        </div>
-
-        {collectionEntries.length > 0 ? (
-          <div className="sidebar-collections">
-            {collectionEntries.map((entry) => (
-              <div
-                key={entry.name}
-                className="sidebar-collection"
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = 'move';
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const id = event.dataTransfer.getData('text/plain');
-                  if (id.length > 0) {
-                    dropIntoCollection(entry.name, id);
-                  }
+          <span className="sidebar-section-label swiss-section-label">
+            {t('sidebar.sessions')}
+          </span>
+          {/* Multi-agent filter: all records by default. */}
+          <div className="sidebar-agent-filter" role="group" aria-label={t('sidebar.agentFilter')}>
+            {(
+              [
+                { value: 'all', glyph: '全' },
+                { value: 'pi', glyph: AGENT_GLYPHS.pi },
+                { value: 'codex', glyph: AGENT_GLYPHS.codex },
+                { value: 'atomcode', glyph: AGENT_GLYPHS.atomcode },
+                { value: 'zcode', glyph: AGENT_GLYPHS.zcode },
+              ] as ReadonlyArray<{ value: 'all' | SidebarAgent; glyph: string }>
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className="sidebar-agent-filter-btn mono"
+                data-agent={option.value}
+                data-active={agentFilter === option.value}
+                onClick={() => {
+                  setAgentFilter(option.value);
                 }}
               >
-                <div className="sidebar-collection-head">
-                  {editingCollection === entry.name ? (
-                    <input
-                      className="sidebar-collection-input mono"
-                      value={collectionDraft}
-                      autoFocus
-                      placeholder={t('sidebar.collectionName')}
-                      aria-label={t('sidebar.collectionName')}
-                      onChange={(event) => {
-                        setCollectionDraft(event.target.value);
-                      }}
-                      onBlur={() => {
-                        renameCollection(entry.name, collectionDraft);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                          renameCollection(entry.name, collectionDraft);
-                        }
-                        if (event.key === 'Escape') {
-                          setEditingCollection(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="sidebar-collection-name mono"
-                      onClick={() => {
-                        setEditingCollection(entry.name);
-                        setCollectionDraft(entry.name);
-                      }}
-                      title={t('sidebar.renameCollection')}
-                    >
-                      {entry.name}
-                    </button>
-                  )}
-                  <IconButton
-                    icon="hico-trash"
-                    label={t('sidebar.deleteCollection')}
-                    placement="bottom"
-                    onClick={() => {
-                      deleteCollection(entry.name);
-                    }}
-                  />
-                </div>
-                {entry.sessions.length === 0 ? (
-                  <p className="sidebar-collection-empty mono">{t('sidebar.empty.search')}</p>
-                ) : (
+                {option.glyph}
+              </button>
+            ))}
+          </div>
+        </div>
+        {(() => {
+          const needle = query.trim().toLowerCase();
+          const rows = agentRows.filter((row) => {
+            if (agentFilter !== 'all' && row.agent !== agentFilter) {
+              return false;
+            }
+            if (row.agent === 'pi' && archived.includes((row.target as SessionSummary).id)) {
+              return false;
+            }
+            if (needle.length === 0) {
+              return true;
+            }
+            return (
+              row.cwd.toLowerCase().includes(needle) || row.label.toLowerCase().includes(needle)
+            );
+          });
+          // Folder grouping: cwd folder for pi/codex, "other" for
+          // record-only agents without a cwd.
+          const groups = new Map<string, AgentSessionRow[]>();
+          const others: AgentSessionRow[] = [];
+          for (const row of rows) {
+            if (row.cwd.length === 0) {
+              others.push(row);
+              continue;
+            }
+            const folder = shortCwd(row.cwd);
+            const list = groups.get(folder) ?? [];
+            list.push(row);
+            groups.set(folder, list);
+          }
+          const groupEntries = [...groups.entries()].sort((a, b) => {
+            const la = a[1][0]?.lastActivityAt ?? '';
+            const lb = b[1][0]?.lastActivityAt ?? '';
+            return la < lb ? 1 : -1;
+          });
+          return (
+            <>
+              {groupEntries.map(([folder, folderRows]) => (
+                <div key={folder} className="sidebar-collection">
+                  <div className="sidebar-collection-head">
+                    <span className="sidebar-collection-name mono" title={folder}>
+                      {folder}
+                    </span>
+                  </div>
                   <ul className="sidebar-session-list">
-                    {entry.sessions.map((session) => (
-                      <li key={session.id}>
+                    {folderRows.map((row) => (
+                      <li key={row.key}>
                         <SessionRow
-                          session={session}
-                          active={isActive(session.fileName)}
-                          status={statusOf(session)}
-                          unread={isUnread(session)}
-                          blink={isActive(session.fileName) && requestPending}
-                          {...sessionRowProps}
+                          row={row}
+                          intlTag={intlTag}
+                          active={
+                            row.agent === 'pi' &&
+                            isActive((row.target as SessionSummary).fileName)
+                          }
+                          status={row.status}
+                          unread={
+                            row.agent === 'pi' ? isUnread(row.target as SessionSummary) : false
+                          }
+                          blink={
+                            row.agent === 'pi' &&
+                            isActive((row.target as SessionSummary).fileName) &&
+                            requestPending
+                          }
+                          onOpen={(clicked) => {
+                            handleOpenRow(clicked);
+                          }}
+                          onContextMenu={(event, clicked) => {
+                            if (clicked.agent === 'pi') {
+                              openContextMenu(event, clicked.target as SessionSummary);
+                            }
+                          }}
+                          imported={
+                            row.agent === 'codex' &&
+                            importedCodex.includes((row.target as CodexSessionMeta).sessionId)
+                          }
+                          t={t}
                         />
                       </li>
                     ))}
                   </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="sidebar-section-row">
-          <span className="sidebar-section-label swiss-section-label">{t('sidebar.ungrouped')}</span>
-        </div>
-        {ungrouped.length === 0 ? (
-          <p className="sidebar-empty mono">
-            {query.length > 0 ? t('sidebar.empty.search') : t('sidebar.empty')}
-          </p>
-        ) : (
-          <ul className="sidebar-session-list">
-            {ungrouped.map((session) => (
-              <li key={session.id}>
-                <SessionRow
-                          session={session}
-                          active={isActive(session.fileName)}
-                          status={statusOf(session)}
-                          unread={isUnread(session)}
-                          blink={isActive(session.fileName) && requestPending}
-                          {...sessionRowProps}
+                </div>
+              ))}
+              {others.length > 0 ? (
+                <div className="sidebar-collection">
+                  <div className="sidebar-collection-head">
+                    <span className="sidebar-collection-name mono">
+                      {t('sidebar.otherRecords')}
+                    </span>
+                  </div>
+                  <ul className="sidebar-session-list">
+                    {others.map((row) => (
+                      <li key={row.key}>
+                        <SessionRow
+                          row={row}
+                          intlTag={intlTag}
+                          active={false}
+                          status={row.status}
+                          unread={false}
+                          blink={false}
+                          onOpen={(clicked) => {
+                            handleOpenRow(clicked);
+                          }}
+                          onContextMenu={() => {
+                            // record-only agents have no session actions
+                          }}
+                          imported={
+                            row.agent === 'codex' &&
+                            importedCodex.includes((row.target as CodexSessionMeta).sessionId)
+                          }
+                          t={t}
                         />
-              </li>
-            ))}
-          </ul>
-        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {rows.length === 0 ? (
+                <p className="sidebar-empty mono">
+                  {needle.length > 0 ? t('sidebar.empty.search') : t('sidebar.empty')}
+                </p>
+              ) : null}
+            </>
+          );
+        })()}
       </div>
 
       <div className="sidebar-footer">

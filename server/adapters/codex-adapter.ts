@@ -1,10 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentMessage } from '../../shared/types.js';
-import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './codex-history.js';
+import { listCodexSessions } from './codex-history.js';
 import {
   type AgentAdapter,
   type AgentAdapterEvents,
@@ -85,63 +86,100 @@ export function resolveCodexBinary(): string {
   return 'codex';
 }
 
-/** Converts parsed rollout entries into chat messages (session sync). */
-export function rolloutEntriesToMessages(entries: CodexSessionDetail['entries']): AgentMessage[] {
-  const out: AgentMessage[] = [];
-  for (const entry of entries) {
-    const timestamp = Date.parse(entry.timestamp);
-    const ts = Number.isNaN(timestamp) ? 0 : timestamp;
-    if (entry.type === 'input_text' && entry.text !== undefined) {
-      out.push({ role: 'user', content: entry.text, timestamp: ts });
-    } else if (entry.type === 'agent_message' && entry.text !== undefined) {
-      out.push({
-        role: 'assistant',
-        content: [{ type: 'text', text: entry.text }],
-        timestamp: ts,
-      });
-    } else if (entry.type === 'command_execution') {
-      out.push({
-        role: 'bashExecution',
-        command: '',
-        output: entry.text ?? '',
-        exitCode: 0,
-        cancelled: false,
-        truncated: false,
-        fullOutputPath: null,
-        timestamp: ts,
-      });
-    } else if (entry.type === 'error' && entry.text !== undefined) {
-      out.push({
-        role: 'toolResult',
-        toolCallId: '',
-        toolName: 'codex.error',
-        content: [{ type: 'text', text: entry.text }],
-        isError: true,
-        timestamp: ts,
-      });
-    } else if (entry.toolName !== undefined && entry.text !== undefined) {
-      out.push({
-        role: 'toolResult',
-        toolCallId: '',
-        toolName: entry.toolName,
-        content: [{ type: 'text', text: entry.text }],
-        isError: entry.isError ?? false,
-        timestamp: ts,
-      });
-    }
+/** Extracts the user/assistant text of a message payload (content blocks). */
+function messageText(payload: {
+  content?: unknown;
+  text?: unknown;
+}): string | undefined {
+  if (typeof payload.text === 'string') {
+    return payload.text;
   }
-  return out;
+  if (Array.isArray(payload.content)) {
+    const parts: string[] = [];
+    for (const block of payload.content) {
+      if (typeof block === 'string') {
+        parts.push(block);
+      } else if (typeof block === 'object' && block !== null) {
+        const record = block as { type?: unknown; text?: unknown };
+        if (
+          (record.type === 'input_text' || record.type === 'output_text') &&
+          typeof record.text === 'string'
+        ) {
+          parts.push(record.text);
+        }
+      }
+    }
+    return parts.length > 0 ? parts.join('\n') : undefined;
+  }
+  return undefined;
 }
 
-/** Locates the rollout file for a thread and parses it. */
+/**
+ * Session sync: reads a rollout file directly and extracts the conversation
+ * as chat messages. Response items carry `role` (developer / user /
+ * assistant) — system/developer frames are skipped, so the chat shows only
+ * real user prompts and assistant replies (plus tool frames when present).
+ */
 export async function loadRolloutMessages(threadId: string): Promise<AgentMessage[] | null> {
   const sessions = await listCodexSessions();
   const match = sessions.find((session) => session.sessionId === threadId);
   if (match === undefined) {
     return null;
   }
-  const detail = await parseRolloutFile(match.fileName);
-  return detail === null ? null : rolloutEntriesToMessages(detail.entries);
+  let content: string;
+  try {
+    content = await readFile(match.fileName, 'utf8');
+  } catch {
+    return null;
+  }
+  const out: AgentMessage[] = [];
+  for (const line of content.split('\n')) {
+    if (line.trim().length === 0) {
+      continue;
+    }
+    let parsed: { type?: string; timestamp?: string; payload?: unknown };
+    try {
+      parsed = JSON.parse(line) as { type?: string; timestamp?: string; payload?: unknown };
+    } catch {
+      continue;
+    }
+    if (parsed.type !== 'response_item') {
+      continue;
+    }
+    const payload = parsed.payload;
+    if (typeof payload !== 'object' || payload === null) {
+      continue;
+    }
+    const record = payload as { type?: unknown; role?: unknown; content?: unknown; text?: unknown };
+    if (record.type !== 'message') {
+      continue;
+    }
+    const role = record.role;
+    if (role !== 'user' && role !== 'assistant') {
+      continue; // developer / system frames are not conversation
+    }
+    const text = messageText(record);
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    // codex injects system context as user-role frames; skip those.
+    const trimmed = text.trimStart();
+    if (
+      trimmed.startsWith('<environment_context>') ||
+      trimmed.startsWith('<permissions instructions>') ||
+      trimmed.startsWith('<multi_agent_mode>')
+    ) {
+      continue;
+    }
+    const timestamp = Date.parse(parsed.timestamp ?? '');
+    const ts = Number.isNaN(timestamp) ? 0 : timestamp;
+    out.push(
+      role === 'user'
+        ? { role: 'user', content: text, timestamp: ts }
+        : { role: 'assistant', content: [{ type: 'text', text }], timestamp: ts },
+    );
+  }
+  return out;
 }
 
 export class CodexAdapter extends EventEmitter implements AgentAdapter {

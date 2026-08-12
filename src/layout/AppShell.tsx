@@ -29,6 +29,8 @@ interface AppShellProps {
   /** Agent switch (pi / codex) shown in the header. */
   agent: 'pi' | 'codex';
   onAgentChange: (agent: 'pi' | 'codex') => void;
+  /** Open a codex record in the codex chat (from the sidebar). */
+  onOpenCodexSession: (threadId: string, label: string) => void;
   children: ReactNode;
 }
 
@@ -62,6 +64,7 @@ export function AppShell({
   onThemeToggle,
   agent,
   onAgentChange,
+  onOpenCodexSession,
   children,
 }: AppShellProps): React.JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
@@ -160,6 +163,7 @@ export function AppShell({
           requestPending={requestPending}
           onViewChange={onViewChange}
           onSessionChanged={onSessionChanged}
+          onOpenCodexSession={onOpenCodexSession}
         />
       </div>
       <div

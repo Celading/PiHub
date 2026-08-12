@@ -43,6 +43,7 @@ import {
 } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
+import type { AgentMessage } from '../shared/types.js';
 import type { DemoShowcase } from './demo/showcase.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse, PiCommand } from '../shared/types.js';
@@ -175,7 +176,7 @@ export interface RouterModeOptions {
     abort: () => Promise<{ success: boolean }>;
     state: () => Promise<{ success: boolean; data?: { isStreaming: boolean; sessionId?: string | null } }>;
     switchSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
-    messages: (threadId?: string) => Promise<import('../shared/types.js').AgentMessage[]>;
+    messages: (threadId?: string) => Promise<AgentMessage[]>;
   } | null;
   debugState?: () => Record<string, unknown>;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */

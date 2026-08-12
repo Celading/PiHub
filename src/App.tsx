@@ -43,6 +43,8 @@ export function App(): React.JSX.Element {
   const [view, setView] = useState<View>('chat');
   // Which agent the chat view talks to — pi (RPC) or codex (exec adapter).
   const [agent, setAgent] = useState<PanelAgent>('pi');
+  /** Codex thread to resume when the chat opens in codex mode. */
+  const [codexThread, setCodexThread] = useState<string | null>(null);
   // P1-06: the chat workspace is a tab strip; each tab binds one session
   // file (or null for the draft tab that follows the RPC's current session).
   const [tabs, setTabs] = useState<ChatTab[]>(() => [
@@ -127,6 +129,16 @@ export function App(): React.JSX.Element {
     setView('chat');
     bumpTab(tab.id);
   }, [bumpTab, openTab, tabs, t]);
+
+  /** Open a codex record from the sidebar: switch to codex and resume it. */
+  const handleOpenCodexSession = useCallback(
+    (threadId: string): void => {
+      setCodexThread(threadId);
+      setAgent('codex');
+      void newDraftTab();
+    },
+    [newDraftTab],
+  );
 
   /** Close a tab; never leave the workspace tabless (fresh draft tab). */
   const closeTab = useCallback(
@@ -321,8 +333,9 @@ export function App(): React.JSX.Element {
             {/* key remounts the chat whenever the tab, its epoch or the
                 agent changes — each combination gets a clean message list. */}
             <ChatPage
-              key={`${active.id}:${String(epoch)}:${agent}`}
+              key={`${active.id}:${String(epoch)}:${agent}:${codexThread ?? ''}`}
               agent={agent}
+              codexThread={codexThread}
               onSessionChanged={handleChatSessionChanged}
             />
           </div>
@@ -395,6 +408,7 @@ export function App(): React.JSX.Element {
       }}
       agent={agent}
       onAgentChange={setAgent}
+      onOpenCodexSession={handleOpenCodexSession}
     >
       {/* P1-17 F: each view switch replays the 3D entry (perspective
           rotateY) + rise-from-below with fade. */}

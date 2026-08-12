@@ -203,3 +203,14 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---- codex row actions: 录入 left of 查看 ---- */
+.codex-session-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.codex-session-import {
+  min-width: 4.5rem;
+}

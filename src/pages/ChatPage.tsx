@@ -235,9 +235,15 @@ interface ChatPageProps {
   onSessionChanged: () => void;
   /** Which agent this chat view talks to (pi RPC or codex exec). */
   agent: PanelAgent;
+  /** Codex thread to resume on mount (sidebar "open record"). */
+  codexThread?: string | null;
 }
 
-export function ChatPage({ onSessionChanged, agent }: ChatPageProps): React.JSX.Element {
+export function ChatPage({
+  onSessionChanged,
+  agent,
+  codexThread = null,
+}: ChatPageProps): React.JSX.Element {
   const chat = useChatSession(agent);
   const { t, locale } = useI18n();
   const mode = useMode();
@@ -249,11 +255,27 @@ export function ChatPage({ onSessionChanged, agent }: ChatPageProps): React.JSX.
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
 
+  // Codex record opened from the sidebar: resume that thread before the
+  // first message load so its history is shown.
+  const chatReload = chat.reload;
+  useEffect(() => {
+    if (agent !== 'codex' || codexThread === null) {
+      return;
+    }
+    void (async () => {
+      try {
+        await api.codexSwitchSession(codexThread);
+      } catch {
+        // thread may be gone; the adapter falls back to a fresh thread
+      }
+      await chatReload();
+    })();
+  }, [agent, codexThread, chatReload]);
+
   // Showcase sprint: in demo mode, auto-play the scripted conversation so
   // the panel performs the whole feature showcase (typewriter, tool chain,
   // settle collapse) without any input. The play resets the mock session;
   // reload then sees an empty conversation and the SSE stream fills it.
-  const chatReload = chat.reload;
   useEffect(() => {
     if (mode !== 'demo') {
       return;

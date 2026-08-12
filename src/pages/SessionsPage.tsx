@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+const CODEX_IMPORTED_KEY = 'pi-panel:codex-imported';
 import type { SessionSummary } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
@@ -77,6 +79,30 @@ export function SessionsPage({
   const [codexSessions, setCodexSessions] = useState<CodexSessionMeta[] | null>(null);
   const [codexError, setCodexError] = useState<string | null>(null);
   const [codexOpenDetail, setCodexOpenDetail] = useState<CodexSessionDetail | null>(null);
+  /** "录入" (import): pin a codex record into the sidebar 会话 area. */
+  const [importedCodex, setImportedCodex] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(CODEX_IMPORTED_KEY);
+      const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+  const toggleImportCodex = useCallback((sessionId: string): void => {
+    setImportedCodex((prev) => {
+      const next = prev.includes(sessionId)
+        ? prev.filter((id) => id !== sessionId)
+        : [...prev, sessionId];
+      try {
+        localStorage.setItem(CODEX_IMPORTED_KEY, JSON.stringify(next));
+      } catch {
+        // storage unavailable
+      }
+      window.dispatchEvent(new Event('pihub:codex-imported-changed'));
+      return next;
+    });
+  }, []);
   // ADAPTER2: atomcode + zcode read-only records.
   const [atomcodeSession, setAtomcodeSession] = useState<AtomcodeSessionDetail | null>(null);
   const [zcodeSessions, setZcodeSessions] = useState<ZcodeSessionMeta[] | null>(null);
@@ -280,15 +306,32 @@ export function SessionsPage({
                       : ''}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  className="btn-primary codex-session-open"
-                  onClick={() => {
-                    void openCodexDetail(session.sessionId);
-                  }}
-                >
-                  {t('codex.open')}
-                </button>
+                <div className="codex-session-actions">
+                  <button
+                    type="button"
+                    className={
+                      importedCodex.includes(session.sessionId)
+                        ? 'btn-primary codex-session-import codex-session-imported'
+                        : 'btn-secondary codex-session-import'
+                    }
+                    onClick={() => {
+                      toggleImportCodex(session.sessionId);
+                    }}
+                  >
+                    {importedCodex.includes(session.sessionId)
+                      ? t('codex.imported')
+                      : t('codex.import')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary codex-session-open"
+                    onClick={() => {
+                      void openCodexDetail(session.sessionId);
+                    }}
+                  >
+                    {t('codex.open')}
+                  </button>
+                </div>
                 {codexOpenDetail !== null && codexOpenDetail.sessionId === session.sessionId ? (
                   <div className="codex-session-detail">
                     {codexOpenDetail.entries
