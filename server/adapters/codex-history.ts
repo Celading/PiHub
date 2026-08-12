@@ -209,21 +209,42 @@ async function collectRolloutFilesAll(dir: string): Promise<string[]> {
   return out;
 }
 
-/** Lists codex sessions (metadata only), newest activity first. */
-export async function listCodexSessions(): Promise<CodexSessionMeta[]> {
-  const files = await newestPerThread(await collectRolloutFilesAll(sessionsDir()));
-  const sessions: CodexSessionMeta[] = [];
+/**
+ * Lists codex sessions deduped by their AUTHORITATIVE session id (audit P2
+ * fix, second pass): file names can embed a DIFFERENT id than the file's
+ * session_meta (copied/forked rollouts — observed in the wild), so name-
+ * based grouping still leaked duplicates. Every collected file is parsed
+ * (mtime-keyed cache makes repeats free; files > 8MB are never collected)
+ * and grouped by session_id, keeping the newest mtime file per thread.
+ */
+async function listSessionsDeduped(): Promise<CodexSessionMeta[]> {
+  const files = await collectRolloutFilesAll(sessionsDir());
+  const bySession = new Map<string, { meta: CodexSessionMeta; mtimeMs: number }>();
   for (const file of files) {
+    let info;
+    try {
+      info = await stat(file);
+    } catch {
+      continue;
+    }
     const detail = await parseRolloutFile(file);
-    if (detail !== null) {
-      // Explicit meta projection: the parsed detail carries the full entries
-      // (+ raw frames) — serializing those made /api/codex/sessions return
-      // ~58MB and take 250ms+.
-      sessions.push(projectMeta(detail));
+    if (detail === null) {
+      continue;
+    }
+    const current = bySession.get(detail.sessionId);
+    if (current === undefined || info.mtimeMs > current.mtimeMs) {
+      bySession.set(detail.sessionId, { meta: projectMeta(detail), mtimeMs: info.mtimeMs });
     }
   }
-  sessions.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
-  return sessions.slice(0, MAX_FILES);
+  return [...bySession.values()]
+    .map((entry) => entry.meta)
+    .sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1))
+    .slice(0, MAX_FILES);
+}
+
+/** Lists codex sessions (metadata only), newest activity first. */
+export async function listCodexSessions(): Promise<CodexSessionMeta[]> {
+  return listSessionsDeduped();
 }
 
 /** mtime-keyed parse cache: the sidebar and session views call the codex
@@ -337,9 +358,13 @@ export async function parseRolloutFile(file: string): Promise<CodexSessionDetail
     const timestamp = parsed.timestamp ?? '';
     if (type === 'session_meta') {
       const payload = parsed.payload;
-      if (payload !== undefined && typeof payload.session_id === 'string') {
+      // Legacy codex CLI versions write payload.id instead of session_id —
+      // both identify the thread; without the fallback old rollouts parsed
+      // as null and vanished from the listings.
+      const sessionId = payload?.session_id ?? payload?.id;
+      if (payload !== undefined && typeof sessionId === 'string') {
         meta = {
-          sessionId: payload.session_id,
+          sessionId,
           cwd: payload.cwd ?? '',
           ...(typeof payload.forked_from_id === 'string' ? { forkedFromId: payload.forked_from_id } : {}),
           ...(typeof payload.model_provider === 'string' ? { modelProvider: payload.model_provider } : {}),
@@ -410,99 +435,18 @@ export async function parseRolloutFile(file: string): Promise<CodexSessionDetail
 /** Number of newest rollouts parsed fully on the fast path. */
 const FAST_PARSE_LIMIT = 20;
 
-/** Extracts the thread id and timestamp embedded in a rollout file name. */
-function fileNameMeta(file: string): { threadId: string; startedAt: string } {
-  const base = path.basename(file); // rollout-2026-08-12T13-24-45-019ff46e-...jsonl
-  const parts = base.split('-');
-  // ts = parts[1..3] joined (date + time + nanos-ish), threadId = parts[4]
-  const ts = parts.slice(1, 4).join('-');
-  const threadId = parts.slice(4).join('-').replace(/\.jsonl$/, '');
-  return {
-    threadId,
-    startedAt: Number.isNaN(Date.parse(ts)) ? '' : ts,
-  };
-}
-
-/** Groups rollout files by their embedded thread id, keeping the NEWEST
- *  mtime file per thread (audit P2 fix: a resumed thread has multiple
- *  rollout files sharing the id — listing them individually produced
- *  duplicate sidebar rows with duplicate React keys). */
-async function newestPerThread(files: string[]): Promise<string[]> {
-  const byThread = new Map<string, { file: string; mtimeMs: number }>();
-  for (const file of files) {
-    const { threadId } = fileNameMeta(file);
-    if (threadId.length === 0) {
-      continue;
-    }
-    let mtimeMs: number;
-    try {
-      const info = await stat(file);
-      mtimeMs = info.mtimeMs;
-    } catch {
-      continue;
-    }
-    const current = byThread.get(threadId);
-    if (current === undefined || mtimeMs > current.mtimeMs) {
-      byThread.set(threadId, { file, mtimeMs });
-    }
-  }
-  return [...byThread.values()].map((entry) => entry.file);
-}
-
 /**
- * Fast list: full-parses only the NEWEST `limit` rollouts (mtime order) and
- * returns the rest as lightweight placeholders derived from the file name.
- * The heavy backfill (below) fills the placeholders in the background, so
- * the sidebar renders almost instantly and converges shortly after.
+ * Background backfill: parses every rollout NOT yet in the parse cache and
+ * stores the metas, so the next fast list returns full data everywhere.
+ * This is the foundation for the upcoming prompt index — the parsed cache
+ * becomes the shared index source.
  */
 export async function listCodexSessionsFast(limit: number = FAST_PARSE_LIMIT): Promise<CodexSessionMeta[]> {
-  // Dedupe first: a resumed thread has multiple rollouts — one row per
-  // thread (newest mtime), so the sidebar key (sessionId) stays unique.
-  const files = await newestPerThread(await collectRolloutFilesAll(sessionsDir()));
-  const withMtime = new Map<string, number>();
-  for (const file of files) {
-    try {
-      const info = await stat(file);
-      withMtime.set(file, info.mtimeMs);
-    } catch {
-      // skip unreadable files
-    }
-  }
-  const ordered = [...withMtime.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1));
-  const newest = ordered.slice(0, limit).map(([file]) => file);
-  const sessions: CodexSessionMeta[] = [];
-  for (const file of newest) {
-    const detail = await parseRolloutFile(file);
-    if (detail !== null) {
-      sessions.push(projectMeta(detail));
-    }
-  }
-  for (const [file] of ordered.slice(limit)) {
-    if (sessions.length >= MAX_FILES) {
-      break;
-    }
-    // Prefer the parse cache (backfill fills it); only fall back to a
-    // file-name placeholder for not-yet-parsed records.
-    const cached = rolloutCache.get(file);
-    if (cached !== undefined && cached.detail !== null) {
-      sessions.push(projectMeta(cached.detail));
-      continue;
-    }
-    const { threadId, startedAt } = fileNameMeta(file);
-    sessions.push({
-      sessionId: threadId,
-      fileName: file,
-      cwd: '',
-      startedAt,
-      lastActivityAt: startedAt,
-      messageCount: 0,
-      toolCalls: 0,
-      tokens: 0,
-      placeholder: true,
-    });
-  }
-  sessions.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
-  return sessions.slice(0, MAX_FILES);
+  // One deduped listing (authoritative session ids); the limit parameter is
+  // kept for API compatibility — the mtime-keyed parse cache makes repeated
+  // calls cheap, and the sidebar needs the deduped full view.
+  void limit;
+  return listSessionsDeduped();
 }
 
 /**
