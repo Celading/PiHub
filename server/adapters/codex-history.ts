@@ -17,13 +17,13 @@ import path from 'node:path';
  *    input_text / summary_text / token_count (usage)
  */
 
-const CODEX_HOME = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_FILES = 200;
 
 /** Resolves the sessions/history paths at call time (env-testable). */
 function sessionsDir(): string {
-  return path.join(CODEX_HOME, 'sessions');
+  const home = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
+  return path.join(home, 'sessions');
 }
 
 function historyFile(): string {

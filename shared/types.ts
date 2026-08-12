@@ -25,7 +25,7 @@ export type SessionHeaderEvent = z.infer<typeof sessionHeaderEventSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export type RpcResponse = z.infer<typeof rpcResponseSchema>;
 
-export type Role = 'user' | 'assistant' | 'toolResult' | 'bashExecution';
+export type Role = 'user' | 'assistant' | 'toolResult' | 'bashExecution' | 'notice';
 
 export interface CostBreakdown {
   input: number;

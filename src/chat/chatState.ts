@@ -215,7 +215,8 @@ export function isAgentMessage(value: unknown): value is AgentMessage {
     record['role'] === 'user' ||
     record['role'] === 'assistant' ||
     record['role'] === 'toolResult' ||
-    record['role'] === 'bashExecution'
+    record['role'] === 'bashExecution' ||
+    record['role'] === 'notice'
   );
 }
 

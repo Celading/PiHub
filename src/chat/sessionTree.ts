@@ -57,6 +57,8 @@ export function summaryOf(entry: SessionEntry): string {
       return message.toolName.length > 0 ? message.toolName : 'tool';
     case 'bashExecution':
       return 'bash';
+    case 'notice':
+      return 'notice';
   }
 }
 
@@ -73,6 +75,8 @@ export function roleIconOf(entry: SessionEntry): string {
         return 'T';
       case 'bashExecution':
         return 'B';
+      case 'notice':
+        return 'N';
     }
   }
   if (entry.type === 'model_change') {

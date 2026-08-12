@@ -454,6 +454,27 @@ function BashExecutionView({
   );
 }
 
+/** System notice (turn aborted / HTTP rate-limit & service errors from the
+ *  codex adapter): one centered divider row — ────── message ────── — at
+ *  half opacity, so it reads as meta info, not conversation. */
+function NoticeView({
+  message,
+}: {
+  message: Extract<AgentMessage, { role: 'notice' }>;
+}): React.JSX.Element {
+  return (
+    <div className="message-notice" role="note">
+      <span className="message-notice-dash" aria-hidden="true">
+        ——————————
+      </span>
+      <span className="message-notice-text">{message.content}</span>
+      <span className="message-notice-dash" aria-hidden="true">
+        ——————————
+      </span>
+    </div>
+  );
+}
+
 interface MessageItemProps {
   message: AgentMessage;
   isStreaming: boolean;
@@ -504,6 +525,12 @@ export function MessageItem({
       return (
         <div className="message message-tool">
           <BashExecutionView message={message} onOpenFile={onOpenFile} />
+        </div>
+      );
+    case 'notice':
+      return (
+        <div className="message message-notice-row">
+          <NoticeView message={message} />
         </div>
       );
   }
