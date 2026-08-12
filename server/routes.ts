@@ -49,6 +49,8 @@ import { collectPrompts } from './prompts.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
+import { parseSessionFile } from './sessions.js';
+import { recentFileActions } from './recent-files.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { CodexSessionDetail } from './adapters/codex-history.js';
@@ -1126,6 +1128,110 @@ export function createRouter(
   // Extension UI protocol (P1-01): pending dialog requests + answering.
   router.get('/api/rpc/ui-requests', (_req, res) => {
     res.json({ requests: bridge.getPendingUiRequests() });
+  });
+
+  /* ---- P1-08b: read-only workspace file listing (right workbench 文件) ----
+   * Same containment rules as the preview: the root is the given session's
+   * cwd (falling back to the tracked preview root), paths must stay inside
+   * the real root subtree, hidden dirs are skipped. Returns the entries of
+   * one directory plus the session's recent file operations. */
+  const IGNORED_LISTING = new Set(['.git', 'node_modules', '.DS_Store']);
+  const MAX_LISTING_ENTRIES = 500;
+
+  router.get('/api/files', async (req, res) => {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    if (rawPath.length > 1024) {
+      res.status(400).json({ error: 'invalid path' });
+      return;
+    }
+    // Resolve the workspace root: prefer the session's own cwd, else the
+    // tracked preview root (last switched session / panel workspace).
+    let root = previewRoot;
+    if (sessionParam !== undefined && sessionParam.length > 0) {
+      try {
+        const all = await sessions.list();
+        const match = all.find((session) => session.fileName === sessionParam);
+        if (match !== undefined && match.cwd.length > 0) {
+          root = match.cwd;
+        }
+      } catch {
+        // keep the tracked root — listing stays conservative
+      }
+    }
+    if (root === undefined || root.length === 0) {
+      res.status(503).json({ error: 'file listing unavailable' });
+      return;
+    }
+    const rootResolved = path.resolve(root);
+    const resolved = path.resolve(rootResolved, rawPath);
+    if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
+      res.status(400).json({ error: 'path outside workspace' });
+      return;
+    }
+    try {
+      const [realRoot, realTarget] = await Promise.all([realpath(rootResolved), realpath(resolved)]);
+      if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${path.sep}`)) {
+        res.status(400).json({ error: 'path outside workspace' });
+        return;
+      }
+      const info = await stat(realTarget);
+      if (!info.isDirectory()) {
+        res.status(400).json({ error: 'not a directory' });
+        return;
+      }
+      const dirents = await readdir(realTarget, { withFileTypes: true });
+      const entries: Array<{
+        name: string;
+        path: string;
+        kind: 'dir' | 'file' | 'other';
+        size?: number;
+        mtime?: number;
+      }> = [];
+      for (const dirent of dirents) {
+        if (IGNORED_LISTING.has(dirent.name) || entries.length >= MAX_LISTING_ENTRIES) {
+          continue;
+        }
+        const entryPath = rawPath.length === 0 ? dirent.name : `${rawPath}/${dirent.name}`;
+        if (dirent.isDirectory()) {
+          entries.push({ name: dirent.name, path: entryPath, kind: 'dir' });
+        } else if (dirent.isFile()) {
+          let size: number | undefined;
+          let mtime: number | undefined;
+          try {
+            const st = await stat(path.join(realTarget, dirent.name));
+            size = st.size;
+            mtime = st.mtimeMs;
+          } catch {
+            // unreadable entry — list without stats
+          }
+          entries.push({
+            name: dirent.name,
+            path: entryPath,
+            kind: 'file',
+            ...(size !== undefined ? { size } : {}),
+            ...(mtime !== undefined ? { mtime } : {}),
+          });
+        } else {
+          // symlink or other — listing only; opening re-validates realpath
+          entries.push({ name: dirent.name, path: entryPath, kind: 'other' });
+        }
+      }
+      entries.sort((a, b) =>
+        a.kind === 'dir' && b.kind !== 'dir'
+          ? -1
+          : a.kind !== 'dir' && b.kind === 'dir'
+            ? 1
+            : a.name.localeCompare(b.name),
+      );
+      const recent =
+        sessionParam !== undefined && sessionParam.length > 0
+          ? recentFileActions(await parseSessionFile(sessionParam).catch(() => null))
+          : [];
+      res.json({ root: realTarget, entries, recent });
+    } catch (error) {
+      res.status(404).json({ error: `cannot list directory: ${error instanceof Error ? error.message : String(error)}` });
+    }
   });
 
   router.post('/api/rpc/ui-respond', (req, res) => {

@@ -1,7 +1,9 @@
 import type {
+  AgentMessage,
   EntriesResponse,
   ExtensionUiRequest,
   ExtensionUiResponse,
+  FileListing,
   ModelInfo,
   PiCommand,
   Pipeline,
@@ -12,7 +14,6 @@ import type {
   SessionStats,
   SessionSummary,
   SessionTreeResponse,
-  AgentMessage,
 } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
@@ -336,6 +337,15 @@ export const api = {
     return request<{ path: string; size: number; content: string }>(
       `/api/file/preview?path=${encodeURIComponent(path)}`,
     );
+  },
+
+  /** P1-08b: read-only directory listing of the session's workspace. */
+  listFiles(path: string, session?: string): Promise<FileListing> {
+    const params = new URLSearchParams({ path });
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
+    return request<FileListing>(`/api/files?${params.toString()}`);
   },
 
   /** pi.dev official per-provider model catalog (P1-15 C). */

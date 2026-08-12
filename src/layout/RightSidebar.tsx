@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
+import { RightFilesPanel } from '../components/RightFilesPanel.js';
 import './RightSidebar.css';
 
 /** Right workbench panel tabs: workspace files, git changes, session tree. */
@@ -62,19 +63,17 @@ export function RightSidebar({
         </button>
       </div>
       <div className="right-sidebar-body scroll-area" role="tabpanel">
-        {tab === 'files' ? (
-          <p className="right-sidebar-empty mono">{t('rightSidebar.comingSoon')}</p>
+        {tab === 'files' && sessionFile !== null ? <RightFilesPanel sessionFile={sessionFile} /> : null}
+        {tab === 'files' && sessionFile === null ? (
+          <p className="right-sidebar-empty mono">{t('rightSidebar.noSession')}</p>
         ) : null}
         {tab === 'changes' ? (
           <p className="right-sidebar-empty mono">{t('rightSidebar.comingSoon')}</p>
         ) : null}
-        {tab === 'tree' ? (
+        {tab === 'tree' && agent === 'pi' ? (
           <p className="right-sidebar-empty mono">{t('rightSidebar.comingSoon')}</p>
         ) : null}
-        {sessionFile === null ? (
-          <p className="right-sidebar-empty mono">{t('rightSidebar.noSession')}</p>
-        ) : null}
-        {agent === 'codex' && tab === 'tree' ? (
+        {tab === 'tree' && agent !== 'pi' ? (
           <p className="right-sidebar-empty mono">{t('rightSidebar.treePiOnly')}</p>
         ) : null}
       </div>

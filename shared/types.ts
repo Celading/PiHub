@@ -293,3 +293,18 @@ export interface PipelineRunRecord {
   finishedAt?: number;
   steps: PipelineStepRecord[];
 }
+
+/* ---- P1-08b: right workbench file listing ---- */
+export interface FileEntry {
+  name: string;
+  path: string;
+  kind: 'dir' | 'file' | 'other';
+  size?: number;
+  mtime?: number;
+}
+
+export interface FileListing {
+  root: string;
+  entries: FileEntry[];
+  recent: Array<{ path: string; action: string }>;
+}
