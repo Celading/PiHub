@@ -1,4 +1,4 @@
-import type { Theme } from '../types/app';
+import { nextTheme, type Theme } from '../types/app';
 import { useServerHealth } from '../hooks/useServerHealth';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { useMode } from '../kMode/useMode.js';
@@ -19,6 +19,13 @@ export function Header({
   const mode = useMode();
   const { t } = useI18n();
 
+  const targetTheme = nextTheme(theme);
+  const themeLabel =
+    targetTheme === 'light'
+      ? t('header.theme.light')
+      : targetTheme === 'dark'
+        ? t('header.theme.dark')
+        : t('theme.fog');
   const statusKey =
     serverStatus === 'online' ? 'header.status.online' : serverStatus === 'offline' ? 'header.status.offline' : 'header.status.checking';
   const modeLabel =
@@ -62,7 +69,7 @@ export function Header({
           onClick={onThemeToggle}
           aria-label={t('header.theme.toggle')}
         >
-          {theme === 'light' ? t('header.theme.dark') : t('header.theme.light')}
+          {themeLabel}
         </button>
       </div>
     </header>

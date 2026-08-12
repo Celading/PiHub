@@ -6,6 +6,7 @@ import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { FilePreview } from '../components/FilePreview.js';
 import { PromptTimeline } from '../components/PromptTimeline.js';
+import { FogLoading } from '../components/FogLoading.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
@@ -642,26 +643,10 @@ export function ChatPage({
             })}
           </div>
         ) : null}
-        {/* P1-17 D: skeleton while the switched session's messages load. */}
-        {!chat.hasLoaded ? (
-          <div className="chat-skeleton" aria-hidden="true">
-            {[0, 1, 2, 3, 4].map((index) => (
-              <div
-                key={index}
-                className={`chat-skeleton-row ${index % 2 === 0 ? 'chat-skeleton-user' : 'chat-skeleton-assistant'}`}
-              >
-                <span
-                  className="chat-skeleton-line"
-                  style={{ width: `${String(58 + ((index * 13) % 35))}%` }}
-                />
-                <span
-                  className="chat-skeleton-line"
-                  style={{ width: `${String(36 + ((index * 17) % 30))}%` }}
-                />
-              </div>
-            ))}
-          </div>
-        ) : chat.messages.length === 0 ? (
+        {/* P1-09: fog skeleton while the switched session's messages load;
+            the real content then condenses in (fog themes). */}
+        <FogLoading loading={!chat.hasLoaded}>
+        {chat.messages.length === 0 ? (
           <div className="chatpage-empty">
             <h2 className="panel-title">{t('chat.empty.title')}</h2>
             <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
@@ -926,6 +911,7 @@ export function ChatPage({
             })}
           </div>
         )}
+        </FogLoading>
       </div>
       {terminalOpen ? <TerminalPanel /> : null}
       {previewPath !== null ? (

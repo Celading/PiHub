@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ModelInfo, SessionSummary } from '../../shared/types.js';
-import type { SettingsSectionId, Theme } from '../types/app.js';
+import { THEMES, type SettingsSectionId, type Theme } from '../types/app.js';
 import { api } from '../api/client.js';
 import {
   loadAdapterColors,
   saveAdapterColor,
   type AdapterInfo,
 } from '../adapters/adapterColors.js';
-import { useI18n, type Locale } from '../i18n/I18nProvider.js';
+import { useI18n, type Locale, type MessageKey } from '../i18n/I18nProvider.js';
 import { removeArchived, restoreSession as restoreArchived } from '../sessions/sessionActions.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { LoadingHint } from '../components/LoadingHint.js';
@@ -48,7 +48,8 @@ interface SettingsPageProps {
   section: SettingsSectionId;
   onSectionChange: (section: SettingsSectionId) => void;
   theme: Theme;
-  onThemeToggle: () => void;
+  /** P1-09: pick a theme directly (light / dark / fog). */
+  onThemeChange: (theme: Theme) => void;
   sidebarCollapsed: boolean;
   onToggleCollapsed: () => void;
   onBack: () => void;
@@ -97,7 +98,7 @@ export function SettingsPage({
   section,
   onSectionChange,
   theme,
-  onThemeToggle,
+  onThemeChange,
   sidebarCollapsed,
   onToggleCollapsed,
   onBack,
@@ -425,31 +426,23 @@ export function SettingsPage({
 
             <section className="settings-section">
               <h2 className="settings-section-title mono">{t('settings.theme')}</h2>
+              <p className="settings-hint">{t('theme.fogHint')}</p>
               <div className="settings-language">
-                <button
-                  type="button"
-                  className="settings-language-btn"
-                  data-active={theme === 'light'}
-                  onClick={() => {
-                    if (theme !== 'light') {
-                      onThemeToggle();
-                    }
-                  }}
-                >
-                  {t('theme.light')}
-                </button>
-                <button
-                  type="button"
-                  className="settings-language-btn"
-                  data-active={theme === 'dark'}
-                  onClick={() => {
-                    if (theme !== 'dark') {
-                      onThemeToggle();
-                    }
-                  }}
-                >
-                  {t('theme.dark')}
-                </button>
+                {THEMES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="settings-language-btn"
+                    data-active={theme === item.id}
+                    onClick={() => {
+                      if (theme !== item.id) {
+                        onThemeChange(item.id);
+                      }
+                    }}
+                  >
+                    {t(item.labelKey as MessageKey)}
+                  </button>
+                ))}
               </div>
             </section>
 

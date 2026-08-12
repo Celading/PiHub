@@ -11,6 +11,7 @@ import { api } from '../api/client.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { SessionDetailView } from './SessionDetailView.js';
 import { LoadingHint } from '../components/LoadingHint.js';
+import { FogLoading } from '../components/FogLoading.js';
 import './SessionsPage.css';
 
 function formatDate(iso: string, intlTag: string): string {
@@ -262,6 +263,7 @@ export function SessionsPage({
 
       {error !== null ? <div className="sessions-error mono">{error}</div> : null}
 
+      <FogLoading loading={grouped === null}>
       {grouped === null ? (
         <p className="sessions-hint">
           <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
@@ -295,6 +297,7 @@ export function SessionsPage({
           ))}
         </div>
       )}
+      </FogLoading>
 
       {/* P2-01 B: read-only codex session records (never spawned). */}
       <section className="codex-sessions">

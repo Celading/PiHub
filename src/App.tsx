@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SettingsSectionId, Theme, View } from './types/app';
-import { THEME_STORAGE_KEY } from './types/app';
+import { nextTheme, THEME_STORAGE_KEY } from './types/app';
 import { AppShell } from './layout/AppShell';
 import { ChatPage } from './pages/ChatPage';
 import { SessionsPage } from './pages/SessionsPage';
@@ -38,8 +38,12 @@ export function App(): React.JSX.Element {
   const { t } = useI18n();
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    return saved === 'dark' ? 'dark' : 'light';
+    return saved === 'dark' ? 'dark' : saved === 'fog' ? 'fog' : 'light';
   });
+  // P1-09: the header toggle cycles light → dark → fog → light.
+  const cycleTheme = useCallback((): void => {
+    setTheme((current) => nextTheme(current));
+  }, []);
   const [view, setView] = useState<View>('chat');
   // Which agent the chat view talks to — pi (RPC) or codex (exec adapter).
   const [agent, setAgent] = useState<PanelAgent>('pi');
@@ -357,9 +361,7 @@ export function App(): React.JSX.Element {
             section={settingsSection}
             onSectionChange={setSettingsSection}
             theme={theme}
-            onThemeToggle={() => {
-              setTheme(theme === 'light' ? 'dark' : 'light');
-            }}
+            onThemeChange={setTheme}
             sidebarCollapsed={sidebarCollapsed}
             onToggleCollapsed={() => {
               setSidebarCollapsed(!sidebarCollapsed);
@@ -403,9 +405,7 @@ export function App(): React.JSX.Element {
           void openSessionTab(fileName, label ?? fileName);
         }
       }}
-      onThemeToggle={() => {
-        setTheme(theme === 'light' ? 'dark' : 'light');
-      }}
+      onThemeToggle={cycleTheme}
       agent={agent}
       onOpenCodexSession={handleOpenCodexSession}
     >
