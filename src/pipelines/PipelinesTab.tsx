@@ -3,6 +3,7 @@ import type { PiCommand, Pipeline } from '../../shared/types.js';
 import { api } from '../api/client.js';
 import { usePipelines, selectVisibleRuns } from './usePipelines.js';
 import { RunTimeline } from './RunTimeline.js';
+import { PipelineVisualEditor } from './PipelineVisualEditor.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { LoadingHint } from '../components/LoadingHint.js';
@@ -16,25 +17,6 @@ const RUN_STATUS_KEYS: Record<string, MessageKey> = {
   failed: 'pipelines.status.failed',
 };
 
-/** Starter JSON for the pipeline editor (kept flat and self-documenting). */
-function editorTemplate(): string {
-  return JSON.stringify(
-    {
-      id: 'pipeline-1',
-      name: '我的工程流',
-      description: '',
-      onError: 'stop',
-      steps: [
-        { id: 's1', name: '分析', type: 'prompt', prompt: '分析 {{input}}，输出计划' },
-        { id: 's2', name: '确认', type: 'approval' },
-        { id: 's3', name: '执行', type: 'prompt', prompt: '执行计划：{{lastOutput}}' },
-      ],
-    },
-    null,
-    2,
-  );
-}
-
 /**
  * Pipelines tab (P1-02-C4): definition list with run status lights, JSON
  * editor modal for create/edit, guarded delete. The live run timeline view
@@ -43,9 +25,9 @@ function editorTemplate(): string {
 export function PipelinesTab(): React.JSX.Element {
   const { t } = useI18n();
   const { pipelines, runs, error, save, remove, run, abort, approve } = usePipelines();
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editorText, setEditorText] = useState<string>(() => editorTemplate());
-  const [editorError, setEditorError] = useState<string | null>(null);
+  /** UX workbench: the visual pipeline editor (execution band + inspector +
+   *  JSON source mode) replaces the plain JSON modal as the main entry. */
+  const [editTarget, setEditTarget] = useState<Pipeline | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
   const [runTarget, setRunTarget] = useState<Pipeline | null>(null);
@@ -54,6 +36,7 @@ export function PipelinesTab(): React.JSX.Element {
   const [selectedSkill, setSelectedSkill] = useState('');
   const [softConfirm, setSoftConfirm] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
 
   // Skill directory for the import surface (P1-10 A).
   useEffect(() => {
@@ -85,8 +68,7 @@ export function PipelinesTab(): React.JSX.Element {
         mode === 'hard'
           ? await api.convertPipelineHard(selectedSkill)
           : await api.convertPipelineSoft(selectedSkill);
-      setEditorText(JSON.stringify(pipeline, null, 2));
-      setEditorOpen(true);
+      setEditTarget(pipeline);
     } catch (err) {
       setEditorError(t('pipelines.convert.failed', { error: err instanceof Error ? err.message : String(err) }));
     } finally {
@@ -97,7 +79,6 @@ export function PipelinesTab(): React.JSX.Element {
   const visibleRuns = useMemo(() => selectVisibleRuns(runs), [runs]);
 
   const latestRuns = useMemo(() => {
-    const map = new Map<string, Pipeline['id']>();
     const byPipeline = new Map<string, (typeof runs)[number]>();
     for (const record of runs) {
       const existing = byPipeline.get(record.pipelineId);
@@ -105,40 +86,32 @@ export function PipelinesTab(): React.JSX.Element {
         byPipeline.set(record.pipelineId, record);
       }
     }
-    void map;
     return byPipeline;
   }, [runs]);
 
   const openEditor = (pipeline: Pipeline | null): void => {
-    setEditorText(JSON.stringify(pipeline ?? (JSON.parse(editorTemplate()) as unknown), null, 2));
+    const now = new Date().toISOString();
+    const base = pipeline ?? {
+      id: `pipeline-${String(Date.now())}`,
+      name: t('pipelines.new'),
+      steps: [
+        { id: 's1', name: t('pipelines.step.prompt'), type: 'prompt', prompt: '分析 {{input}}，输出计划' },
+        { id: 's2', name: t('pipelines.step.approval'), type: 'approval' },
+      ],
+      onError: 'stop' as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setEditTarget(base);
     setEditorError(null);
-    setEditorOpen(true);
   };
 
-  const submitEditor = async (): Promise<void> => {
+  const submitEditor = async (pipeline: Pipeline): Promise<void> => {
     setEditorError(null);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(editorText) as unknown;
-    } catch (err) {
-      setEditorError(t('pipelines.editor.invalid', { error: err instanceof Error ? err.message : String(err) }));
-      return;
-    }
-    const candidate = parsed as Record<string, unknown>;
-    const now = new Date().toISOString();
-    const pipeline: Pipeline = {
-      id: typeof candidate['id'] === 'string' && candidate['id'].length > 0 ? candidate['id'] : `pipeline-${String(Date.now())}`,
-      name: typeof candidate['name'] === 'string' && candidate['name'].length > 0 ? candidate['name'] : 'Untitled',
-      steps: Array.isArray(candidate['steps']) ? (candidate['steps'] as Pipeline['steps']) : [],
-      onError: candidate['onError'] === 'skip' || candidate['onError'] === 'retry' ? candidate['onError'] : 'stop',
-      createdAt: typeof candidate['createdAt'] === 'string' ? candidate['createdAt'] : now,
-      updatedAt: now,
-      ...(typeof candidate['description'] === 'string' ? { description: candidate['description'] } : {}),
-    };
     setSaving(true);
     try {
       await save(pipeline);
-      setEditorOpen(false);
+      setEditTarget(null);
     } catch (err) {
       setEditorError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -312,47 +285,29 @@ export function PipelinesTab(): React.JSX.Element {
         <p className="automation-hint">{t('pipelines.noActiveRuns')}</p>
       ) : null}
 
-      {editorOpen ? (
+      {editTarget !== null ? (
         <div className="pipe-editor-overlay" role="presentation">
-          <div className="pipe-editor" role="dialog" aria-modal="true" aria-label={t('pipelines.editor.title')}>
-            <div className="pipe-editor-head">
-              <span className="pipe-editor-title mono">{t('pipelines.editor.title')}</span>
-              <button
-                type="button"
-                className="btn-secondary mono"
-                onClick={() => {
-                  setEditorOpen(false);
-                }}
-              >
-                {t('pipelines.editor.cancel')}
-              </button>
-            </div>
-            <textarea
-              className="pipe-editor-text mono"
-              spellCheck={false}
-              value={editorText}
-              onChange={(event) => {
-                setEditorText(event.target.value);
-              }}
-            />
+          <div
+            className="pipe-editor pipe-editor-visual"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('pipelines.editor.title')}
+          >
             {editorError !== null ? (
               <div className="automation-error mono" role="alert">
                 {editorError}
               </div>
             ) : null}
-            <div className="pipe-editor-foot">
-              <span className="pipe-editor-hint mono">{t('pipelines.editor.hint')}</span>
-              <button
-                type="button"
-                className="btn-primary mono"
-                disabled={saving}
-                onClick={() => {
-                  void submitEditor();
-                }}
-              >
-                {saving ? t('settings.loading') : t('pipelines.editor.save')}
-              </button>
-            </div>
+            <PipelineVisualEditor
+              initial={editTarget}
+              saving={saving}
+              onSave={(pipeline) => {
+                void submitEditor(pipeline);
+              }}
+              onCancel={() => {
+                setEditTarget(null);
+              }}
+            />
           </div>
         </div>
       ) : null}
