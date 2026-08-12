@@ -290,11 +290,11 @@
 }
 
 .agent-badge[data-agent='codex'] {
-  background-color: #10a37f;
+  background-color: transparent;
 }
 
 .agent-badge[data-agent='atomcode'] {
-  background-color: #e4572e;
+  background-color: transparent;
 }
 
 .agent-badge[data-agent='zcode'] {
@@ -677,4 +677,20 @@
   font-size: 0.6875rem;
   font-weight: 600;
   flex-shrink: 0;
+}
+
+
+.agent-badge-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.agent-badge[data-agent='pi'] {
+  background-color: #005fb8;
+}
+
+.agent-badge[data-agent='pi'] .pi-logo-mark {
+  width: 78%;
+  height: 78%;
 }

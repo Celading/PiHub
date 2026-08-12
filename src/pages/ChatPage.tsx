@@ -299,6 +299,13 @@ export function ChatPage({
   const [collapsedUnits, setCollapsedUnits] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // Large conversations render tail-first: only the last `visibleUnits`
+  // units are mounted, older ones load on demand ("加载更早消息"). Combined
+  // with content-visibility on .chat-unit this keeps huge sessions smooth.
+  const [visibleUnits, setVisibleUnits] = useState(30);
+  const loadEarlierUnits = useCallback((): void => {
+    setVisibleUnits((prev) => prev + 30);
+  }, []);
   // Simplified output: settled workflows auto-collapse; this set tracks the
   // ones the user explicitly expanded.
   const [userExpanded, setUserExpanded] = useState<ReadonlySet<string>>(
@@ -613,7 +620,16 @@ export function ChatPage({
           </div>
         ) : (
           <div className="chatpage-stream">
-            {units.map((unit, unitIndex) => {
+            {units.length > visibleUnits ? (
+              <button
+                type="button"
+                className="chatpage-load-earlier mono"
+                onClick={loadEarlierUnits}
+              >
+                {t('chat.loadEarlier', { count: String(units.length - visibleUnits) })}
+              </button>
+            ) : null}
+            {units.slice(-visibleUnits).map((unit, unitIndex) => {
               const isLast = unit === lastUnit;
               const isRunningUnit = isLast && chat.isAgentRunning && unit.user !== null;
               const isSettledUnit = isLast && !chat.isAgentRunning && runSummary !== null && unit.user !== null;
