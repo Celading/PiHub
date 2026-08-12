@@ -327,6 +327,18 @@ export function Sidebar({
     localStorage.setItem(ARCHIVED_STORAGE_KEY, JSON.stringify(archived));
   }, [archived]);
 
+  // Backfill convergence: the fast codex list returns placeholders for
+  // older records; refresh once after the async backfill settles so the
+  // sidebar converges to full data.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDeleteTick((prev) => prev + 1);
+    }, 2500);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {

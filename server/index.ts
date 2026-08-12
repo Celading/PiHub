@@ -7,6 +7,7 @@ import { createFileSessionProvider } from './providers/file-session-provider.js'
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
 import { CodexAdapter, resolveCodexBinary } from './adapters/codex-adapter.js';
+import { backfillCodexSessions, listCodexSessionsFast } from './adapters/codex-history.js';
 import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
@@ -264,7 +265,13 @@ app.use(
       ...(mode === 'demo'
         ? {}
         : {
-            codexSessions: () => listCodexSessions(),
+            codexSessions: () => {
+              const fast = listCodexSessionsFast();
+              // Newest-first fast list renders immediately; the heavy
+              // backfill fills older placeholders in the background.
+              void fast.then(() => backfillCodexSessions()).catch(() => {});
+              return fast;
+            },
             codexSessionDetail: (id: string) => parseRolloutFileById(id),
             atomcodeSession: () => getAtomcodeSession(),
             zcodeSessions: () => listZcodeSessions(),

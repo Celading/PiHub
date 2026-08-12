@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentMessage } from '../../shared/types.js';
-import { listCodexSessions } from './codex-history.js';
+import { findRolloutFile } from './codex-history.js';
 import {
   type AgentAdapter,
   type AgentAdapterEvents,
@@ -121,14 +121,15 @@ function messageText(payload: {
  * real user prompts and assistant replies (plus tool frames when present).
  */
 export async function loadRolloutMessages(threadId: string): Promise<AgentMessage[] | null> {
-  const sessions = await listCodexSessions();
-  const match = sessions.find((session) => session.sessionId === threadId);
-  if (match === undefined) {
+  // Direct file-name lookup (rollout names embed the thread id) — no full
+  // store parse, so resuming a codex thread stays fast.
+  const file = await findRolloutFile(threadId);
+  if (file === null) {
     return null;
   }
   let content: string;
   try {
-    content = await readFile(match.fileName, 'utf8');
+    content = await readFile(file, 'utf8');
   } catch {
     return null;
   }
