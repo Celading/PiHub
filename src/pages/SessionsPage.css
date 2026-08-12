@@ -214,3 +214,23 @@
 .codex-session-import {
   min-width: 4.5rem;
 }
+
+/* P1-08f: agent logos left of the read-only section titles. */
+.codex-sessions-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.agent-section-logo {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+/* atomcode's logo is white — tile it on a dark chip. */
+.agent-section-logo-dark {
+  background-color: #262626;
+  border-radius: 2px;
+  padding: 1px;
+}

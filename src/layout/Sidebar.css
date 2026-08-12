@@ -735,3 +735,22 @@
   font-size: var(--text-xs);
   padding: 1px var(--space-1);
 }
+
+/* P1-08f: real agent logos in the session rows (white tile; atomcode's
+   logo is white-on-transparent so it keeps a dark tile). */
+.agent-badge[data-agent] {
+  background-color: #ffffff;
+  border: 1px solid var(--border-subtle);
+}
+
+.agent-badge[data-agent='atomcode'] {
+  background-color: #262626;
+  border-color: #262626;
+}
+
+.agent-badge-logo {
+  width: 0.875rem;
+  height: 0.875rem;
+  object-fit: contain;
+  pointer-events: none;
+}

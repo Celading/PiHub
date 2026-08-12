@@ -672,6 +672,7 @@ export function ChatPage({
 
   return (
     <div className="chat-workspace">
+      <PromptTimeline units={units} onJump={jumpToPrompt} />
       <section className="chatpage" data-shot="chat">
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
@@ -1060,7 +1061,6 @@ export function ChatPage({
         />
       ) : null}
       </section>
-      <PromptTimeline units={units} onJump={jumpToPrompt} />
     </div>
   );
 }

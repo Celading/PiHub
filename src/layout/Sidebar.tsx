@@ -3,7 +3,6 @@ import type { SessionSummary } from '../../shared/types.js';
 import { SETTINGS_SECTIONS, type SettingsSectionId, type View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
-import { loadAdapterColors } from '../adapters/adapterColors.js';
 import type { CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
 import { useI18n } from '../i18n/I18nProvider.js';
@@ -53,11 +52,6 @@ const AGENT_GLYPHS: Record<SidebarAgent, string> = {
   zcode: 'Z',
   claude: 'C',
 };
-
-/** Badge background follows the user's custom adapter colors. */
-function badgeColor(agent: SidebarAgent): string {
-  return loadAdapterColors()[agent] ?? '#666666';
-}
 
 /** One unified sidebar row across every agent's session records. */
 interface AgentSessionRow {
@@ -199,13 +193,13 @@ function SessionRow({
         title={row.cwd.length > 0 ? row.cwd : row.label}
       >
         <span className="sidebar-session-head">
-          <span
-            className="agent-badge"
-            data-agent={row.agent}
-            style={{ backgroundColor: badgeColor(row.agent) }}
-            aria-hidden="true"
-          >
-            {AGENT_GLYPHS[row.agent]}
+          <span className="agent-badge" data-agent={row.agent} aria-hidden="true">
+            <img
+              src={`/icons/agents/${row.agent}.svg`}
+              alt=""
+              className="agent-badge-logo"
+              draggable={false}
+            />
           </span>
           {renaming ? (
             <input

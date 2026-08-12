@@ -62,24 +62,23 @@ export function PromptTimeline({
               onJump(key);
             }}
             onMouseEnter={(event) => {
-              // Fixed-position tooltip anchored to the item's rect: escapes
-              // the rail's overflow clip AND paints above the chat stream.
+              // Hover reveals prompt + time to the RIGHT of the rail
+              // (fixed positioning escapes the rail's overflow clip and
+              // paints above the chat stream).
               const rect = event.currentTarget.getBoundingClientRect();
-              setHovered({ key, left: rect.left - 8 - 240, top: rect.top + rect.height / 2 });
+              setHovered({ key, left: rect.right + 8, top: rect.top + rect.height / 2 });
             }}
             onMouseLeave={() => {
               setHovered(null);
             }}
           >
-            <span className="prompt-timeline-time mono" aria-hidden="true">
-              {time}
-            </span>
-            <span className="prompt-timeline-text">{summary}</span>
+            <span className="prompt-timeline-tick" aria-hidden="true" />
             {hovered !== null && hovered.key === key ? (
               <div
                 className="prompt-timeline-tip mono"
                 style={{ left: `${String(hovered.left)}px`, top: `${String(hovered.top)}px` }}
               >
+                {time.length > 0 ? <span className="prompt-timeline-tip-time">{time}</span> : null}
                 <span className="prompt-timeline-tip-text">
                   {summary.length > 0 ? summary.slice(0, 64) : t('promptIndex.empty')}
                 </span>

@@ -1,10 +1,10 @@
-/* Session prompt timeline — right rail of the chat stream. Every user
- * prompt is one item: its time (tiny) above a 2-line prompt summary, no
- * tick lines, centered with a small gap. */
+/* Session prompt timeline — narrow centered rail on the LEFT of the chat
+ * stream. Every user prompt is one horizontal tick (小横条); hovering a
+ * tick reveals the prompt + time + working span in a tooltip to the RIGHT
+ * of the rail. Items are vertically centered with a small gap. */
 .prompt-timeline {
-  width: 148px;
+  width: 34px;
   flex: none;
-  border-left: var(--border-thin) solid var(--border-subtle);
   background: var(--surface);
   overflow-y: auto;
   overflow-x: hidden;
@@ -13,50 +13,37 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: var(--space-2) 0;
+  padding: var(--space-3) 0;
 }
 
 .prompt-timeline-item {
   position: relative;
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 3px var(--space-2);
+  justify-content: center;
+  padding: 3px 0;
   cursor: pointer;
-  border-left: 2px solid transparent;
 }
 
-.prompt-timeline-item:hover {
-  background-color: var(--surface-hover);
+.prompt-timeline-tick {
+  display: block;
+  width: 14px;
+  height: 2px;
+  background-color: var(--border-strong);
+  transition:
+    width var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
 }
 
-.prompt-timeline-item[data-hovered='true'] {
-  border-left-color: var(--primary);
+.prompt-timeline-item:hover .prompt-timeline-tick,
+.prompt-timeline-item[data-hovered='true'] .prompt-timeline-tick {
+  width: 20px;
+  background-color: var(--primary);
 }
 
-.prompt-timeline-time {
-  font-size: 0.625rem;
-  color: var(--text-placeholder);
-  line-height: 1.2;
-}
-
-.prompt-timeline-text {
-  width: 100%;
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  color: var(--text-secondary);
-  word-break: break-all;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* tooltip: prompt summary + working time, fixed at the item's rect (left
-   of the rail) — fixed positioning escapes the rail's overflow clip and
-   paints above the chat stream. */
+/* tooltip: prompt time + summary + working span, fixed to the RIGHT of the
+   hovered tick (fixed positioning escapes the rail's overflow clip and
+   paints above the chat stream). */
 .prompt-timeline-tip {
   position: fixed;
   transform: translateY(-50%);
@@ -72,6 +59,11 @@
   flex-direction: column;
   gap: var(--space-1);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.prompt-timeline-tip-time {
+  color: var(--text-placeholder);
+  font-size: 0.625rem;
 }
 
 .prompt-timeline-tip-text {

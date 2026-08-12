@@ -1,71 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
-  <defs>
-    <!-- 背景丰富双向斜向渐变 -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00C8F2" />
-      <stop offset="30%" stop-color="#1B7BF7" />
-      <stop offset="70%" stop-color="#5551F5" />
-      <stop offset="100%" stop-color="#783BF3" />
-    </linearGradient>
-
-    <!-- 中心背景弥散光晕 -->
-    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35" />
-      <stop offset="60%" stop-color="#FFFFFF" stop-opacity="0.12" />
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
-    </radialGradient>
-
-    <!-- 柔和线条发光滤镜 -->
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="4" result="blur" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-
-    <!-- 卫星圆点柔和外发光 -->
-    <filter id="dotGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="6" />
-    </filter>
-  </defs>
-
-  <!-- 1. 背景圆角矩形 (iOS Squircle 风格) -->
-  <rect width="512" height="512" rx="115" fill="url(#bgGrad)" />
-
-  <!-- 2. 原子核背景弥散发光层 -->
-  <circle cx="256" cy="256" r="160" fill="url(#centerGlow)" />
-
-  <!-- 3. 发光线条层（外圆环 + 交叉椭圆轨道） -->
-  <g filter="url(#glow)">
-    <!-- 外围大圆环 -->
-    <circle cx="256" cy="256" r="156" fill="none" stroke="rgba(255, 255, 255, 0.52)" stroke-width="6" />
-
-    <!-- 倾斜轨道 1 (-18度) -->
-    <ellipse cx="256" cy="256" rx="56" ry="128" fill="none" stroke="rgba(255, 255, 255, 0.55)" stroke-width="6.5" transform="rotate(-18 256 256)" />
-
-    <!-- 倾斜轨道 2 (+18度) -->
-    <ellipse cx="256" cy="256" rx="56" ry="128" fill="none" stroke="rgba(255, 255, 255, 0.55)" stroke-width="6.5" transform="rotate(18 256 256)" />
-  </g>
-
-  <!-- 4. 外环上的三个等距卫星圆点 -->
-  <!-- 顶部圆点 (12点方向) -->
-  <circle cx="256" cy="100" r="20" fill="#FFFFFF" opacity="0.4" filter="url(#dotGlow)" />
-  <circle cx="256" cy="100" r="16" fill="#F4F8FF" />
-
-  <!-- 左下圆点 (7点半方向) -->
-  <circle cx="121" cy="334" r="20" fill="#FFFFFF" opacity="0.4" filter="url(#dotGlow)" />
-  <circle cx="121" cy="334" r="16" fill="#F4F8FF" />
-
-  <!-- 右下圆点 (4点半方向) -->
-  <circle cx="391" cy="334" r="20" fill="#FFFFFF" opacity="0.4" filter="url(#dotGlow)" />
-  <circle cx="391" cy="334" r="16" fill="#F4F8FF" />
-
-  <!-- 5. 中心原子核 -->
-  <g filter="url(#glow)">
-    <!-- 白色外环圆圈 -->
-    <circle cx="256" cy="256" r="44" fill="#FFFFFF" />
-    <!-- 紫色实心内芯 -->
-    <circle cx="256" cy="256" r="26" fill="#D3BBF8" />
-  </g>
-</svg>
+<svg viewBox="0 313 250 250" xmlns="http://www.w3.org/2000/svg" width="250" height="250"><g>
+<ellipse cx="125" cy="439.857086" rx="117" ry="117.14286" fill="url(#g)"/>
+<defs><radialGradient id="g" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0,-117.143,117,0,125,439.857)">
+<stop stop-color="#ffffff" offset="0" stop-opacity="0.35"/><stop stop-color="#ffffff" offset="0.6" stop-opacity="0.12"/><stop stop-color="#ffffff" offset="1" stop-opacity="0"/>
+</radialGradient></defs>
+<ellipse cx="125" cy="439.857117" rx="114.075005" ry="114.214294" stroke="#ffffff" stroke-opacity="0.52" stroke-width="6"/>
+<ellipse cx="40.9547768" cy="93.7033768" rx="40.954777" ry="93.703377" stroke="#ffffff" stroke-opacity="0.55" stroke-width="6.5" transform="matrix(0.950946,-0.309358,0.308676,0.951167,57.1302,363.399)"/>
+<ellipse cx="40.9547768" cy="93.7033768" rx="40.954777" ry="93.703377" stroke="#ffffff" stroke-opacity="0.55" stroke-width="6.5" transform="matrix(0.950946,0.309358,-0.308676,0.951167,114.978,338.06)"/>
+<ellipse cx="125" cy="325.642883" rx="11.7" ry="11.714287" fill="#f4f8ff"/>
+<ellipse cx="26.2812538" cy="496.964294" rx="11.7" ry="11.714287" fill="#f4f8ff"/>
+<ellipse cx="223.71875" cy="496.964294" rx="11.7" ry="11.714287" fill="#f4f8ff"/>
+<ellipse cx="125" cy="439.857117" rx="32.175003" ry="32.214287" fill="#ffffff"/>
+<ellipse cx="125" cy="439.857117" rx="19.012501" ry="19.035715" fill="#d3bbf8"/>
+</g></svg>

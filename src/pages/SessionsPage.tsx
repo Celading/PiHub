@@ -302,7 +302,10 @@ export function SessionsPage({
       {/* P2-01 B: read-only codex session records (never spawned). */}
       <section className="codex-sessions">
         <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">{t('codex.sessions')}</h2>
+          <h2 className="codex-sessions-title mono">
+            <img src="/icons/agents/codex.svg" alt="" className="agent-section-logo" />
+            {t('codex.sessions')}
+          </h2>
           <p className="codex-sessions-hint mono">{t('codex.sessionsHint')}</p>
         </div>
         {codexError !== null ? <div className="sessions-error mono">{codexError}</div> : null}
@@ -383,6 +386,7 @@ export function SessionsPage({
       <section className="codex-sessions">
         <div className="codex-sessions-head">
           <h2 className="codex-sessions-title mono">
+            <img src="/icons/agents/atomcode.svg" alt="" className="agent-section-logo agent-section-logo-dark" />
             {t('adapter.sessions', { label: 'AtomCode' })}
           </h2>
           <p className="codex-sessions-hint mono">~/.atomcode/history.json</p>
@@ -408,7 +412,10 @@ export function SessionsPage({
       {/* ADAPTER2: read-only zcode records (rollout model I/O). */}
       <section className="codex-sessions">
         <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">{t('adapter.sessions', { label: 'ZCode' })}</h2>
+          <h2 className="codex-sessions-title mono">
+            <img src="/icons/agents/zcode.svg" alt="" className="agent-section-logo" />
+            {t('adapter.sessions', { label: 'ZCode' })}
+          </h2>
           <p className="codex-sessions-hint mono">~/.zcode/cli/rollout</p>
         </div>
         {zcodeSessions === null ? (
@@ -438,7 +445,10 @@ export function SessionsPage({
 
       <section className="codex-sessions">
         <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">{t('adapter.sessions', { label: 'Claude' })}</h2>
+          <h2 className="codex-sessions-title mono">
+            <img src="/icons/agents/claude.svg" alt="" className="agent-section-logo" />
+            {t('adapter.sessions', { label: 'Claude' })}
+          </h2>
           <p className="codex-sessions-hint mono">~/.claude/projects</p>
         </div>
         {claudeSessions === null ? (
