@@ -99,6 +99,15 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 
 需要 [pi](https://pi.dev)（`pi --version` ≥ 0.83）与 Node.js ≥ 20。
 
+### 经 npm（生产构建）
+
+```bash
+npm install -g pi-panel
+pihub        # 启动面板：http://127.0.0.1:3001（浏览器打开）
+```
+
+### 从源码（开发）
+
 ```bash
 git clone https://github.com/HapPub/PiHub.git
 cd PiHub

@@ -106,6 +106,15 @@ Permissions · Prompt Favorites · Lab
 
 Requires [pi](https://pi.dev) (`pi --version` ≥ 0.83) and Node.js ≥ 20.
 
+### Via npm (production build)
+
+```bash
+npm install -g pi-panel
+pihub        # serves the panel on http://127.0.0.1:3001 (open it in a browser)
+```
+
+### From source (development)
+
 ```bash
 git clone https://github.com/HapPub/PiHub.git
 cd PiHub

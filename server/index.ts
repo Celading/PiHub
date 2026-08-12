@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import express from 'express';
 import path from 'node:path';
 import { RpcBridge } from './rpc-bridge.js';

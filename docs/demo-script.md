@@ -46,7 +46,7 @@
 
 ### 3. Multi-session tabs (0:12–0:18) — 6s
 
-- **Script step** (P1-06): click a second session in the sidebar — a new
+- **Script step**: click a second session in the sidebar — a new
   tab opens beside the first; click between tabs.
 - **Note on recording**: session switching is a write operation, so the
   auto-recorder's demo stack (writes return 503 by design) cannot perform

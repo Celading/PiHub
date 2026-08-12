@@ -20,7 +20,7 @@ Requirements:
 - A configured model provider (pi's usual setup)
 
 ```bash
-git clone <repo>/pi-panel
+git clone https://github.com/HapPub/PiHub.git
 cd pi-panel
 npm install
 npm run dev
