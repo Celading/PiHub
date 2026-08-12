@@ -12,6 +12,7 @@ const SIDEBAR_MAX = 480;
 const SIDEBAR_DEFAULT = 272;
 const RESIZER_WIDTH = 6;
 const RIGHT_WIDTH_KEY = 'pi-panel:right-sidebar-width';
+const RIGHT_MODE_KEY = 'pi-panel:right-sidebar-mode';
 const RIGHT_MIN = 220;
 const RIGHT_MAX = 560;
 const RIGHT_DEFAULT = 300;
@@ -88,6 +89,15 @@ export function AppShell({
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
   const [rightWidth, setRightWidth] = useState<number>(() => loadRightWidth());
   const [rightOpen, setRightOpen] = useState(true);
+  // P1-08d: docked (edge-attached with the grid resizer) or floating
+  // (top-right card). Persisted so the choice survives reloads.
+  const [rightMode, setRightMode] = useState<'docked' | 'float'>(() => {
+    try {
+      return localStorage.getItem(RIGHT_MODE_KEY) === 'float' ? 'float' : 'docked';
+    } catch {
+      return 'docked';
+    }
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState<boolean>(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches,
@@ -127,6 +137,14 @@ export function AppShell({
       // storage unavailable
     }
   }, [rightWidth]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RIGHT_MODE_KEY, rightMode);
+    } catch {
+      // storage unavailable
+    }
+  }, [rightMode]);
 
   // Drag-to-resize: mousemove/mouseup listeners live on the window so the
   // drag keeps tracking outside the resizer strip.
@@ -170,11 +188,13 @@ export function AppShell({
   }, [rightWidth]);
 
   const sidebarCol = sidebarCollapsed ? '2rem' : `${String(sidebarWidth)}px`;
-  const rightCol = rightOpen ? `${String(rightWidth)}px` : '0px';
+  const docked = rightOpen && rightMode === 'docked';
+  const rightCol = docked ? `${String(rightWidth)}px` : '0px';
 
   return (
     <div
       className="shell"
+      data-right-mode={rightMode}
       style={
         isMobile
           ? undefined
@@ -231,13 +251,19 @@ export function AppShell({
         aria-orientation="vertical"
         aria-label="Resize right panel"
         onMouseDown={startRightResize}
-        data-open={rightOpen}
+        data-open={docked}
         data-mobile={isMobile}
       />
       {rightOpen && !isMobile ? (
         <RightSidebar
           sessionFile={sessionFile}
           agent={agent}
+          mode={rightMode}
+          width={rightWidth}
+          onModeChange={(mode) => {
+            setRightMode(mode);
+          }}
+          onResizeStart={startRightResize}
           onClose={() => {
             setRightOpen(false);
           }}

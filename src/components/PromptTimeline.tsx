@@ -42,7 +42,7 @@ export function PromptTimeline({
   onJump: (key: string) => void;
 }): React.JSX.Element {
   const { t } = useI18n();
-  const [hovered, setHovered] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<{ key: string; left: number; top: number } | null>(null);
   const prompts = units.filter((unit) => unit.user !== null);
 
   return (
@@ -51,7 +51,7 @@ export function PromptTimeline({
         const key = unit.key;
         const summary = promptSummary(unit);
         const span = workingSpan(unit);
-        const showTip = hovered === key;
+        const showTip = hovered?.key === key;
         return (
           <div
             key={key}
@@ -60,16 +60,23 @@ export function PromptTimeline({
             onClick={() => {
               onJump(key);
             }}
-            onMouseEnter={() => {
-              setHovered(key);
+            onMouseEnter={(event) => {
+              // Fixed-position tooltip anchored to the tick's rect: escapes
+              // the rail's overflow clip AND paints above the chat stream
+              // (which would otherwise cover an absolutely positioned tip).
+              const rect = event.currentTarget.getBoundingClientRect();
+              setHovered({ key, left: rect.left - 8 - 240, top: rect.top + rect.height / 2 });
             }}
             onMouseLeave={() => {
               setHovered(null);
             }}
           >
             <span className="prompt-timeline-tick" aria-hidden="true" />
-            {showTip ? (
-              <div className="prompt-timeline-tip mono">
+            {hovered !== null && hovered.key === key ? (
+              <div
+                className="prompt-timeline-tip mono"
+                style={{ left: `${String(hovered.left)}px`, top: `${String(hovered.top)}px` }}
+              >
                 <span className="prompt-timeline-tip-text">
                   {summary.length > 0 ? summary.slice(0, 64) : t('promptIndex.empty')}
                 </span>

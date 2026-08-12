@@ -126,6 +126,11 @@ interface SessionRowProps {
   onContextMenu: (event: React.MouseEvent, row: AgentSessionRow) => void;
   /** Codex record imported ("录入") into the 会话 area — show a pin. */
   imported: boolean;
+  /** Inline rename mode (pi sessions only — set_session_name names the
+   *  ACTIVE session, so the menu only offers it for the active row). */
+  renaming: boolean;
+  onRename: (name: string) => void;
+  onCancelRename: () => void;
   t: ReturnType<typeof useI18n>['t'];
 }
 
@@ -139,9 +144,13 @@ function SessionRow({
   onOpen,
   onContextMenu,
   imported,
+  renaming,
+  onRename,
+  onCancelRename,
   t,
 }: SessionRowProps): React.JSX.Element {
   const [dragId, setDragId] = useState<string | null>(null);
+  const [draft, setDraft] = useState(row.label);
 
   const statusLabel =
     status === 'running'
@@ -152,11 +161,13 @@ function SessionRow({
           ? t('session.status.pending')
           : t('session.status.done');
 
-  // P1-17 E: dot shows for unseen sessions; the active session hides it
-  // unless it is busy or has a pending agent request (blink). The dot sits
-  // on the RIGHT of the row (agent badge on the left), space-between.
-  const showDot =
-    row.agent === 'pi' && (active ? status !== 'done' || blink : unread || status === 'running');
+  // P1-17 E: 灯 (status light) — busy states only; sits on the meta line's
+  // right edge. 指示 (unread / pending-request indicator) — unseen sessions
+  // show it on the title line's right edge; the active session hides it
+  // unless a request is pending (blink).
+  const showStatusLight = row.agent === 'pi' && status !== 'done';
+  const showIndicator =
+    row.agent === 'pi' && (active ? blink : unread || status === 'running');
 
   return (
     <div
@@ -193,11 +204,41 @@ function SessionRow({
           >
             {AGENT_GLYPHS[row.agent]}
           </span>
-          <span className="sidebar-session-cwd mono">{row.label}</span>
+          {renaming ? (
+            <input
+              className="sidebar-session-rename mono"
+              value={draft}
+              autoFocus
+              onChange={(event) => {
+                setDraft(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  onRename(draft.trim());
+                } else if (event.key === 'Escape') {
+                  onCancelRename();
+                }
+              }}
+              onBlur={() => {
+                onRename(draft.trim());
+              }}
+            />
+          ) : (
+            <span className="sidebar-session-cwd mono">{row.label}</span>
+          )}
+          <span className="sidebar-session-head-end" aria-hidden="true" />
           {imported ? (
             <span className="agent-pin" title={t('sidebar.imported')}>
               ✓
             </span>
+          ) : null}
+          {showIndicator ? (
+            <span
+              className="session-status-indicator"
+              data-blink={blink}
+              title={blink ? t('session.status.request') : statusLabel}
+              aria-label={blink ? t('session.status.request') : statusLabel}
+            />
           ) : null}
         </span>
         <span className="sidebar-session-meta mono">
@@ -205,7 +246,7 @@ function SessionRow({
             {String(row.messageCount)} {t('sidebar.msgs')} ·{' '}
             {formatTime(row.lastActivityAt, intlTag)}
           </span>
-          {showDot ? (
+          {showStatusLight ? (
             <span
               className="session-status-dot"
               data-status={status}
@@ -279,6 +320,9 @@ export function Sidebar({
     y: number;
     session: SessionSummary;
   } | null>(null);
+  /** Inline rename of the ACTIVE pi session (set_session_name names the
+   *  current session only, so the menu offers it for the active row). */
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SessionSummary | null>(null);
   const [collections, setCollections] = useState<Record<string, string[]>>(() => {
     try {
@@ -570,6 +614,27 @@ export function Sidebar({
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [onSessionChanged, onViewChange]);
+
+  const commitRename = useCallback(
+    async (row: AgentSessionRow, name: string): Promise<void> => {
+      setRenamingKey(null);
+      if (name.length === 0 || name === row.label) {
+        return;
+      }
+      try {
+        const response = await api.renameSession(name);
+        if (!response.success) {
+          setError(response.error ?? 'rename failed');
+          return;
+        }
+        // Re-list so the new session name is picked up from the file.
+        setDeleteTick((prev) => prev + 1);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [],
+  );
 
   const handleResume = useCallback(
     async (session: SessionSummary): Promise<void> => {
@@ -1013,6 +1078,13 @@ export function Sidebar({
                             row.agent === 'codex' &&
                             importedCodex.includes((row.target as CodexSessionMeta).sessionId)
                           }
+                          renaming={renamingKey === row.key}
+                          onRename={(name) => {
+                            void commitRename(row, name);
+                          }}
+                          onCancelRename={() => {
+                            setRenamingKey(null);
+                          }}
                           t={t}
                         />
                       </li>
@@ -1047,6 +1119,13 @@ export function Sidebar({
                             row.agent === 'codex' &&
                             importedCodex.includes((row.target as CodexSessionMeta).sessionId)
                           }
+                          renaming={false}
+                          onRename={() => {
+                            // record-only rows cannot be renamed
+                          }}
+                          onCancelRename={() => {
+                            // no-op
+                          }}
                           t={t}
                         />
                       </li>
@@ -1148,6 +1227,25 @@ export function Sidebar({
                 void handleResume(contextMenu.session);
               },
             },
+            ...(isActive(contextMenu.session.fileName)
+              ? [
+                  {
+                    label: t('sidebar.rename'),
+                    icon: 'hico-pencil',
+                    onSelect: () => {
+                      const rowKey = agentRows.find(
+                        (item) =>
+                          item.agent === 'pi' &&
+                          (item.target as SessionSummary).fileName === contextMenu.session.fileName,
+                      )?.key;
+                      if (rowKey !== undefined) {
+                        setRenamingKey(rowKey);
+                      }
+                      setContextMenu(null);
+                    },
+                  } as const,
+                ]
+              : []),
             {
               label: t('sidebar.newBranch'),
               icon: 'hico-square-grid',
