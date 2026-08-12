@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
 import { TypewriterText } from './TypewriterText.js';
@@ -9,8 +9,10 @@ import { linkifyPaths } from './filePaths.js';
 import './MessageItem.css';
 
 /** Long content (big diffs, logs, long replies) collapses below a max
- *  height with a fog blur + "expand all" button — content is never trimmed,
- *  only visually capped. Reveal animates blur(15px) → blur(0px). */
+ *  height with a fog cap + "expand all" button — content is never trimmed,
+ *  only visually capped. Reveal sweeps a fog layer down like a typewriter
+ *  (blur(15px) leading edge); a JS timer strips the layer even when the CSS
+ *  animation is throttled or stalled, so content is never left hidden. */
 function LongContent({
   children,
   label,
@@ -18,27 +20,66 @@ function LongContent({
   children: React.ReactNode;
   label: string;
 }): React.JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
+  const [swept, setSwept] = useState(true);
+  const [sweepKey, setSweepKey] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (el !== null) {
-      setOverflowing(el.scrollHeight > 640);
+      // The clip wrapper owns the 40rem cap, so its scrollHeight is the
+      // true content height (the outer box never clips).
+      const clip = el.querySelector('.long-content-clip');
+      setOverflowing((clip !== null ? clip.scrollHeight : el.scrollHeight) > 640);
     }
   }, [children]);
+  // Re-arm the fog sweep whenever the collapse state changes (mount +
+  // expand). The sweep layer removes itself on animation end; the timer is
+  // the fallback so a throttled/stalled animation can never hide content.
+  useEffect(() => {
+    if (!overflowing) {
+      setSwept(true);
+      return;
+    }
+    setSwept(false);
+    setSweepKey((key) => key + 1);
+    const timer = window.setTimeout(() => {
+      setSwept(true);
+    }, 1700);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [expanded, overflowing]);
   return (
     <div className="long-content" data-expanded={expanded} ref={ref}>
-      {children}
-      {overflowing && !expanded ? (
+      <div className="long-content-cap">
+        <div className="long-content-clip">{children}</div>
+        {overflowing && !expanded ? (
+          <div className="long-content-fog-cap" aria-hidden="true" />
+        ) : null}
+        {overflowing && !swept ? (
+          <div
+            key={sweepKey}
+            className="long-content-fog-sweep"
+            aria-hidden="true"
+            onAnimationEnd={() => {
+              setSwept(true);
+            }}
+          />
+        ) : null}
+      </div>
+      {overflowing ? (
         <button
           type="button"
           className="long-content-expand mono"
+          data-expanded={expanded}
           onClick={() => {
-            setExpanded(true);
+            setExpanded((value) => !value);
           }}
         >
-          {label}
+          {expanded ? t('chat.collapseAll') : label}
         </button>
       ) : null}
     </div>

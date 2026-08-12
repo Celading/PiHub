@@ -406,8 +406,6 @@ export function App(): React.JSX.Element {
       onThemeToggle={() => {
         setTheme(theme === 'light' ? 'dark' : 'light');
       }}
-      agent={agent}
-      onAgentChange={setAgent}
       onOpenCodexSession={handleOpenCodexSession}
     >
       {/* P1-17 F: each view switch replays the 3D entry (perspective

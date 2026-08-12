@@ -145,39 +145,3 @@
 .header-theme-toggle:hover {
   background-color: var(--surface-hover);
 }
-
-/* ---- Agent switch (pi / codex) ---- */
-.header-agent-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: var(--space-3);
-  border: var(--border-thin) solid var(--border-subtle);
-  padding: 2px;
-}
-
-.header-agent-btn {
-  border: none;
-  background: none;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  padding: 2px 8px;
-  cursor: pointer;
-  line-height: 1;
-}
-
-.header-agent-btn[data-agent='pi'][data-active='true'] {
-  background-color: #005fb8;
-  color: #ffffff;
-}
-
-.header-agent-btn[data-agent='codex'][data-active='true'] {
-  background-color: #10a37f;
-  color: #ffffff;
-}
-
-.header-agent-btn:hover:not([data-active='true']) {
-  background-color: var(--surface-hover);
-  color: var(--text-primary);
-}

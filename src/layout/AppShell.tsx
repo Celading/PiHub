@@ -26,9 +26,6 @@ interface AppShellProps {
   /** P1-06: session changed under the chat workspace (see Sidebar). */
   onSessionChanged: (fileName?: string | null, label?: string) => void;
   onThemeToggle: () => void;
-  /** Agent switch (pi / codex) shown in the header. */
-  agent: 'pi' | 'codex';
-  onAgentChange: (agent: 'pi' | 'codex') => void;
   /** Open a codex record in the codex chat (from the sidebar). */
   onOpenCodexSession: (threadId: string, label: string) => void;
   children: ReactNode;
@@ -62,8 +59,6 @@ export function AppShell({
   onViewChange,
   onSessionChanged,
   onThemeToggle,
-  agent,
-  onAgentChange,
   onOpenCodexSession,
   children,
 }: AppShellProps): React.JSX.Element {
@@ -138,8 +133,6 @@ export function AppShell({
         onMenuClick={() => {
           setMobileOpen(true);
         }}
-        agent={agent}
-        onAgentChange={onAgentChange}
       />
       {isMobile && mobileOpen ? (
         <div
