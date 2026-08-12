@@ -4,6 +4,7 @@ import type {
   ExtensionUiRequest,
   ExtensionUiResponse,
   FileListing,
+  GitChange,
   ModelInfo,
   PiCommand,
   Pipeline,
@@ -346,6 +347,28 @@ export const api = {
       params.set('session', session);
     }
     return request<FileListing>(`/api/files?${params.toString()}`);
+  },
+
+  /** P1-08b: read-only git worktree status of the session's cwd. */
+  gitStatus(session?: string): Promise<{ root: string; repo: boolean; changes: GitChange[] }> {
+    const params = new URLSearchParams();
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
+    const suffix = params.toString().length > 0 ? `?${params.toString()}` : '';
+    return request<{ root: string; repo: boolean; changes: GitChange[] }>(`/api/git/status${suffix}`);
+  },
+
+  /** P1-08b: read-only diff of one path (staged or worktree). */
+  gitDiff(path: string, session?: string, staged = false): Promise<{ diff: string }> {
+    const params = new URLSearchParams({ path });
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
+    if (staged) {
+      params.set('staged', '1');
+    }
+    return request<{ diff: string }>(`/api/git/diff?${params.toString()}`);
   },
 
   /** pi.dev official per-provider model catalog (P1-15 C). */

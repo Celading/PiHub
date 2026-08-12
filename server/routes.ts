@@ -51,6 +51,7 @@ import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import { parseSessionFile } from './sessions.js';
 import { recentFileActions } from './recent-files.js';
+import { gitDiff, gitStatus } from './git-status.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { CodexSessionDetail } from './adapters/codex-history.js';
@@ -1231,6 +1232,70 @@ export function createRouter(
       res.json({ root: realTarget, entries, recent });
     } catch (error) {
       res.status(404).json({ error: `cannot list directory: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  });
+
+  /* ---- P1-08b: read-only git worktree inspection (right workbench 变更) ----
+   * `git status --porcelain=v1 -z` + `git diff` only — no write commands, no
+   * shell, paths resolved inside the session cwd. */
+  const resolveGitRoot = async (sessionParam: string | undefined): Promise<string | null> => {
+    if (sessionParam !== undefined && sessionParam.length > 0) {
+      try {
+        const all = await sessions.list();
+        const match = all.find((session) => session.fileName === sessionParam);
+        if (match !== undefined && match.cwd.length > 0) {
+          return match.cwd;
+        }
+      } catch {
+        // fall through to the tracked root
+      }
+    }
+    return previewRoot ?? null;
+  };
+
+  router.get('/api/git/status', async (req, res) => {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const root = await resolveGitRoot(sessionParam);
+    if (root === null || root.length === 0) {
+      res.status(503).json({ error: 'git status unavailable' });
+      return;
+    }
+    try {
+      const realRoot = await realpath(path.resolve(root));
+      const changes = await gitStatus(realRoot);
+      res.json({ root: realRoot, repo: changes !== null, changes: changes ?? [] });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/git/diff', async (req, res) => {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    const staged = req.query['staged'] === '1' || req.query['staged'] === 'true';
+    if (rawPath.length === 0 || rawPath.length > 1024) {
+      res.status(400).json({ error: 'invalid path' });
+      return;
+    }
+    const root = await resolveGitRoot(sessionParam);
+    if (root === null || root.length === 0) {
+      res.status(503).json({ error: 'git diff unavailable' });
+      return;
+    }
+    const rootResolved = path.resolve(root);
+    const resolved = path.resolve(rootResolved, rawPath);
+    // Lexical containment against the REAL root: git paths may point at
+    // deleted files, so realpath of the target is not required.
+    if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
+      res.status(400).json({ error: 'path outside workspace' });
+      return;
+    }
+    try {
+      const realRoot = await realpath(rootResolved);
+      const diff = await gitDiff(realRoot, rawPath, staged);
+      res.json({ diff: diff ?? '' });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 

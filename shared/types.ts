@@ -308,3 +308,12 @@ export interface FileListing {
   entries: FileEntry[];
   recent: Array<{ path: string; action: string }>;
 }
+
+/* ---- P1-08b: git worktree changes ---- */
+export interface GitChange {
+  path: string;
+  index: string;
+  worktree: string;
+  kind: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflicted' | 'other';
+  staged: boolean;
+}

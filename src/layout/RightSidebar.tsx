@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { RightFilesPanel } from '../components/RightFilesPanel.js';
+import { RightChangesPanel } from '../components/RightChangesPanel.js';
 import './RightSidebar.css';
 
 /** Right workbench panel tabs: workspace files, git changes, session tree. */
@@ -67,8 +68,11 @@ export function RightSidebar({
         {tab === 'files' && sessionFile === null ? (
           <p className="right-sidebar-empty mono">{t('rightSidebar.noSession')}</p>
         ) : null}
-        {tab === 'changes' ? (
-          <p className="right-sidebar-empty mono">{t('rightSidebar.comingSoon')}</p>
+        {tab === 'changes' && sessionFile !== null ? (
+          <RightChangesPanel sessionFile={sessionFile} />
+        ) : null}
+        {tab === 'changes' && sessionFile === null ? (
+          <p className="right-sidebar-empty mono">{t('rightSidebar.noSession')}</p>
         ) : null}
         {tab === 'tree' && agent === 'pi' ? (
           <p className="right-sidebar-empty mono">{t('rightSidebar.comingSoon')}</p>
