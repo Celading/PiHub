@@ -47,6 +47,7 @@ export function AboutSection(): React.JSX.Element {
         <pre className="about-code mono">npm install -g @celading/pihub</pre>
         <pre className="about-code mono">pihub</pre>
         <p className="settings-hint">{t('about.installHint')}</p>
+        <p className="settings-hint">{t('about.pwaHint')}</p>
       </div>
 
       <div className="about-block">
