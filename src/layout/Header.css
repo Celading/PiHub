@@ -46,6 +46,14 @@
   font-size: var(--text-base);
   font-weight: 600;
   line-height: 1;
+  overflow: hidden;
+  border-radius: var(--radius-none);
+}
+
+.header-brand-mark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .header-brand-text {
