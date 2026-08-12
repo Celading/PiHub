@@ -146,11 +146,27 @@
   padding-left: var(--space-2);
 }
 
+/* UX workbench (audit): the group head is a fold toggle — one summary line
+   when collapsed, a chevron + name (hover hint) when open. */
 .sidebar-collection-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-collection-chevron {
+  flex-shrink: 0;
+  width: 1rem;
+  color: var(--text-placeholder);
+  font-size: 0.625rem;
+  text-align: center;
 }
 
 .sidebar-collection-name {
@@ -167,9 +183,21 @@
   white-space: nowrap;
 }
 
-.sidebar-collection-name:hover {
+.sidebar-collection-head:hover .sidebar-collection-name {
   background-color: var(--surface-hover);
   color: var(--primary);
+}
+
+.sidebar-collection-summary {
+  flex-shrink: 0;
+  padding-right: var(--space-2);
+  color: var(--text-placeholder);
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+.sidebar-collection-head[data-folded='true'] .sidebar-collection-name {
+  color: var(--text-secondary);
 }
 
 .sidebar-collection-input {
@@ -308,6 +336,37 @@
   display: inline-flex;
   gap: 2px;
   margin-left: auto;
+}
+
+/* UX workbench (audit): run-state filter row under the agent filter — thin
+   state chips (running / pending approval / failed / completed). */
+.sidebar-status-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: var(--space-1) 0 var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.sidebar-status-filter-btn {
+  border: var(--border-thin) solid transparent;
+  background: none;
+  color: var(--text-placeholder);
+  font-size: 0.625rem;
+  padding: 1px 6px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.sidebar-status-filter-btn:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-status-filter-btn[data-active='true'] {
+  border-color: var(--border-strong);
+  background-color: var(--surface);
+  color: var(--text-primary);
 }
 
 .sidebar-agent-filter-btn {

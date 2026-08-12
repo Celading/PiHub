@@ -240,10 +240,7 @@ function SessionRow({
           ) : null}
         </span>
         <span className="sidebar-session-meta mono">
-          <span>
-            {String(row.messageCount)} {t('sidebar.msgs')} ·{' '}
-            {formatTime(row.lastActivityAt, intlTag)}
-          </span>
+          <span>{formatTime(row.lastActivityAt, intlTag)}</span>
           {showStatusLight ? (
             <span
               className="session-status-dot"
@@ -283,6 +280,32 @@ export function Sidebar({
   const [agentRows, setAgentRows] = useState<AgentSessionRow[]>(() => []);
   /** Sidebar filter: 'all' shows every agent's records (default). */
   const [agentFilter, setAgentFilter] = useState<'all' | SidebarAgent>('all');
+  /** UX workbench (audit): run-state filter — running / pending approval /
+   *  failed / completed. Non-active sessions read as 'done' (statusOf). */
+  const [statusFilter, setStatusFilter] = useState<'all' | SessionStatus>('all');
+  /** UX workbench (audit): project groups collapse to one summary line;
+   *  null = not yet touched → default rule (active project expanded, the
+   *  rest collapsed). Once the user toggles any group the set persists. */
+  const FOLDED_STORAGE_KEY = 'pi-panel:sidebar-folded';
+  const [folded, setFolded] = useState<Set<string> | null>(() => {
+    try {
+      const raw = localStorage.getItem(FOLDED_STORAGE_KEY);
+      if (raw === null) {
+        return null;
+      }
+      const parsed: unknown = JSON.parse(raw);
+      return new Set<string>(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []);
+    } catch {
+      return null;
+    }
+  });
+  const persistFolded = (next: Set<string>): void => {
+    try {
+      localStorage.setItem(FOLDED_STORAGE_KEY, JSON.stringify([...next]));
+    } catch {
+      // storage unavailable
+    }
+  };
   /** Codex records "录入" (imported) from the history page — pinned on top. */
   const [importedCodex, setImportedCodex] = useState<string[]>(() => {
     try {
@@ -997,7 +1020,8 @@ export function Sidebar({
           <span className="sidebar-section-label swiss-section-label">
             {t('sidebar.sessions')}
           </span>
-          {/* Multi-agent filter: all records by default. */}
+          {/* Multi-agent filter: all records by default. UX workbench: the
+              glyphs gain tooltips (owner audit — 字形过于隐晦). */}
           <div className="sidebar-agent-filter" role="group" aria-label={t('sidebar.agentFilter')}>
             {(
               [
@@ -1015,6 +1039,8 @@ export function Sidebar({
                 className="sidebar-agent-filter-btn mono"
                 data-agent={option.value}
                 data-active={agentFilter === option.value}
+                title={t(`sidebar.agent.${option.value}` as MessageKey)}
+                aria-label={t(`sidebar.agent.${option.value}` as MessageKey)}
                 onClick={() => {
                   setAgentFilter(option.value);
                 }}
@@ -1024,10 +1050,42 @@ export function Sidebar({
             ))}
           </div>
         </div>
+        {/* UX workbench (audit): run-state filter — running / pending
+            approval / failed / completed. */}
+        <div
+          className="sidebar-status-filter mono"
+          role="group"
+          aria-label={t('sidebar.statusFilter')}
+        >
+          {(
+            [
+              { value: 'all', labelKey: 'sidebar.filter.all' },
+              { value: 'running', labelKey: 'sidebar.filter.running' },
+              { value: 'pending', labelKey: 'sidebar.filter.pending' },
+              { value: 'aborted', labelKey: 'sidebar.filter.aborted' },
+              { value: 'done', labelKey: 'sidebar.filter.done' },
+            ] as ReadonlyArray<{ value: 'all' | SessionStatus; labelKey: MessageKey }>
+          ).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="sidebar-status-filter-btn"
+              data-active={statusFilter === option.value}
+              onClick={() => {
+                setStatusFilter(option.value);
+              }}
+            >
+              {t(option.labelKey)}
+            </button>
+          ))}
+        </div>
         {(() => {
           const needle = query.trim().toLowerCase();
           const rows = agentRows.filter((row) => {
             if (agentFilter !== 'all' && row.agent !== agentFilter) {
+              return false;
+            }
+            if (statusFilter !== 'all' && row.status !== statusFilter) {
               return false;
             }
             if (row.agent === 'pi' && archived.includes((row.target as SessionSummary).id)) {
@@ -1059,60 +1117,116 @@ export function Sidebar({
             const lb = b[1][0]?.lastActivityAt ?? '';
             return la < lb ? 1 : -1;
           });
+          // UX workbench (audit): project folding — the ACTIVE project is
+          // expanded by default, every other group collapses to one summary
+          // line (folder · N sessions · last activity). The fold set is
+          // persisted once the user touches any group.
+          const activeRow = rows.find(
+            (row) => row.agent === 'pi' && isActive((row.target as SessionSummary).fileName),
+          );
+          const activeFolder =
+            activeRow !== undefined && activeRow.cwd.length > 0 ? shortCwd(activeRow.cwd) : null;
+          const isFolded = (folder: string): boolean => {
+            if (folded === null) {
+              return folder !== activeFolder;
+            }
+            return folded.has(folder);
+          };
+          const toggleFolder = (folder: string): void => {
+            setFolded((prev) => {
+              const base = new Set<string>(prev ?? []);
+              if (base.has(folder)) {
+                base.delete(folder);
+              } else {
+                base.add(folder);
+              }
+              persistFolded(base);
+              return base;
+            });
+          };
           return (
             <>
-              {groupEntries.map(([folder, folderRows]) => (
-                <div key={folder} className="sidebar-collection">
-                  <div className="sidebar-collection-head">
-                    <span className="sidebar-collection-name mono" title={folder}>
-                      {folder}
-                    </span>
+              {groupEntries.map(([folder, folderRows]) => {
+                const collapsed = isFolded(folder);
+                const latest = folderRows.reduce((best, row) => {
+                  return row.lastActivityAt > best ? row.lastActivityAt : best;
+                }, folderRows[0]?.lastActivityAt ?? '');
+                return (
+                  <div key={folder} className="sidebar-collection">
+                    <button
+                      type="button"
+                      className="sidebar-collection-head"
+                      data-folded={collapsed}
+                      title={collapsed ? t('sidebar.expandProject') : t('sidebar.collapseProject')}
+                      aria-expanded={!collapsed}
+                      onClick={() => {
+                        toggleFolder(folder);
+                      }}
+                    >
+                      <span
+                        className="sidebar-collection-chevron mono"
+                        aria-hidden="true"
+                      >
+                        {collapsed ? '▸' : '▾'}
+                      </span>
+                      <span className="sidebar-collection-name mono" title={folder}>
+                        {folder}
+                      </span>
+                      {collapsed ? (
+                        <span className="sidebar-collection-summary mono">
+                          {String(folderRows.length)} {t('sidebar.sessionCount')} ·{' '}
+                          {formatTime(latest, intlTag)}
+                        </span>
+                      ) : null}
+                    </button>
+                    {!collapsed ? (
+                      <ul className="sidebar-session-list">
+                        {folderRows.map((row) => (
+                          <li key={row.key}>
+                            <SessionRow
+                              row={row}
+                              intlTag={intlTag}
+                              active={
+                                row.agent === 'pi' &&
+                                isActive((row.target as SessionSummary).fileName)
+                              }
+                              status={row.status}
+                              unread={
+                                row.agent === 'pi' ? isUnread(row.target as SessionSummary) : false
+                              }
+                              blink={
+                                row.agent === 'pi' &&
+                                isActive((row.target as SessionSummary).fileName) &&
+                                requestPending
+                              }
+                              onOpen={(clicked) => {
+                                handleOpenRow(clicked);
+                              }}
+                              onContextMenu={(event, clicked) => {
+                                if (clicked.agent === 'pi') {
+                                  openContextMenu(event, clicked.target as SessionSummary);
+                                }
+                              }}
+                              imported={
+                                row.agent === 'codex' &&
+                                importedCodex.includes((row.target as CodexSessionMeta).sessionId)
+                              }
+                              renaming={renamingKey === row.key}
+                              onRename={(name) => {
+                                void commitRename(row, name);
+                              }}
+                              onCancelRename={() => {
+                                setRenamingKey(null);
+                              }}
+                              t={t}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
-                  <ul className="sidebar-session-list">
-                    {folderRows.map((row) => (
-                      <li key={row.key}>
-                        <SessionRow
-                          row={row}
-                          intlTag={intlTag}
-                          active={
-                            row.agent === 'pi' &&
-                            isActive((row.target as SessionSummary).fileName)
-                          }
-                          status={row.status}
-                          unread={
-                            row.agent === 'pi' ? isUnread(row.target as SessionSummary) : false
-                          }
-                          blink={
-                            row.agent === 'pi' &&
-                            isActive((row.target as SessionSummary).fileName) &&
-                            requestPending
-                          }
-                          onOpen={(clicked) => {
-                            handleOpenRow(clicked);
-                          }}
-                          onContextMenu={(event, clicked) => {
-                            if (clicked.agent === 'pi') {
-                              openContextMenu(event, clicked.target as SessionSummary);
-                            }
-                          }}
-                          imported={
-                            row.agent === 'codex' &&
-                            importedCodex.includes((row.target as CodexSessionMeta).sessionId)
-                          }
-                          renaming={renamingKey === row.key}
-                          onRename={(name) => {
-                            void commitRename(row, name);
-                          }}
-                          onCancelRename={() => {
-                            setRenamingKey(null);
-                          }}
-                          t={t}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                );
+              })}
               {others.length > 0 ? (
                 <div className="sidebar-collection">
                   <div className="sidebar-collection-head">
