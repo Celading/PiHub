@@ -153,8 +153,8 @@ function usageOf(line: RawRolloutLine): { input: number; output: number; reasoni
   return { input, output, reasoning, total: input + output + reasoning };
 }
 
-async function collectRolloutFiles(dir: string, out: string[], depth: number): Promise<void> {
-  if (depth > 4 || out.length >= MAX_FILES) {
+async function collectRolloutFiles(dir: string, out: string[], depth: number, cap: number = MAX_FILES): Promise<void> {
+  if (depth > 4 || out.length >= cap) {
     return;
   }
   let entries: string[];
@@ -200,10 +200,18 @@ function projectMeta(detail: CodexSessionDetail): CodexSessionMeta {
   };
 }
 
+/** Collects EVERY rollout file under the store (bounded depth only) — the
+ *  thread aggregation dedupes before the listing cap applies, so older
+ *  threads of a resumed conversation are not hidden by the cap. */
+async function collectRolloutFilesAll(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  await collectRolloutFiles(dir, out, 0, Number.POSITIVE_INFINITY);
+  return out;
+}
+
 /** Lists codex sessions (metadata only), newest activity first. */
 export async function listCodexSessions(): Promise<CodexSessionMeta[]> {
-  const files: string[] = [];
-  await collectRolloutFiles(sessionsDir(), files, 0);
+  const files = await newestPerThread(await collectRolloutFilesAll(sessionsDir()));
   const sessions: CodexSessionMeta[] = [];
   for (const file of files) {
     const detail = await parseRolloutFile(file);
@@ -415,6 +423,32 @@ function fileNameMeta(file: string): { threadId: string; startedAt: string } {
   };
 }
 
+/** Groups rollout files by their embedded thread id, keeping the NEWEST
+ *  mtime file per thread (audit P2 fix: a resumed thread has multiple
+ *  rollout files sharing the id — listing them individually produced
+ *  duplicate sidebar rows with duplicate React keys). */
+async function newestPerThread(files: string[]): Promise<string[]> {
+  const byThread = new Map<string, { file: string; mtimeMs: number }>();
+  for (const file of files) {
+    const { threadId } = fileNameMeta(file);
+    if (threadId.length === 0) {
+      continue;
+    }
+    let mtimeMs: number;
+    try {
+      const info = await stat(file);
+      mtimeMs = info.mtimeMs;
+    } catch {
+      continue;
+    }
+    const current = byThread.get(threadId);
+    if (current === undefined || mtimeMs > current.mtimeMs) {
+      byThread.set(threadId, { file, mtimeMs });
+    }
+  }
+  return [...byThread.values()].map((entry) => entry.file);
+}
+
 /**
  * Fast list: full-parses only the NEWEST `limit` rollouts (mtime order) and
  * returns the rest as lightweight placeholders derived from the file name.
@@ -422,8 +456,9 @@ function fileNameMeta(file: string): { threadId: string; startedAt: string } {
  * the sidebar renders almost instantly and converges shortly after.
  */
 export async function listCodexSessionsFast(limit: number = FAST_PARSE_LIMIT): Promise<CodexSessionMeta[]> {
-  const files: string[] = [];
-  await collectRolloutFiles(sessionsDir(), files, 0);
+  // Dedupe first: a resumed thread has multiple rollouts — one row per
+  // thread (newest mtime), so the sidebar key (sessionId) stays unique.
+  const files = await newestPerThread(await collectRolloutFilesAll(sessionsDir()));
   const withMtime = new Map<string, number>();
   for (const file of files) {
     try {
