@@ -19,8 +19,8 @@
 - 已配置好的模型渠道（pi 常规配置）
 
 ```bash
-git clone <仓库>/pi-panel
-cd pi-panel
+git clone <仓库>/PiHub
+cd PiHub
 npm install
 npm run dev
 ```

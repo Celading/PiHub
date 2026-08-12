@@ -21,7 +21,7 @@ Requirements:
 
 ```bash
 git clone https://github.com/HapPub/PiHub.git
-cd pi-panel
+cd PiHub
 npm install
 npm run dev
 ```

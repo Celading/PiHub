@@ -15,13 +15,13 @@ describe('session header schema', () => {
       version: 3,
       id: '019fd094-b438-7ae1-aa20-9a873849a222',
       timestamp: '2026-08-05T06:20:34.232Z',
-      cwd: '/Users/cinyu/Documents/Work0/CureateE/HarmonyHap',
+      cwd: '/workspace/HarmonyHap',
     };
     const result = sessionHeaderEventSchema.safeParse(line);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.id).toBe('019fd094-b438-7ae1-aa20-9a873849a222');
-      expect(result.data.cwd).toContain('HarmonyHap');
+      expect(result.data.cwd).toContain('/workspace');
     }
   });
 });

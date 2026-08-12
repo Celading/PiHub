@@ -63,8 +63,8 @@ PiHub — это браузерное рабочее пространство д
 Требуются [pi](https://pi.dev) (`pi --version` ≥ 0.83) и Node.js ≥ 20.
 
 ```bash
-git clone <your-fork-or-local-root>/pi-panel
-cd pi-panel
+git clone <your-fork-or-local-root>/PiHub
+cd PiHub
 npm install
 npm run dev        # веб-интерфейс: http://localhost:18384 (бэкенд 127.0.0.1:3001)
 ```
