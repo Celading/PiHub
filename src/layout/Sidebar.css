@@ -203,8 +203,9 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
   width: 100%;
   padding: var(--space-2);
   border: var(--border-thin) solid transparent;
@@ -262,8 +263,89 @@
 }
 
 .sidebar-session-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: 0.6875rem;
   color: var(--text-placeholder);
+  flex-shrink: 0;
+}
+
+/* ---- multi-agent convergence: agent badge (left) + status dot (right) ---- */
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.agent-badge[data-agent='pi'] {
+  background-color: #005fb8;
+}
+
+.agent-badge[data-agent='codex'] {
+  background-color: transparent;
+}
+
+.agent-badge[data-agent='atomcode'] {
+  background-color: transparent;
+}
+
+.agent-badge[data-agent='zcode'] {
+  background-color: #7f56d9;
+}
+
+/* ---- agent filter next to the 会话 label ---- */
+.sidebar-agent-filter {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.sidebar-agent-filter-btn {
+  border: var(--border-thin) solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  padding: 1px 5px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.sidebar-agent-filter-btn:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-agent-filter-btn[data-agent='all'][data-active='true'] {
+  background-color: var(--text-primary);
+  color: var(--surface);
+}
+
+.sidebar-agent-filter-btn[data-agent='pi'][data-active='true'] {
+  background-color: #005fb8;
+  color: #ffffff;
+}
+
+.sidebar-agent-filter-btn[data-agent='codex'][data-active='true'] {
+  background-color: #10a37f;
+  color: #ffffff;
+}
+
+.sidebar-agent-filter-btn[data-agent='atomcode'][data-active='true'] {
+  background-color: #e4572e;
+  color: #ffffff;
+}
+
+.sidebar-agent-filter-btn[data-agent='zcode'][data-active='true'] {
+  background-color: #7f56d9;
+  color: #ffffff;
 }
 
 /* ---- bottom: help / user / settings ---- */
@@ -587,4 +669,67 @@
   50% {
     opacity: 0.15;
   }
+}
+
+/* ---- imported codex pin ---- */
+.agent-pin {
+  color: #10a37f;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+
+.agent-badge-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.agent-badge[data-agent='pi'] {
+  background-color: #005fb8;
+}
+
+.agent-badge[data-agent='pi'] .pi-logo-mark {
+  width: 78%;
+  height: 78%;
+}
+
+/* ---- P1-08d: 指示 (title-line indicator) vs 灯 (status light) split ----
+ * head: badge + alias + spacer + pin + indicator; meta: count · time + light. */
+.sidebar-session-head {
+  width: 100%;
+}
+
+.sidebar-session-head-end {
+  flex: 1 1 auto;
+  min-width: var(--space-2);
+}
+
+.sidebar-session-meta {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.session-status-indicator {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--text-placeholder);
+}
+
+.session-status-indicator[data-blink='true'] {
+  background-color: var(--primary);
+  animation: status-pulse 1s ease-in-out infinite;
+}
+
+.sidebar-session-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: var(--border-thin) solid var(--primary);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  padding: 1px var(--space-1);
 }

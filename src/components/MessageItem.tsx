@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AgentMessage, ContentBlock } from '../../shared/types.js';
 import { Markdown } from './Markdown.js';
 import { TypewriterText } from './TypewriterText.js';
@@ -7,6 +7,84 @@ import { useLabFlag } from '../lab/labFlags.js';
 import { summarizeToolCall } from './toolSummary.js';
 import { linkifyPaths } from './filePaths.js';
 import './MessageItem.css';
+
+/** Long content (big diffs, logs, long replies) collapses below a max
+ *  height with a fog cap + "expand all" button — content is never trimmed,
+ *  only visually capped. Reveal sweeps a fog layer down like a typewriter
+ *  (blur(15px) leading edge); a JS timer strips the layer even when the CSS
+ *  animation is throttled or stalled, so content is never left hidden. */
+function LongContent({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const [swept, setSwept] = useState(true);
+  const [sweepKey, setSweepKey] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el !== null) {
+      // The clip wrapper owns the 40rem cap, so its scrollHeight is the
+      // true content height (the outer box never clips).
+      const clip = el.querySelector('.long-content-clip');
+      setOverflowing((clip !== null ? clip.scrollHeight : el.scrollHeight) > 640);
+    }
+  }, [children]);
+  // Re-arm the fog sweep whenever the collapse state changes (mount +
+  // expand). The sweep layer removes itself on animation end; the timer is
+  // the fallback so a throttled/stalled animation can never hide content.
+  useEffect(() => {
+    if (!overflowing) {
+      setSwept(true);
+      return;
+    }
+    setSwept(false);
+    setSweepKey((key) => key + 1);
+    const timer = window.setTimeout(() => {
+      setSwept(true);
+    }, 1700);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [expanded, overflowing]);
+  return (
+    <div className="long-content" data-expanded={expanded} ref={ref}>
+      <div className="long-content-cap">
+        <div className="long-content-clip">{children}</div>
+        {overflowing && !expanded ? (
+          <div className="long-content-fog-cap" aria-hidden="true" />
+        ) : null}
+        {overflowing && !swept ? (
+          <div
+            key={sweepKey}
+            className="long-content-fog-sweep"
+            aria-hidden="true"
+            onAnimationEnd={() => {
+              setSwept(true);
+            }}
+          />
+        ) : null}
+      </div>
+      {overflowing ? (
+        <button
+          type="button"
+          className="long-content-expand mono"
+          data-expanded={expanded}
+          onClick={() => {
+            setExpanded((value) => !value);
+          }}
+        >
+          {expanded ? t('chat.collapseAll') : label}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 export type ThinkingStatus = 'active' | 'done' | 'interrupted';
 
@@ -148,6 +226,7 @@ function ContentBlocks({
    *  reveal (markdown takes over once the reveal completes). */
   typewriter?: boolean;
 }): React.JSX.Element {
+  const { t } = useI18n();
   return (
     <>
       {blocks.map((block, index) => {
@@ -169,13 +248,18 @@ function ContentBlocks({
             // Runtime guard: the loose provider-tolerant schema can keep a
             // malformed block alive; never crash the stream on it.
             const textValue: unknown = (known as { text?: unknown }).text;
-            return typeof textValue === 'string' ? (
-              typewriter === true ? (
-                <TypewriterText key={index} text={textValue} />
-              ) : (
-                <Markdown key={index} text={textValue} />
-              )
-            ) : null;
+            if (typeof textValue !== 'string') {
+              return null;
+            }
+            return (
+              <LongContent key={index} label={t('chat.expandAll')}>
+                {typewriter === true ? (
+                  <TypewriterText text={textValue} />
+                ) : (
+                  <Markdown text={textValue} />
+                )}
+              </LongContent>
+            );
           }
           case 'thinking': {
             const thinkingValue: unknown = (known as { thinking?: unknown }).thinking;

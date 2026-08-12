@@ -19,8 +19,8 @@
 - 已配置好的模型渠道（pi 常规配置）
 
 ```bash
-git clone <仓库>/pi-panel
-cd pi-panel
+git clone <仓库>/PiHub
+cd PiHub
 npm install
 npm run dev
 ```
@@ -33,6 +33,44 @@ npm run dev
 
 生产构建：`npm run build` → 由 Node 服务托管 `dist/`（`npm start`）。
 测试：`npm test`。
+
+> **为什么是 18384 而不是 3001？** 18384 只是 Vite 开发服务器端口（第 14 章：
+> `npm run dev` 时界面在 http://localhost:18384，`/api` 代理到后端
+> 127.0.0.1:3001）。打包后的 `pihub`/`npm start` 是单进程：Node 服务自行
+> 托管界面，默认端口 **3001**。
+
+### 端口
+
+服务器仅监听 `127.0.0.1`。更换端口：
+
+```bash
+PIHUB_PORT=4000 pihub        # 打包 CLI
+PIHUB_PORT=4000 npm start    # 源码运行
+```
+
+`PIHUB_PORT` 优先于通用 `PORT` 环境变量（很多部署平台会自动注入 `PORT`）。
+设置页「关于」区始终显示当前实际端口。
+
+### 配置与数据目录
+
+PiHub 的所有自有产物（配置、数据存储、数据库、硬编码内容）统一存放于一个
+专属家目录，按以下顺序解析：
+
+1. `$PIHUB_HOME` —— 显式指定优先，
+2. `~/.pihub` —— 默认，
+3. `./itData` —— 运行目录；当家目录无法创建/写入（无权限）时回退。
+
+`<home>/config.toml` 保存服务器选项（TOML 子集）：
+
+```toml
+# PiHub 配置 —— 专属家目录：~/.pihub（回退 ./itData）
+[server]
+port = 4000            # 数字 —— 被 PIHUB_PORT/PORT 环境变量覆盖
+host = "127.0.0.1"     # 绑定地址
+url = "http://127.0.0.1:4000"  # 可选展示/基础地址（默认由 host+port 推导）
+```
+
+设置页「关于」区会显示解析到的数据目录与配置文件路径。PiHub 绝不写入 `~/.pi`。
 
 ### 版本
 

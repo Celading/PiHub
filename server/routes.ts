@@ -43,10 +43,15 @@ import {
 } from '../shared/schemas.js';
 import type { RpcBridge } from './rpc-bridge.js';
 import type { DemoStateMachine } from './demo/state-machine.js';
+import type { AgentMessage } from '../shared/types.js';
 import type { DemoShowcase } from './demo/showcase.js';
+import { collectPrompts } from './prompts.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
 import type { RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
+import { parseSessionFile } from './sessions.js';
+import { recentFileActions } from './recent-files.js';
+import { gitDiff, gitStatus } from './git-status.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { CodexSessionDetail } from './adapters/codex-history.js';
@@ -168,6 +173,15 @@ export interface RouterModeOptions {
   demoMachine?: DemoStateMachine | null;
   /** Showcase sprint: scripted demo conversation player (demo mode only). */
   demoShowcase?: DemoShowcase | null;
+  /** Codex exec adapter (ACTIVE 2026-08-12): per-prompt `codex exec` with
+   *  resume; null in demo mode (synthetic-only). */
+  codexExec?: {
+    prompt: (message: string) => Promise<{ success: boolean; error?: string }>;
+    abort: () => Promise<{ success: boolean }>;
+    state: () => Promise<{ success: boolean; data?: { isStreaming: boolean; sessionId?: string | null } }>;
+    switchSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+    messages: (threadId?: string) => Promise<AgentMessage[]>;
+  } | null;
   debugState?: () => Record<string, unknown>;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
   pipelines?: {
@@ -183,6 +197,8 @@ export interface RouterModeOptions {
   reloadModels?: () => 'reloaded' | 'deferred';
   /** P1-03: workspace root the file preview may read from (cwd subtree). */
   allowedRoot?: string;
+  /** P1-08c: runtime info surfaced by /api/health (home dir, config file, url). */
+  runtimeInfo?: () => { home?: string; configFile?: string | null; url?: string };
   /**
    * P2-01: registered agent adapters (metadata + codex history surface).
    * `codexHistory` is the read-only integration (rollout parse); it is
@@ -191,6 +207,8 @@ export interface RouterModeOptions {
   adapters?: {
     list: () => Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
     codexSessions?: () => Promise<unknown[]>;
+    claudeSessions?: () => Promise<unknown[]>;
+    claudeSessionDetail?: (id: string) => Promise<unknown[]>;
     codexSessionDetail?: (id: string) => Promise<CodexSessionDetail | null>;
     /** ADAPTER2: atomcode + zcode read-only history surfaces. */
     atomcodeSession?: () => Promise<AtomcodeSessionDetail | null>;
@@ -317,6 +335,7 @@ export function createRouter(
       name: 'pihub',
       version: PKG_VERSION,
       time: new Date().toISOString(),
+      ...(options?.runtimeInfo !== undefined ? options.runtimeInfo() : {}),
     });
   });
 
@@ -449,6 +468,118 @@ export function createRouter(
   /* ---- P2-01: agent adapters (metadata + codex read-only history) ---- */
   router.get('/api/adapters', (_req, res) => {
     res.json({ adapters: options?.adapters?.list() ?? [] });
+  });
+
+  /* ---- codex exec adapter (ACTIVE 2026-08-12) ---- */
+  const codexExec = options?.codexExec ?? null;
+
+  router.get('/api/claude/sessions/:id', async (req, res) => {
+    const fn = options?.adapters?.claudeSessionDetail;
+    if (fn === undefined) {
+      res.json({ turns: [] });
+      return;
+    }
+    try {
+      res.json({ turns: await fn(req.params.id) });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/prompts', async (req, res) => {
+    try {
+      const q = typeof req.query['q'] === 'string' ? req.query['q'] : undefined;
+      const agent = typeof req.query['agent'] === 'string' ? req.query['agent'] : undefined;
+      const limitRaw = typeof req.query['limit'] === 'string' ? Number(req.query['limit']) : NaN;
+      const records = await collectPrompts({
+        ...(q !== undefined ? { q } : {}),
+        ...(agent !== undefined ? { agent } : {}),
+        ...(Number.isFinite(limitRaw) ? { limit: limitRaw } : {}),
+      });
+      res.json({ prompts: records });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/claude/sessions', async (_req, res) => {
+    const fn = options?.adapters?.claudeSessions;
+    if (fn === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    try {
+      res.json({ sessions: await fn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/codex/state', async (_req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const response = await codexExec.state();
+    res.json({
+      running: response.success && response.data?.isStreaming === true,
+      sessionId: response.success ? (response.data?.sessionId ?? null) : null,
+    });
+  });
+
+  router.post('/api/codex/prompt', async (req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const message = (req.body as { message?: unknown }).message;
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    const response = await codexExec.prompt(message.trim());
+    if (!response.success) {
+      res.status(409).json({ error: response.error ?? 'codex rejected the prompt' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  router.post('/api/codex/abort', async (_req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    await codexExec.abort();
+    res.json({ success: true });
+  });
+
+  router.get('/api/codex/messages', async (req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const thread = typeof req.query['thread'] === 'string' ? req.query['thread'] : undefined;
+    const messages = await codexExec.messages(thread);
+    res.json({ messages });
+  });
+
+  router.post('/api/codex/session', async (req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const sessionId = (req.body as { sessionId?: unknown }).sessionId;
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+    const response = await codexExec.switchSession(sessionId);
+    if (!response.success) {
+      res.status(409).json({ error: response.error ?? 'codex rejected the session switch' });
+      return;
+    }
+    res.json({ success: true });
   });
   router.get('/api/codex/sessions', async (_req, res) => {
     const fn = options?.adapters?.codexSessions;
@@ -1001,6 +1132,174 @@ export function createRouter(
   // Extension UI protocol (P1-01): pending dialog requests + answering.
   router.get('/api/rpc/ui-requests', (_req, res) => {
     res.json({ requests: bridge.getPendingUiRequests() });
+  });
+
+  /* ---- P1-08b: read-only workspace file listing (right workbench 文件) ----
+   * Same containment rules as the preview: the root is the given session's
+   * cwd (falling back to the tracked preview root), paths must stay inside
+   * the real root subtree, hidden dirs are skipped. Returns the entries of
+   * one directory plus the session's recent file operations. */
+  const IGNORED_LISTING = new Set(['.git', 'node_modules', '.DS_Store']);
+  const MAX_LISTING_ENTRIES = 500;
+
+  router.get('/api/files', async (req, res) => {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    if (rawPath.length > 1024) {
+      res.status(400).json({ error: 'invalid path' });
+      return;
+    }
+    // Resolve the workspace root: prefer the session's own cwd, else the
+    // tracked preview root (last switched session / panel workspace).
+    let root = previewRoot;
+    if (sessionParam !== undefined && sessionParam.length > 0) {
+      try {
+        const all = await sessions.list();
+        const match = all.find((session) => session.fileName === sessionParam);
+        if (match !== undefined && match.cwd.length > 0) {
+          root = match.cwd;
+        }
+      } catch {
+        // keep the tracked root — listing stays conservative
+      }
+    }
+    if (root === undefined || root.length === 0) {
+      res.status(503).json({ error: 'file listing unavailable' });
+      return;
+    }
+    const rootResolved = path.resolve(root);
+    const resolved = path.resolve(rootResolved, rawPath);
+    if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
+      res.status(400).json({ error: 'path outside workspace' });
+      return;
+    }
+    try {
+      const [realRoot, realTarget] = await Promise.all([realpath(rootResolved), realpath(resolved)]);
+      if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${path.sep}`)) {
+        res.status(400).json({ error: 'path outside workspace' });
+        return;
+      }
+      const info = await stat(realTarget);
+      if (!info.isDirectory()) {
+        res.status(400).json({ error: 'not a directory' });
+        return;
+      }
+      const dirents = await readdir(realTarget, { withFileTypes: true });
+      const entries: Array<{
+        name: string;
+        path: string;
+        kind: 'dir' | 'file' | 'other';
+        size?: number;
+        mtime?: number;
+      }> = [];
+      for (const dirent of dirents) {
+        if (IGNORED_LISTING.has(dirent.name) || entries.length >= MAX_LISTING_ENTRIES) {
+          continue;
+        }
+        const entryPath = rawPath.length === 0 ? dirent.name : `${rawPath}/${dirent.name}`;
+        if (dirent.isDirectory()) {
+          entries.push({ name: dirent.name, path: entryPath, kind: 'dir' });
+        } else if (dirent.isFile()) {
+          let size: number | undefined;
+          let mtime: number | undefined;
+          try {
+            const st = await stat(path.join(realTarget, dirent.name));
+            size = st.size;
+            mtime = st.mtimeMs;
+          } catch {
+            // unreadable entry — list without stats
+          }
+          entries.push({
+            name: dirent.name,
+            path: entryPath,
+            kind: 'file',
+            ...(size !== undefined ? { size } : {}),
+            ...(mtime !== undefined ? { mtime } : {}),
+          });
+        } else {
+          // symlink or other — listing only; opening re-validates realpath
+          entries.push({ name: dirent.name, path: entryPath, kind: 'other' });
+        }
+      }
+      entries.sort((a, b) =>
+        a.kind === 'dir' && b.kind !== 'dir'
+          ? -1
+          : a.kind !== 'dir' && b.kind === 'dir'
+            ? 1
+            : a.name.localeCompare(b.name),
+      );
+      const recent =
+        sessionParam !== undefined && sessionParam.length > 0
+          ? recentFileActions(await parseSessionFile(sessionParam).catch(() => null))
+          : [];
+      res.json({ root: realTarget, entries, recent });
+    } catch (error) {
+      res.status(404).json({ error: `cannot list directory: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  });
+
+  /* ---- P1-08b: read-only git worktree inspection (right workbench 变更) ----
+   * `git status --porcelain=v1 -z` + `git diff` only — no write commands, no
+   * shell, paths resolved inside the session cwd. */
+  const resolveGitRoot = async (sessionParam: string | undefined): Promise<string | null> => {
+    if (sessionParam !== undefined && sessionParam.length > 0) {
+      try {
+        const all = await sessions.list();
+        const match = all.find((session) => session.fileName === sessionParam);
+        if (match !== undefined && match.cwd.length > 0) {
+          return match.cwd;
+        }
+      } catch {
+        // fall through to the tracked root
+      }
+    }
+    return previewRoot ?? null;
+  };
+
+  router.get('/api/git/status', async (req, res) => {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const root = await resolveGitRoot(sessionParam);
+    if (root === null || root.length === 0) {
+      res.status(503).json({ error: 'git status unavailable' });
+      return;
+    }
+    try {
+      const realRoot = await realpath(path.resolve(root));
+      const changes = await gitStatus(realRoot);
+      res.json({ root: realRoot, repo: changes !== null, changes: changes ?? [] });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/git/diff', async (req, res) => {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    const staged = req.query['staged'] === '1' || req.query['staged'] === 'true';
+    if (rawPath.length === 0 || rawPath.length > 1024) {
+      res.status(400).json({ error: 'invalid path' });
+      return;
+    }
+    const root = await resolveGitRoot(sessionParam);
+    if (root === null || root.length === 0) {
+      res.status(503).json({ error: 'git diff unavailable' });
+      return;
+    }
+    const rootResolved = path.resolve(root);
+    const resolved = path.resolve(rootResolved, rawPath);
+    // Lexical containment against the REAL root: git paths may point at
+    // deleted files, so realpath of the target is not required.
+    if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
+      res.status(400).json({ error: 'path outside workspace' });
+      return;
+    }
+    try {
+      const realRoot = await realpath(rootResolved);
+      const diff = await gitDiff(realRoot, rawPath, staged);
+      res.json({ diff: diff ?? '' });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.post('/api/rpc/ui-respond', (req, res) => {

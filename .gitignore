@@ -13,3 +13,6 @@ pi-session-*.html
 # showcase video exports (generated)
 out/
 *.tgz
+
+# PiHub runtime data home fallback (no permission for ~/.pihub)
+itData/

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useChatSession, type ChatMessage } from '../chat/chatState.js';
+import { useChatSession, type ChatMessage, type PanelAgent } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { FilePreview } from '../components/FilePreview.js';
+import { PromptTimeline } from '../components/PromptTimeline.js';
+import { FogLoading } from '../components/FogLoading.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
@@ -14,7 +16,7 @@ import type { AgentMessage } from '../../shared/types.js';
 import './ChatPage.css';
 
 /** One user prompt and everything that followed it until the next prompt. */
-interface ChatUnit {
+export interface ChatUnit {
   key: string;
   user: ChatMessage | null;
   rest: ChatMessage[];
@@ -36,6 +38,22 @@ function buildUnits(messages: ChatMessage[]): ChatUnit[] {
     }
   }
   return units;
+}
+
+/** Full user prompt text (string content or text blocks) — tree jump matcher. */
+function userTextOf(message: AgentMessage): string {
+  if (message.role !== 'user') {
+    return '';
+  }
+  const content = message.content;
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  return content
+    .filter((block) => block.type === 'text')
+    .map((block) => (block.type === 'text' ? block.text : ''))
+    .join(' ')
+    .trim();
 }
 
 function formatDuration(ms: number, locale: Locale): string {
@@ -233,10 +251,18 @@ function runDurationLabel(items: ChatMessage[]): string | null {
 
 interface ChatPageProps {
   onSessionChanged: () => void;
+  /** Which agent this chat view talks to (pi RPC or codex exec). */
+  agent: PanelAgent;
+  /** Codex thread to resume on mount (sidebar "open record"). */
+  codexThread?: string | null;
 }
 
-export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element {
-  const chat = useChatSession();
+export function ChatPage({
+  onSessionChanged,
+  agent,
+  codexThread = null,
+}: ChatPageProps): React.JSX.Element {
+  const chat = useChatSession(agent);
   const { t, locale } = useI18n();
   const mode = useMode();
   const settledNotify = useLabFlag('settledNotify');
@@ -247,11 +273,27 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
 
+  // Codex record opened from the sidebar: resume that thread before the
+  // first message load so its history is shown.
+  const chatReload = chat.reload;
+  useEffect(() => {
+    if (agent !== 'codex' || codexThread === null) {
+      return;
+    }
+    void (async () => {
+      try {
+        await api.codexSwitchSession(codexThread);
+      } catch {
+        // thread may be gone; the adapter falls back to a fresh thread
+      }
+      await chatReload();
+    })();
+  }, [agent, codexThread, chatReload]);
+
   // Showcase sprint: in demo mode, auto-play the scripted conversation so
   // the panel performs the whole feature showcase (typewriter, tool chain,
   // settle collapse) without any input. The play resets the mock session;
   // reload then sees an empty conversation and the SSE stream fills it.
-  const chatReload = chat.reload;
   useEffect(() => {
     if (mode !== 'demo') {
       return;
@@ -275,11 +317,24 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   const [collapsedUnits, setCollapsedUnits] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // Large conversations render tail-first: only the last `visibleUnits`
+  // units are mounted, older ones load on demand ("加载更早消息"). Combined
+  // with content-visibility on .chat-unit this keeps huge sessions smooth.
+  const [visibleUnits, setVisibleUnits] = useState(30);
+  const loadEarlierUnits = useCallback((): void => {
+    setVisibleUnits((prev) => prev + 30);
+  }, []);
   // Simplified output: settled workflows auto-collapse; this set tracks the
   // ones the user explicitly expanded.
   const [userExpanded, setUserExpanded] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+
+  // Prompt timeline: jump the message stream to the clicked prompt unit.
+  const jumpToPrompt = useCallback((key: string): void => {
+    const target = document.querySelector(`[data-unit-key="${key}"]`);
+    target?.scrollIntoView({ block: 'start' });
+  }, []);
 
   const updateAtBottom = useCallback((): void => {
     const element = scrollRef.current;
@@ -394,6 +449,29 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
 
   const units = buildUnits(chat.messages);
   const lastUnit = units[units.length - 1];
+
+  // Right workbench session tree: jumping a user entry scrolls the chat to
+  // the matching prompt unit (matched by its full user text).
+  useEffect(() => {
+    const onTreeJump = (event: Event): void => {
+      const detail = (event as CustomEvent<{ text?: unknown }>).detail;
+      const text = typeof detail.text === 'string' ? detail.text : '';
+      if (text.length === 0) {
+        return;
+      }
+      const unit = units.find(
+        (item) => item.user !== null && userTextOf(item.user.message) === text,
+      );
+      const key = (unit ?? units.find((item) => item.user !== null && userTextOf(item.user.message).includes(text)))?.key;
+      if (key !== undefined) {
+        jumpToPrompt(key);
+      }    };
+    window.addEventListener('pihub:tree-jump', onTreeJump);
+    return () => {
+      window.removeEventListener('pihub:tree-jump', onTreeJump);
+    };
+  }, [units, jumpToPrompt]);
+
   const runSummary = chat.lastRun;
   const thinkingStatus: ThinkingStatus =
     chat.isAgentRunning && lastUnit !== undefined && lastUnit.user !== null
@@ -542,7 +620,9 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
   };
 
   return (
-    <section className="chatpage" data-shot="chat">
+    <div className="chat-workspace">
+      <PromptTimeline units={units} onJump={jumpToPrompt} />
+      <section className="chatpage" data-shot="chat">
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
@@ -563,33 +643,26 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
             })}
           </div>
         ) : null}
-        {/* P1-17 D: skeleton while the switched session's messages load. */}
-        {!chat.hasLoaded ? (
-          <div className="chat-skeleton" aria-hidden="true">
-            {[0, 1, 2, 3, 4].map((index) => (
-              <div
-                key={index}
-                className={`chat-skeleton-row ${index % 2 === 0 ? 'chat-skeleton-user' : 'chat-skeleton-assistant'}`}
-              >
-                <span
-                  className="chat-skeleton-line"
-                  style={{ width: `${String(58 + ((index * 13) % 35))}%` }}
-                />
-                <span
-                  className="chat-skeleton-line"
-                  style={{ width: `${String(36 + ((index * 17) % 30))}%` }}
-                />
-              </div>
-            ))}
-          </div>
-        ) : chat.messages.length === 0 ? (
+        {/* P1-09: fog skeleton while the switched session's messages load;
+            the real content then condenses in (fog themes). */}
+        <FogLoading loading={!chat.hasLoaded}>
+        {chat.messages.length === 0 ? (
           <div className="chatpage-empty">
             <h2 className="panel-title">{t('chat.empty.title')}</h2>
             <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
           </div>
         ) : (
           <div className="chatpage-stream">
-            {units.map((unit, unitIndex) => {
+            {units.length > visibleUnits ? (
+              <button
+                type="button"
+                className="chatpage-load-earlier mono"
+                onClick={loadEarlierUnits}
+              >
+                {t('chat.loadEarlier', { count: String(units.length - visibleUnits) })}
+              </button>
+            ) : null}
+            {units.slice(-visibleUnits).map((unit, unitIndex) => {
               const isLast = unit === lastUnit;
               const isRunningUnit = isLast && chat.isAgentRunning && unit.user !== null;
               const isSettledUnit = isLast && !chat.isAgentRunning && runSummary !== null && unit.user !== null;
@@ -611,6 +684,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
                   key={unit.key}
                   className="chat-unit"
                   data-collapsed={collapsed}
+                  data-unit-key={unit.key}
                 >
                   <div className="chat-unit-body" data-collapsed={collapsed}>
                     <div className="chat-unit-body-inner">
@@ -837,6 +911,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
             })}
           </div>
         )}
+        </FogLoading>
       </div>
       {terminalOpen ? <TerminalPanel /> : null}
       {previewPath !== null ? (
@@ -928,6 +1003,7 @@ export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element
           }}
         />
       ) : null}
-    </section>
+      </section>
+    </div>
   );
 }

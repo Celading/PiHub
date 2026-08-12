@@ -1,0 +1,73 @@
+/* Session prompt timeline — centered narrow rail, left of the chat stream. */
+.prompt-timeline {
+  width: 34px;
+  flex: none;
+  border-right: var(--border-thin) solid var(--border-subtle);
+  background: var(--surface);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-3) 0;
+}
+
+.prompt-timeline-item {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.prompt-timeline-tick {
+  display: block;
+  width: 14px;
+  height: 2px;
+  background-color: var(--border-strong);
+  transition:
+    width var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.prompt-timeline-item:hover .prompt-timeline-tick,
+.prompt-timeline-item[data-hovered='true'] .prompt-timeline-tick {
+  width: 20px;
+  background-color: var(--primary);
+}
+
+/* tooltip: prompt summary + working time, fixed at the tick's rect (left
+   of the rail) — fixed positioning escapes the rail's overflow clip and
+   paints above the chat stream. */
+.prompt-timeline-tip {
+  position: fixed;
+  transform: translateY(-50%);
+  z-index: 1000;
+  width: 240px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--background-inverse);
+  color: var(--text-inverse);
+  border-radius: var(--radius-none);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.prompt-timeline-tip-text {
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.prompt-timeline-tip-meta {
+  color: var(--text-placeholder);
+  font-size: 0.625rem;
+}

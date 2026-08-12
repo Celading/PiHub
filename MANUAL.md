@@ -21,7 +21,7 @@ Requirements:
 
 ```bash
 git clone https://github.com/HapPub/PiHub.git
-cd pi-panel
+cd PiHub
 npm install
 npm run dev
 ```
@@ -34,6 +34,48 @@ The panel spawns `pi --mode rpc` itself — you do not need a terminal open.
 
 Production build: `npm run build` → serve `dist/` from the Node server
 (`npm start`). Tests: `npm test`.
+
+> **Why 18384 vs 3001?** 18384 is the Vite dev-server port only (chapter 14:
+> `npm run dev` shows the UI at http://localhost:18384, proxying `/api` to
+> the backend on 127.0.0.1:3001). The packaged `pihub`/`npm start` build is
+> a single process: the Node server hosts the UI itself, defaulting to port
+> **3001**.
+
+### Port
+
+The server binds to `127.0.0.1` only. Change the port with:
+
+```bash
+PIHUB_PORT=4000 pihub        # packaged CLI
+PIHUB_PORT=4000 npm start    # from source
+```
+
+`PIHUB_PORT` takes precedence over the generic `PORT` env var (which many
+deployment platforms inject automatically). The About section in Settings
+always shows the port you are actually on.
+
+### Configuration & data home
+
+Every PiHub-owned artifact (config, stored data, databases, hardcoded
+content) lives under ONE dedicated home, resolved in this order:
+
+1. `$PIHUB_HOME` — explicit override,
+2. `~/.pihub` — default,
+3. `./itData` — runtime directory, used when the primary home cannot be
+   created or written (no permission).
+
+`<home>/config.toml` holds the server options (TOML subset):
+
+```toml
+# PiHub config — dedicated home: ~/.pihub (fallback ./itData)
+[server]
+port = 4000            # number — overridden by PIHUB_PORT/PORT env
+host = "127.0.0.1"     # bind host
+url = "http://127.0.0.1:4000"  # optional display/base url (derived by default)
+```
+
+The Settings → About section shows the resolved data home and config file.
+Nothing PiHub-owned is ever written into `~/.pi`.
 
 ### Versions
 

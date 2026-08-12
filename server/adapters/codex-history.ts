@@ -36,6 +36,8 @@ export interface CodexSessionMeta {
   sessionId: string;
   fileName: string;
   cwd: string;
+  /** Fast-list placeholder (old record not yet parsed / no session_meta). */
+  placeholder?: boolean;
   forkedFromId?: string;
   modelProvider?: string;
   source?: string;
@@ -180,6 +182,24 @@ async function collectRolloutFiles(dir: string, out: string[], depth: number): P
   }
 }
 
+/** Meta projection: strips entries/raw so serialization stays small. */
+function projectMeta(detail: CodexSessionDetail): CodexSessionMeta {
+  return {
+    sessionId: detail.sessionId,
+    fileName: detail.fileName,
+    cwd: detail.cwd,
+    ...(detail.forkedFromId !== undefined ? { forkedFromId: detail.forkedFromId } : {}),
+    ...(detail.modelProvider !== undefined ? { modelProvider: detail.modelProvider } : {}),
+    ...(detail.source !== undefined ? { source: detail.source } : {}),
+    ...(detail.cliVersion !== undefined ? { cliVersion: detail.cliVersion } : {}),
+    startedAt: detail.startedAt,
+    lastActivityAt: detail.lastActivityAt,
+    messageCount: detail.messageCount,
+    toolCalls: detail.toolCalls,
+    tokens: detail.tokens,
+  };
+}
+
 /** Lists codex sessions (metadata only), newest activity first. */
 export async function listCodexSessions(): Promise<CodexSessionMeta[]> {
   const files: string[] = [];
@@ -188,15 +208,42 @@ export async function listCodexSessions(): Promise<CodexSessionMeta[]> {
   for (const file of files) {
     const detail = await parseRolloutFile(file);
     if (detail !== null) {
-      sessions.push(detail);
+      // Explicit meta projection: the parsed detail carries the full entries
+      // (+ raw frames) — serializing those made /api/codex/sessions return
+      // ~58MB and take 250ms+.
+      sessions.push(projectMeta(detail));
     }
   }
   sessions.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
   return sessions.slice(0, MAX_FILES);
 }
 
+/** mtime-keyed parse cache: the sidebar and session views call the codex
+ *  list repeatedly; re-parsing every rollout on each call made codex loading
+ *  feel slow (1.5s+). Only files whose mtime changed are re-read. */
+const rolloutCache = new Map<string, { mtimeMs: number; detail: CodexSessionDetail | null }>();
+
+/** Locates a rollout file by thread id WITHOUT parsing the whole store —
+ *  rollout file names embed the thread id (rollout-<ts>-<threadId>.jsonl). */
+export async function findRolloutFile(threadId: string): Promise<string | null> {
+  const found: string[] = [];
+  await collectRolloutFiles(sessionsDir(), found, 0);
+  const match = found.find((file) => path.basename(file).includes(threadId));
+  return match ?? null;
+}
+
 /** Parses one rollout file into a lightweight session record. */
 export async function parseRolloutFile(file: string): Promise<CodexSessionDetail | null> {
+  let info;
+  try {
+    info = await stat(file);
+  } catch {
+    return null;
+  }
+  const cached = rolloutCache.get(file);
+  if (cached !== undefined && cached.mtimeMs === info.mtimeMs) {
+    return cached.detail;
+  }
   let content: string;
   try {
     content = await readFile(file, 'utf8');
@@ -279,10 +326,11 @@ export async function parseRolloutFile(file: string): Promise<CodexSessionDetail
   }
 
   if (meta === null) {
+    rolloutCache.set(file, { mtimeMs: info.mtimeMs, detail: null });
     return null;
   }
   const last = entries.length > 0 ? entries[entries.length - 1]?.timestamp ?? meta.startedAt : meta.startedAt;
-  return {
+  const detail: CodexSessionDetail = {
     ...meta,
     fileName: file,
     startedAt: meta.startedAt,
@@ -292,6 +340,93 @@ export async function parseRolloutFile(file: string): Promise<CodexSessionDetail
     tokens,
     entries,
   };
+  rolloutCache.set(file, { mtimeMs: info.mtimeMs, detail });
+  return detail;
+}
+
+/** Number of newest rollouts parsed fully on the fast path. */
+const FAST_PARSE_LIMIT = 20;
+
+/** Extracts the thread id and timestamp embedded in a rollout file name. */
+function fileNameMeta(file: string): { threadId: string; startedAt: string } {
+  const base = path.basename(file); // rollout-2026-08-12T13-24-45-019ff46e-...jsonl
+  const parts = base.split('-');
+  // ts = parts[1..3] joined (date + time + nanos-ish), threadId = parts[4]
+  const ts = parts.slice(1, 4).join('-');
+  const threadId = parts.slice(4).join('-').replace(/\.jsonl$/, '');
+  return {
+    threadId,
+    startedAt: Number.isNaN(Date.parse(ts)) ? '' : ts,
+  };
+}
+
+/**
+ * Fast list: full-parses only the NEWEST `limit` rollouts (mtime order) and
+ * returns the rest as lightweight placeholders derived from the file name.
+ * The heavy backfill (below) fills the placeholders in the background, so
+ * the sidebar renders almost instantly and converges shortly after.
+ */
+export async function listCodexSessionsFast(limit: number = FAST_PARSE_LIMIT): Promise<CodexSessionMeta[]> {
+  const files: string[] = [];
+  await collectRolloutFiles(sessionsDir(), files, 0);
+  const withMtime = new Map<string, number>();
+  for (const file of files) {
+    try {
+      const info = await stat(file);
+      withMtime.set(file, info.mtimeMs);
+    } catch {
+      // skip unreadable files
+    }
+  }
+  const ordered = [...withMtime.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1));
+  const newest = ordered.slice(0, limit).map(([file]) => file);
+  const sessions: CodexSessionMeta[] = [];
+  for (const file of newest) {
+    const detail = await parseRolloutFile(file);
+    if (detail !== null) {
+      sessions.push(projectMeta(detail));
+    }
+  }
+  for (const [file] of ordered.slice(limit)) {
+    if (sessions.length >= MAX_FILES) {
+      break;
+    }
+    // Prefer the parse cache (backfill fills it); only fall back to a
+    // file-name placeholder for not-yet-parsed records.
+    const cached = rolloutCache.get(file);
+    if (cached !== undefined && cached.detail !== null) {
+      sessions.push(projectMeta(cached.detail));
+      continue;
+    }
+    const { threadId, startedAt } = fileNameMeta(file);
+    sessions.push({
+      sessionId: threadId,
+      fileName: file,
+      cwd: '',
+      startedAt,
+      lastActivityAt: startedAt,
+      messageCount: 0,
+      toolCalls: 0,
+      tokens: 0,
+      placeholder: true,
+    });
+  }
+  sessions.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
+  return sessions.slice(0, MAX_FILES);
+}
+
+/**
+ * Background backfill: parses every rollout NOT yet in the parse cache and
+ * stores the metas, so the next fast list returns full data everywhere.
+ * This is the foundation for the upcoming prompt index — the parsed cache
+ * becomes the shared index source.
+ */
+export async function backfillCodexSessions(): Promise<void> {
+  const files: string[] = [];
+  await collectRolloutFiles(sessionsDir(), files, 0);
+  for (const file of files) {
+    await parseRolloutFile(file); // mtime cache makes repeats free
+  }
 }
 
 /** Reads the history.jsonl index (session_id / ts / text) for quick listing. */

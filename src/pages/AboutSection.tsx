@@ -7,6 +7,9 @@ interface HealthInfo {
   name: string;
   version: string;
   time: string;
+  home?: string;
+  configFile?: string | null;
+  url?: string;
 }
 
 /** Settings → About: published version, install/run instructions, docs and
@@ -14,6 +17,8 @@ interface HealthInfo {
 export function AboutSection(): React.JSX.Element {
   const { t } = useI18n();
   const [info, setInfo] = useState<HealthInfo | null>(null);
+  // The actual serving port (a custom PIHUB_PORT/PORT shows up here too).
+  const port = typeof window !== 'undefined' && window.location.port.length > 0 ? window.location.port : '3001';
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +51,8 @@ export function AboutSection(): React.JSX.Element {
         <div className="about-label mono">{t('about.install')}</div>
         <pre className="about-code mono">npm install -g @celading/pihub</pre>
         <pre className="about-code mono">pihub</pre>
-        <p className="settings-hint">{t('about.installHint')}</p>
+        <p className="settings-hint">{t('about.installHint', { port })}</p>
+        <p className="settings-hint">{t('about.pwaHint')}</p>
       </div>
 
       <div className="about-block">
@@ -69,6 +75,16 @@ export function AboutSection(): React.JSX.Element {
       <div className="about-block">
         <div className="about-label mono">{t('about.security')}</div>
         <p className="settings-hint">{t('about.securityHint')}</p>
+        {info?.home !== undefined ? (
+          <p className="settings-hint mono">
+            {t('about.home')}: {info.home}
+          </p>
+        ) : null}
+        {info?.configFile !== undefined && info.configFile !== null ? (
+          <p className="settings-hint mono">
+            {t('about.configFile')}: {info.configFile}
+          </p>
+        ) : null}
       </div>
     </section>
   );

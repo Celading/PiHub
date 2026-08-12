@@ -1,0 +1,172 @@
+/* P1-08b: right workbench git changes. */
+.right-changes {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.right-changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  flex: none;
+}
+
+.right-changes-root {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-changes-refresh {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-md);
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.right-changes-refresh:hover {
+  color: var(--primary);
+}
+
+.right-changes-group {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) 0;
+}
+
+.right-changes-group-title {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: 0.625rem;
+  color: var(--text-placeholder);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.right-changes-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  padding: 3px var(--space-2) 3px var(--space-3);
+  text-align: left;
+  cursor: pointer;
+  min-height: 22px;
+}
+
+.right-changes-row:hover {
+  background-color: var(--surface-hover);
+}
+
+.right-changes-code {
+  flex: none;
+  width: 1.2rem;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text-placeholder);
+}
+
+.right-changes-row[data-kind='added'] .right-changes-code {
+  color: var(--status-ok);
+}
+
+.right-changes-row[data-kind='deleted'] .right-changes-code {
+  color: var(--status-error);
+}
+
+.right-changes-row[data-kind='untracked'] .right-changes-code {
+  color: var(--status-warning);
+}
+
+.right-changes-row[data-kind='conflicted'] .right-changes-code {
+  color: var(--status-error);
+}
+
+.right-changes-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-changes-empty,
+.right-changes-error {
+  padding: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-placeholder);
+}
+
+.right-changes-error {
+  color: var(--status-error);
+}
+
+/* per-file diff view */
+.right-changes-diff {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-changes-diff-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  font-size: var(--text-xs);
+  flex: none;
+}
+
+.right-changes-diff-back {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.right-changes-diff-back:hover {
+  color: var(--primary);
+}
+
+.right-changes-diff-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.right-changes-diff-staged {
+  flex: none;
+  color: var(--status-ok);
+  border: var(--border-thin) solid var(--border-subtle);
+  padding: 0 var(--space-2);
+  font-size: 0.625rem;
+}
+
+.right-changes-diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+}

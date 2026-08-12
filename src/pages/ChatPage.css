@@ -618,3 +618,40 @@
     transform: translateY(0);
   }
 }
+
+
+/* ---- lazy rendering for large conversations ---- */
+/* content-visibility lets the browser skip layout/paint of off-screen
+   units — Chrome's native optimization for long lists. */
+.chat-unit {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
+}
+
+.chatpage-load-earlier {
+  align-self: center;
+  border: var(--border-thin) solid var(--border-subtle);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0;
+  cursor: pointer;
+}
+
+.chatpage-load-earlier:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* ---- chat workspace: prompt timeline rail (left) + chat content ---- */
+.chat-workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.chat-workspace > .chatpage {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,6 +1,6 @@
 export type View = 'chat' | 'sessions' | 'stats' | 'settings' | 'automation';
 
-export type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark' | 'fog';
 
 /** Settings modal sections (phase-3: the global sidebar becomes the
  *  settings navigation tree while the settings view is active). */
@@ -23,6 +23,20 @@ export const VIEW_LABELS: Record<View, string> = {
 };
 
 export const THEME_STORAGE_KEY = 'pi-panel:theme';
+
+/** P1-09: theme registry — fog keeps the light body and adds the fog
+ *  loading/condensing motion. The header toggle cycles through these. */
+export const THEMES: ReadonlyArray<{ id: Theme; labelKey: string }> = [
+  { id: 'light', labelKey: 'theme.light' },
+  { id: 'dark', labelKey: 'theme.dark' },
+  { id: 'fog', labelKey: 'theme.fog' },
+];
+
+export function nextTheme(theme: Theme): Theme {
+  const index = THEMES.findIndex((item) => item.id === theme);
+  const next = THEMES[(index + 1) % THEMES.length];
+  return next?.id ?? 'light';
+}
 
 /** Settings nav tree order (P1-17 F uses the index for slide direction). */
 export const SETTINGS_SECTIONS: ReadonlyArray<{

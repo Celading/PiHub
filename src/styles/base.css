@@ -206,3 +206,34 @@ pre {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- P1-07: mobile PWA polish — ≥44px touch targets + safe areas ---- */
+@media (max-width: 760px) {
+  .composer-send,
+  .composer-abort,
+  .composer-morph-strip,
+  .tab-close,
+  .sidebar-new,
+  .header-theme-toggle {
+    min-height: 44px;
+  }
+
+  .composer-send,
+  .composer-abort {
+    min-width: 44px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* notch / home-indicator insets */
+  .header {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .composer {
+    padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
+  }
+
+  .shell-sidebar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

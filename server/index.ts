@@ -6,6 +6,9 @@ import { createRouter } from './routes.js';
 import { createFileSessionProvider } from './providers/file-session-provider.js';
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
+import { CodexAdapter, resolveCodexBinary } from './adapters/codex-adapter.js';
+import { backfillCodexSessions, listCodexSessionsFast } from './adapters/codex-history.js';
+import { findClaudeTranscript, listClaudeSessions, parseClaudeDetail } from './adapters/claude-history.js';
 import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
@@ -18,9 +21,18 @@ import { PiAdapter } from './adapters/pi-adapter.js';
 import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
 import { getAtomcodeSession } from './adapters/atomcode-history.js';
 import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from './adapters/zcode-history.js';
+import { effectiveServerConfig, loadPihubConfig } from './config.js';
+import { configFileOf, resolvePihubHome } from './pihub-home.js';
 
-const PORT = Number(process.env.PORT ?? 3001);
-const HOST = '127.0.0.1';
+// PIHUB_HOME → ~/.pihub (fallback ./itData when no permission); config.toml
+// inside it holds the server options. Env (PIHUB_PORT/PORT) wins over the
+// file; the generic PORT is commonly injected by deployment platforms, so
+// the dedicated variable takes precedence when both are present.
+const pihubConfigPromise = loadPihubConfig();
+const pihubHomePromise = resolvePihubHome();
+const effectiveConfig = effectiveServerConfig(await pihubConfigPromise);
+const PORT = effectiveConfig.port;
+const HOST = effectiveConfig.host;
 const PI_BINARY = process.env.PI_BINARY ?? 'pi';
 const AGENT_CWD = process.env.PI_CWD ?? process.cwd();
 
@@ -74,21 +86,41 @@ const hub = new SseHub();
 const bridge = new RpcBridge(PI_BINARY, AGENT_CWD);
 
 // P2-01: adapter surface — pi is the primary adapter (wraps the existing
-// bridge); codex history is a read-only integration (rollout parse) that
-// never spawns codex and never reads ~/.codex/auth.json.
+// bridge); codex is now ACTIVE as the second exec adapter (per-prompt
+// `codex exec --json --ephemeral` processes with resume; see
+// codex-adapter.ts). It never reads ~/.codex/auth.json and never writes
+// session files (ephemeral). Enabled in demo mode too? No — demo stays
+// synthetic-only: the codex adapter is created for non-demo modes.
 const piAdapter = new PiAdapter(bridge);
 // Node EventEmitter throws on unhandled 'error' — the adapter re-broadcasts
 // bridge errors, so always attach a handler here.
 piAdapter.on('error', (error) => {
   console.error(`[adapter:pi] ${error.message}`);
 });
+const codexAdapter = mode === 'demo' ? null : new CodexAdapter(resolveCodexBinary(), AGENT_CWD);
+if (codexAdapter !== null) {
+  codexAdapter.on('error', (error) => {
+    console.error(`[adapter:codex] ${error.message}`);
+  });
+  // Codex events stream through the same SSE hub; the `kind: 'codex'` mark
+  // lets the frontend route them to the codex chat view.
+  codexAdapter.on('event', (event) => {
+    hub.broadcast(event);
+  });
+}
 const adapters = [
   piAdapter.meta,
   {
     kind: 'codex' as const,
     label: 'Codex',
-    version: 'read-only', // history integration; exec adapter is opt-in
+    version: codexAdapter === null ? 'read-only' : 'exec (resume)',
     defaultColor: '#10a37f',
+  },
+  {
+    kind: 'claude' as const,
+    label: 'Claude',
+    version: 'read-only', // ~/.claude transcripts; never spawns claude
+    defaultColor: '#d97757',
   },
   {
     kind: 'atomcode' as const,
@@ -188,8 +220,9 @@ const demoShowcase = mode === 'demo' ? new DemoShowcase(hub, sessions) : null;
 // Pipelines (P1-02-C): demo mode uses a throwaway temp store so the showcase
 // never writes PiHub-owned state on this machine; demo seeds show the surface
 // (runs stay read-only via the 503 write guards).
+const pihubHome = await pihubHomePromise;
 const pipelineStore = createPipelineStore(
-  mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : undefined,
+  mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : pihubHome.dir,
 );
 if (mode === 'demo') {
   seedDemoPipelines(pipelineStore);
@@ -209,14 +242,63 @@ app.use(
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,
+    runtimeInfo: () => ({
+      home: pihubHome.dir,
+      configFile: configFileOf(pihubHome.dir),
+      url: effectiveConfig.url,
+    }),
     lanGate,
+    codexExec:
+      codexAdapter === null
+        ? null
+        : {
+            prompt: async (message: string) => {
+              const response = await codexAdapter.send({ type: 'prompt', message });
+              return {
+                success: response.success,
+                ...(typeof response.error === 'string' ? { error: response.error } : {}),
+              };
+            },
+            abort: async () => {
+              const response = await codexAdapter.send({ type: 'abort' });
+              return { success: response.success };
+            },
+            state: async () => {
+              const response = await codexAdapter.send({ type: 'get_state' });
+              return {
+                success: response.success,
+                ...(response.data !== undefined
+                  ? { data: response.data as { isStreaming: boolean; sessionId?: string | null } }
+                  : {}),
+              };
+            },
+            switchSession: async (sessionId: string) => {
+              const response = await codexAdapter.send({ type: 'switch_session', sessionId });
+              return {
+                success: response.success,
+                ...(typeof response.error === 'string' ? { error: response.error } : {}),
+              };
+            },
+            messages: (threadId?: string) => codexAdapter.getMessages(threadId),
+          },
     adapters: {
       list: () => adapters,
       // Read-only integrations; demo keeps them empty (synthetic-only).
       ...(mode === 'demo'
         ? {}
         : {
-            codexSessions: () => listCodexSessions(),
+            claudeSessions: () => listClaudeSessions(),
+            claudeSessionDetail: async (id: string) => {
+              const file = await findClaudeTranscript(id);
+              return file === null ? [] : parseClaudeDetail(file);
+            },
+            codexSessions: () => {
+              const fast = listCodexSessionsFast();
+              // Newest-first fast list renders immediately; the heavy
+              // backfill fills older placeholders in the background.
+              void fast.then(() => backfillCodexSessions()).catch(() => {});
+              return fast;
+            },
             codexSessionDetail: (id: string) => parseRolloutFileById(id),
             atomcodeSession: () => getAtomcodeSession(),
             zcodeSessions: () => listZcodeSessions(),

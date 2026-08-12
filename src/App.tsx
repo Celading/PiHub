@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SettingsSectionId, Theme, View } from './types/app';
-import { THEME_STORAGE_KEY } from './types/app';
+import { nextTheme, THEME_STORAGE_KEY } from './types/app';
 import { AppShell } from './layout/AppShell';
 import { ChatPage } from './pages/ChatPage';
 import { SessionsPage } from './pages/SessionsPage';
@@ -16,6 +16,7 @@ import { useSessionWatch } from './chat/sessionWatch.js';
 import { usePref } from './prefs/preferences.js';
 import { useI18n } from './i18n/I18nProvider.js';
 import { findDraftTab, newTabId, type ChatTab } from './chat/tabs.js';
+import type { PanelAgent } from './chat/chatState.js';
 import type { SessionSummary } from '../shared/types.js';
 import './App.css';
 
@@ -37,9 +38,17 @@ export function App(): React.JSX.Element {
   const { t } = useI18n();
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    return saved === 'dark' ? 'dark' : 'light';
+    return saved === 'dark' ? 'dark' : saved === 'fog' ? 'fog' : 'light';
   });
+  // P1-09: the header toggle cycles light → dark → fog → light.
+  const cycleTheme = useCallback((): void => {
+    setTheme((current) => nextTheme(current));
+  }, []);
   const [view, setView] = useState<View>('chat');
+  // Which agent the chat view talks to — pi (RPC) or codex (exec adapter).
+  const [agent, setAgent] = useState<PanelAgent>('pi');
+  /** Codex thread to resume when the chat opens in codex mode. */
+  const [codexThread, setCodexThread] = useState<string | null>(null);
   // P1-06: the chat workspace is a tab strip; each tab binds one session
   // file (or null for the draft tab that follows the RPC's current session).
   const [tabs, setTabs] = useState<ChatTab[]>(() => [
@@ -124,6 +133,16 @@ export function App(): React.JSX.Element {
     setView('chat');
     bumpTab(tab.id);
   }, [bumpTab, openTab, tabs, t]);
+
+  /** Open a codex record from the sidebar: switch to codex and resume it. */
+  const handleOpenCodexSession = useCallback(
+    (threadId: string): void => {
+      setCodexThread(threadId);
+      setAgent('codex');
+      void newDraftTab();
+    },
+    [newDraftTab],
+  );
 
   /** Close a tab; never leave the workspace tabless (fresh draft tab). */
   const closeTab = useCallback(
@@ -296,7 +315,7 @@ export function App(): React.JSX.Element {
       case 'chat': {
         const active = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
         if (active === undefined) {
-          return <ChatPage onSessionChanged={handleChatSessionChanged} />;
+          return <ChatPage agent={agent} onSessionChanged={handleChatSessionChanged} />;
         }
         const epoch = tabEpochs[active.id] ?? 0;
         return (
@@ -315,10 +334,12 @@ export function App(): React.JSX.Element {
                 void newDraftTab();
               }}
             />
-            {/* key remounts the chat whenever the tab or its epoch changes,
-                so each tab reloads its bound session's messages. */}
+            {/* key remounts the chat whenever the tab, its epoch or the
+                agent changes — each combination gets a clean message list. */}
             <ChatPage
-              key={`${active.id}:${String(epoch)}`}
+              key={`${active.id}:${String(epoch)}:${agent}:${codexThread ?? ''}`}
+              agent={agent}
+              codexThread={codexThread}
               onSessionChanged={handleChatSessionChanged}
             />
           </div>
@@ -340,9 +361,7 @@ export function App(): React.JSX.Element {
             section={settingsSection}
             onSectionChange={setSettingsSection}
             theme={theme}
-            onThemeToggle={() => {
-              setTheme(theme === 'light' ? 'dark' : 'light');
-            }}
+            onThemeChange={setTheme}
             sidebarCollapsed={sidebarCollapsed}
             onToggleCollapsed={() => {
               setSidebarCollapsed(!sidebarCollapsed);
@@ -386,9 +405,9 @@ export function App(): React.JSX.Element {
           void openSessionTab(fileName, label ?? fileName);
         }
       }}
-      onThemeToggle={() => {
-        setTheme(theme === 'light' ? 'dark' : 'light');
-      }}
+      onThemeToggle={cycleTheme}
+      agent={agent}
+      onOpenCodexSession={handleOpenCodexSession}
     >
       {/* P1-17 F: each view switch replays the 3D entry (perspective
           rotateY) + rise-from-below with fade. */}

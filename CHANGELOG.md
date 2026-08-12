@@ -4,30 +4,80 @@ All notable changes to PiHub are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-12
 
 ### Added
 
-- **Typewriter output** (showcase sprint, Lab on by default): assistant text
-  reveals character-by-character with a primary-color caret. Only rendering
-  is animated — the message data stays complete, so copy / resend / export
+- **Codex as a first-class console**: switch the panel between pi and Codex
+  (header agent switch; Codex sessions open from the sidebar). Every prompt
+  runs an isolated `codex exec` process, resumes the same thread so context
+  carries over, and streams replies with usage cards. Session sync keeps the
+  full conversation visible across agent switches and reloads.
+- **Multi-agent sidebar**: pi / Codex / AtomCode / ZCode / Claude records
+  converge in one list — folder grouping by workspace, per-agent outline
+  badges, a status light per row, an agent filter next to 会话, and a
+  "录入" action on the history page that pins a record into the sidebar.
+  Claude Code transcripts are readable read-only. Session rows follow the
+  `[icon] alias · indicator / n messages · time · light` two-line layout and
+  the active session can be renamed inline (context menu → 重命名).
+- **Right workbench sidebar** (dockable or floating at the top-right, both
+  resizable from the left edge):
+  - **Files** — a read-only workspace file browser bound to the active
+    session (lazy directory tree, breadcrumb, recent file operations, inline
+    diff-aware preview).
+  - **Changes** — read-only git worktree inspection (staged / unstaged
+    groups, per-file diffs) with a light auto-refresh.
+  - **Session tree** — the active pi session's branch DAG with a compact
+    lazy tree, mainline highlighting, one-click fork and jump-to-prompt.
+- **Prompt timeline**: a narrow rail on the left of the chat stream marks
+  every user prompt; hovering shows the prompt summary and its working time,
+  clicking scrolls the stream to it. A universal prompt index
+  (`/api/prompts`) is shared by every agent adapter.
+- **Fog theme & motion**: a third theme (fog) keeps the light body and adds
+  gaussian-blur scattering/condensing loading motion across session switches
+  and the history page; long messages cap with a fog blur that sweeps down
+  like a typewriter (blur 15px → 0), only when content overflows, and the
+  expand button is a persistent 展开/收起 toggle.
+- **Dedicated config & data home**: `$PIHUB_HOME` → `~/.pihub` →
+  `./itData` (runtime fallback when the home has no permission). Server
+  options (port / host / url) live in `<home>/config.toml`; `PIHUB_PORT`
+  env overrides the file, generic `PORT` still works, default port 3001
+  (18384 stays the Vite dev port). The About section shows the resolved
+  home, config file and actual URL.
+- **Typewriter output** (Lab on by default): assistant text reveals
+  character-by-character with a primary-color caret. Only rendering is
+  animated — the message data stays complete, so copy / resend / export
   always carry the full text; growing stream deltas continue the reveal
   instead of re-typing, long replies throttle to a 12s cap, and settling
   finishes the reveal.
-- **Settle-collapse** (showcase sprint, Lab on by default): when a run
-  settles, the whole tool chain folds into one block (grid-rows transition)
-  and a **Final summary** line fades in (last assistant reply, capped),
-  followed by the `.....` folded marker. Clicking the summary expands the
-  block — nothing is trimmed.
-- **Demo showcase movie**: demo mode now auto-plays a scripted conversation
-  (pretend-send user message, thinking, a three-tool chain with results,
-  typewriter-style text deltas, settle) over the standard SSE event stream —
-  the typewriter, tool-chain collapse and final summary are all production
-  components reacting to ordinary events. `docs/showcase-director-script.md`
-  is the 8-scene storyboard (timing, subtitles, CN voiceover); the demo
-  stack + headless check live in `scripts/smoke-showcase.mjs` (9/9).
+- **Settle-collapse** (Lab on by default): when a run settles, the whole
+  tool chain folds into one block (grid-rows transition) and a **Final
+  summary** line fades in, followed by the `.....` folded marker. Clicking
+  the summary expands the block — nothing is trimmed.
+- **Demo showcase movie**: demo mode auto-plays a scripted conversation
+  (pretend-send, thinking, a three-tool chain, typewriter text, settle) over
+  the standard SSE event stream — all production components reacting to
+  ordinary events. `docs/showcase-director-script.md` is the 8-scene
+  storyboard; the headless check lives in `scripts/smoke-showcase.mjs`.
+- **PWA mobile polish**: iOS standalone metadata, safe-area insets, ≥44px
+  touch targets, hashed assets cached offline by the service worker, and an
+  install hint in Settings → About.
+- **About section**: live version from the server, install / custom-port
+  instructions, data home and config file paths, PWA hint.
 
-_No unreleased security changes._
+### Fixed
+
+- **Config home resolution race**: concurrent startup resolution could
+  intermittently ignore `config.toml` (bound port 3001 instead of the
+  configured one) — one shared resolution promise with unique probe files
+  makes it deterministic (verified on arm64 Linux).
+- **Prompt timeline tooltip** clipped by the rail and covered by the chat
+  stream — now anchored with fixed positioning.
+- Light-mode inline code inside user bubbles was white-on-white — chips now
+  use a translucent white background.
+
+_No new security surface beyond 0.2.0; all new file/git surfaces are
+read-only with workspace containment._
 
 ## [0.2.0] - 2026-08-09
 

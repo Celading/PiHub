@@ -1,7 +1,10 @@
 import type {
+  AgentMessage,
   EntriesResponse,
   ExtensionUiRequest,
   ExtensionUiResponse,
+  FileListing,
+  GitChange,
   ModelInfo,
   PiCommand,
   Pipeline,
@@ -14,6 +17,8 @@ import type {
   SessionTreeResponse,
 } from '../../shared/types.js';
 import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
+import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
+import type { PromptRecord } from '../../server/prompts.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
 import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { controlTokenHeader } from './controlToken.js';
@@ -335,6 +340,37 @@ export const api = {
     );
   },
 
+  /** P1-08b: read-only directory listing of the session's workspace. */
+  listFiles(path: string, session?: string): Promise<FileListing> {
+    const params = new URLSearchParams({ path });
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
+    return request<FileListing>(`/api/files?${params.toString()}`);
+  },
+
+  /** P1-08b: read-only git worktree status of the session's cwd. */
+  gitStatus(session?: string): Promise<{ root: string; repo: boolean; changes: GitChange[] }> {
+    const params = new URLSearchParams();
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
+    const suffix = params.toString().length > 0 ? `?${params.toString()}` : '';
+    return request<{ root: string; repo: boolean; changes: GitChange[] }>(`/api/git/status${suffix}`);
+  },
+
+  /** P1-08b: read-only diff of one path (staged or worktree). */
+  gitDiff(path: string, session?: string, staged = false): Promise<{ diff: string }> {
+    const params = new URLSearchParams({ path });
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
+    if (staged) {
+      params.set('staged', '1');
+    }
+    return request<{ diff: string }>(`/api/git/diff?${params.toString()}`);
+  },
+
   /** pi.dev official per-provider model catalog (P1-15 C). */
   catalogModels(provider: string): Promise<CatalogModel[]> {
     return request<Record<string, unknown>>(`/api/models/catalog/${encodeURIComponent(provider)}`).then(
@@ -432,6 +468,60 @@ export const api = {
 
   demoStop(): Promise<{ phase: string }> {
     return request<{ phase: string }>('/api/demo/stop', { method: 'POST' });
+  },
+
+  /* ---- codex exec adapter (ACTIVE) ---- */
+
+  claudeSessionDetail(sessionId: string): Promise<{ turns: Array<{ role: string; text: string; timestamp: string }> }> {
+    return request<{ turns: Array<{ role: string; text: string; timestamp: string }> }>(
+      `/api/claude/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  prompts(query?: { q?: string; agent?: string; limit?: number }): Promise<{ prompts: PromptRecord[] }> {
+    const params = new URLSearchParams();
+    if (query?.q !== undefined) {
+      params.set('q', query.q);
+    }
+    if (query?.agent !== undefined) {
+      params.set('agent', query.agent);
+    }
+    if (query?.limit !== undefined) {
+      params.set('limit', String(query.limit));
+    }
+    const suffix = params.toString().length > 0 ? `?${params.toString()}` : '';
+    return request<{ prompts: PromptRecord[] }>(`/api/prompts${suffix}`);
+  },
+
+  claudeSessions(): Promise<{ sessions: ClaudeSessionMeta[] }> {
+    return request<{ sessions: ClaudeSessionMeta[] }>('/api/claude/sessions');
+  },
+
+  codexState(): Promise<{ running: boolean; sessionId: string | null }> {
+    return request<{ running: boolean; sessionId: string | null }>('/api/codex/state');
+  },
+
+  codexPrompt(message: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/codex/prompt', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  codexAbort(): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/codex/abort', { method: 'POST' });
+  },
+
+  codexMessages(threadId?: string): Promise<{ messages: AgentMessage[] }> {
+    const query = threadId === undefined ? '' : `?thread=${encodeURIComponent(threadId)}`;
+    return request<{ messages: AgentMessage[] }>(`/api/codex/messages${query}`);
+  },
+
+  codexSwitchSession(sessionId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/codex/session', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
   },
 
   /* ---- about (published version) ---- */

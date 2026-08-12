@@ -2,10 +2,12 @@
 // fallback cache. Registered only in production builds (see main.tsx) so the
 // dev server's HMR is never intercepted.
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest'];
+const SHELL_CACHE = 'pihub-shell-v2';
+const ASSET_CACHE = 'pihub-assets-v1';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open('pihub-shell-v1').then((cache) => cache.addAll(APP_SHELL)),
+    caches.open(SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL)),
   );
   self.skipWaiting();
 });
@@ -15,7 +17,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== 'pihub-shell-v1').map((key) => caches.delete(key))),
+        Promise.all(keys.filter((key) => key !== SHELL_CACHE && key !== ASSET_CACHE).map((key) => caches.delete(key))),
       ),
   );
   self.clients.claim();
@@ -33,12 +35,29 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) {
     return;
   }
+  // Hashed build assets are immutable — cache-first with a network miss
+  // falling back to the cache (P1-07: offline works after first load).
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached !== undefined) {
+          return cached;
+        }
+        return fetch(request).then((response) => {
+          const copy = response.clone();
+          void caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
+          return response;
+        });
+      }),
+    );
+    return;
+  }
   event.respondWith(
     fetch(request)
       .then((response) => {
         if (url.origin === self.location.origin && request.destination !== 'document') {
           const copy = response.clone();
-          void caches.open('pihub-shell-v1').then((cache) => cache.put(request, copy));
+          void caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
         }
         return response;
       })
