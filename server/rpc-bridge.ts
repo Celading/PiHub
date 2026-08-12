@@ -83,9 +83,16 @@ export class RpcBridge extends EventEmitter {
   constructor(
     private readonly piBinary: string,
     private readonly cwd: string,
+    options?: { systemPrompt?: () => string },
   ) {
     super();
+    this.systemPrompt = options?.systemPrompt ?? null;
   }
+
+  /** Settings system prompt, appended to pi's default coding assistant
+   *  prompt at spawn time (owner spec: system prompt setting). Read lazily
+   *  so a save followed by restart() picks up the new text. */
+  private readonly systemPrompt: (() => string) | null;
 
   override on<K extends keyof RpcBridgeEvents>(
     event: K,
@@ -105,7 +112,12 @@ export class RpcBridge extends EventEmitter {
     if (this.stopped || this.child !== null) {
       return;
     }
-    this.child = spawn(this.piBinary, ['--mode', 'rpc'], {
+    const args = ['--mode', 'rpc'];
+    const systemPromptText = this.systemPrompt?.() ?? '';
+    if (systemPromptText.trim().length > 0) {
+      args.push('--append-system-prompt', systemPromptText);
+    }
+    this.child = spawn(this.piBinary, args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
     });

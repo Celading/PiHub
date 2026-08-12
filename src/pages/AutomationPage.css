@@ -135,25 +135,6 @@
   white-space: nowrap;
 }
 
-.automation-run {
-  padding: var(--space-1) var(--space-3);
-  border: var(--border-thin) solid var(--border-strong);
-  border-radius: var(--radius-none);
-  background-color: transparent;
-  color: var(--text-primary);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.automation-run:hover {
-  background-color: var(--primary);
-  border-color: var(--primary);
-  color: #ffffff;
-}
-
 .automation-row {
   display: flex;
   align-items: center;

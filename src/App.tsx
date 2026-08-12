@@ -277,21 +277,6 @@ export function App(): React.JSX.Element {
     }
   }, [newDraftTab]);
 
-  // Run a slash command from the automation center: send it to the RPC
-  // session and jump back to the chat view.
-  const handleRunCommand = useCallback(
-    async (commandName: string): Promise<void> => {
-      try {
-        await api.prompt(`/${commandName}`);
-        bumpTab(activeTabId);
-        setView('chat');
-      } catch {
-        // The chat page surfaces backend errors through its own state.
-      }
-    },
-    [activeTabId, bumpTab],
-  );
-
   // The RPC session may have changed under the active tab (fork/steer):
   // reload its chat and keep the tab binding + label fresh.
   const handleChatSessionChanged = useCallback((): void => {
@@ -473,13 +458,7 @@ export function App(): React.JSX.Element {
           />
         );
       case 'automation':
-        return (
-          <AutomationPage
-            onRunCommand={(name) => {
-              void handleRunCommand(name);
-            }}
-          />
-        );
+        return <AutomationPage />;
     }
   };
 

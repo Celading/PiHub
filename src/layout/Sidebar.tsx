@@ -74,6 +74,7 @@ const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
   sessions: 'settings.nav.sessions',
   permissions: 'settings.nav.permissions',
   favorites: 'settings.nav.favorites',
+  systemPrompt: 'settings.nav.systemPrompt',
   lab: 'settings.nav.lab',
   about: 'settings.nav.about',
 };

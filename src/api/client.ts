@@ -94,6 +94,18 @@ export const api = {
     return request<Record<string, unknown>>('/api/settings');
   },
 
+  // Settings system prompt: preview + edit + save (owner spec).
+  systemPrompt(): Promise<{ prompt: string }> {
+    return request<{ prompt: string }>('/api/system-prompt');
+  },
+
+  saveSystemPrompt(prompt: string): Promise<{ success: boolean; error?: string }> {
+    return request('/api/system-prompt', {
+      method: 'PUT',
+      body: JSON.stringify({ prompt }),
+    });
+  },
+
   // P2-02: LAN access modes + capability scope.
   net(): Promise<{
     mode: 'local' | 'pair' | 'lan';

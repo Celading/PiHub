@@ -72,8 +72,10 @@ function formatEventTime(epochMs: number, intlTag: string): string {
  * orchestration surface (engine lands in P1-02 C1). P1-02 S2: the
  * automation tab aggregates the run-mode switches (auto compaction / auto
  * retry / steering / follow-up) and shows a live status + event feed.
+ * Owner spec: the skills catalog is browse/search only — no [运行] buttons
+ * there; running belongs to the pipelines (工程流) tab.
  */
-export function AutomationPage({ onRunCommand }: { onRunCommand: (name: string) => void }): React.JSX.Element {
+export function AutomationPage(): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [tab, setTab] = useState<AutomationTab>('skills');
   const [commands, setCommands] = useState<PiCommand[] | null>(null);
@@ -290,15 +292,6 @@ export function AutomationPage({ onRunCommand }: { onRunCommand: (name: string) 
                               {command.description ?? ''}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            className="automation-command-run mono"
-                            onClick={() => {
-                              onRunCommand(command.name);
-                            }}
-                          >
-                            {t('automation.run')}
-                          </button>
                         </div>
                       ))}
                     </div>
