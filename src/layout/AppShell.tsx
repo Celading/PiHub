@@ -26,6 +26,9 @@ interface AppShellProps {
   /** P1-06: session changed under the chat workspace (see Sidebar). */
   onSessionChanged: (fileName?: string | null, label?: string) => void;
   onThemeToggle: () => void;
+  /** Agent switch (pi / codex) shown in the header. */
+  agent: 'pi' | 'codex';
+  onAgentChange: (agent: 'pi' | 'codex') => void;
   children: ReactNode;
 }
 
@@ -57,6 +60,8 @@ export function AppShell({
   onViewChange,
   onSessionChanged,
   onThemeToggle,
+  agent,
+  onAgentChange,
   children,
 }: AppShellProps): React.JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadSidebarWidth());
@@ -130,6 +135,8 @@ export function AppShell({
         onMenuClick={() => {
           setMobileOpen(true);
         }}
+        agent={agent}
+        onAgentChange={onAgentChange}
       />
       {isMobile && mobileOpen ? (
         <div

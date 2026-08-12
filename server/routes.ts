@@ -168,6 +168,14 @@ export interface RouterModeOptions {
   demoMachine?: DemoStateMachine | null;
   /** Showcase sprint: scripted demo conversation player (demo mode only). */
   demoShowcase?: DemoShowcase | null;
+  /** Codex exec adapter (ACTIVE 2026-08-12): per-prompt `codex exec` with
+   *  resume; null in demo mode (synthetic-only). */
+  codexExec?: {
+    prompt: (message: string) => Promise<{ success: boolean; error?: string }>;
+    abort: () => Promise<{ success: boolean }>;
+    state: () => Promise<{ success: boolean; data?: { isStreaming: boolean; sessionId?: string | null } }>;
+    switchSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+  } | null;
   debugState?: () => Record<string, unknown>;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
   pipelines?: {
@@ -449,6 +457,66 @@ export function createRouter(
   /* ---- P2-01: agent adapters (metadata + codex read-only history) ---- */
   router.get('/api/adapters', (_req, res) => {
     res.json({ adapters: options?.adapters?.list() ?? [] });
+  });
+
+  /* ---- codex exec adapter (ACTIVE 2026-08-12) ---- */
+  const codexExec = options?.codexExec ?? null;
+
+  router.get('/api/codex/state', async (_req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const response = await codexExec.state();
+    res.json({
+      running: response.success && response.data?.isStreaming === true,
+      sessionId: response.success ? (response.data?.sessionId ?? null) : null,
+    });
+  });
+
+  router.post('/api/codex/prompt', async (req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const message = (req.body as { message?: unknown }).message;
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    const response = await codexExec.prompt(message.trim());
+    if (!response.success) {
+      res.status(409).json({ error: response.error ?? 'codex rejected the prompt' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  router.post('/api/codex/abort', async (_req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    await codexExec.abort();
+    res.json({ success: true });
+  });
+
+  router.post('/api/codex/session', async (req, res) => {
+    if (codexExec === null) {
+      res.status(503).json({ error: 'codex exec disabled (demo mode)' });
+      return;
+    }
+    const sessionId = (req.body as { sessionId?: unknown }).sessionId;
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+    const response = await codexExec.switchSession(sessionId);
+    if (!response.success) {
+      res.status(409).json({ error: response.error ?? 'codex rejected the session switch' });
+      return;
+    }
+    res.json({ success: true });
   });
   router.get('/api/codex/sessions', async (_req, res) => {
     const fn = options?.adapters?.codexSessions;

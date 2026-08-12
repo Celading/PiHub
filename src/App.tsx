@@ -16,6 +16,7 @@ import { useSessionWatch } from './chat/sessionWatch.js';
 import { usePref } from './prefs/preferences.js';
 import { useI18n } from './i18n/I18nProvider.js';
 import { findDraftTab, newTabId, type ChatTab } from './chat/tabs.js';
+import type { PanelAgent } from './chat/chatState.js';
 import type { SessionSummary } from '../shared/types.js';
 import './App.css';
 
@@ -40,6 +41,8 @@ export function App(): React.JSX.Element {
     return saved === 'dark' ? 'dark' : 'light';
   });
   const [view, setView] = useState<View>('chat');
+  // Which agent the chat view talks to — pi (RPC) or codex (exec adapter).
+  const [agent, setAgent] = useState<PanelAgent>('pi');
   // P1-06: the chat workspace is a tab strip; each tab binds one session
   // file (or null for the draft tab that follows the RPC's current session).
   const [tabs, setTabs] = useState<ChatTab[]>(() => [
@@ -296,7 +299,7 @@ export function App(): React.JSX.Element {
       case 'chat': {
         const active = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
         if (active === undefined) {
-          return <ChatPage onSessionChanged={handleChatSessionChanged} />;
+          return <ChatPage agent={agent} onSessionChanged={handleChatSessionChanged} />;
         }
         const epoch = tabEpochs[active.id] ?? 0;
         return (
@@ -315,10 +318,11 @@ export function App(): React.JSX.Element {
                 void newDraftTab();
               }}
             />
-            {/* key remounts the chat whenever the tab or its epoch changes,
-                so each tab reloads its bound session's messages. */}
+            {/* key remounts the chat whenever the tab, its epoch or the
+                agent changes — each combination gets a clean message list. */}
             <ChatPage
-              key={`${active.id}:${String(epoch)}`}
+              key={`${active.id}:${String(epoch)}:${agent}`}
+              agent={agent}
               onSessionChanged={handleChatSessionChanged}
             />
           </div>
@@ -389,6 +393,8 @@ export function App(): React.JSX.Element {
       onThemeToggle={() => {
         setTheme(theme === 'light' ? 'dark' : 'light');
       }}
+      agent={agent}
+      onAgentChange={setAgent}
     >
       {/* P1-17 F: each view switch replays the 3D entry (perspective
           rotateY) + rise-from-below with fade. */}

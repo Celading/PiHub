@@ -3,6 +3,11 @@ import type { AgentMessage, RpcState, RpcStreamEvent } from '../../shared/types.
 import { api, type PromptImage } from '../api/client.js';
 import { eventsUrl } from '../api/controlToken.js';
 
+/** Which agent the chat view is talking to. Switching agents remounts the
+ *  chat (clean message list); SSE events carry `kind` so each agent's stream
+ *  only renders in its own view. */
+export type PanelAgent = 'pi' | 'codex';
+
 export interface ChatMessage {
   key: string;
   message: AgentMessage;
@@ -288,7 +293,7 @@ export interface ChatSession {
   clearAfter: (key: string) => void;
 }
 
-export function useChatSession(): ChatSession {
+export function useChatSession(agent: PanelAgent): ChatSession {
   const [state, dispatch] = useReducer(chatReducer, undefined, initialState);
 
   // Shared loader: initial mount and explicit reloads (demo showcase play
@@ -343,6 +348,13 @@ export function useChatSession(): ChatSession {
       if (typeof parsed !== 'object' || parsed === null) {
         return;
       }
+      // Route by agent kind: codex events carry kind:'codex', pi events do
+      // not — an event only renders in the view of its own agent.
+      const kind = (parsed as Record<string, unknown>)['kind'];
+      const isCodexEvent = kind === 'codex';
+      if (isCodexEvent !== (agent === 'codex')) {
+        return;
+      }
       const action = eventToAction(parsed as RpcStreamEvent);
       if (action !== null) {
         dispatch(action);
@@ -352,7 +364,7 @@ export function useChatSession(): ChatSession {
     return () => {
       source.close();
     };
-  }, []);
+  }, [agent]);
 
   const refreshState = useCallback(async (): Promise<void> => {
     try {
@@ -369,7 +381,11 @@ export function useChatSession(): ChatSession {
   const sendPrompt = useCallback(
     async (text: string, images?: PromptImage[]): Promise<void> => {
       try {
-        await api.prompt(text, undefined, images);
+        if (agent === 'codex') {
+          await api.codexPrompt(text);
+        } else {
+          await api.prompt(text, undefined, images);
+        }
         void refreshState();
       } catch (error) {
         dispatch({
@@ -378,34 +394,46 @@ export function useChatSession(): ChatSession {
         });
       }
     },
-    [refreshState],
+    [agent, refreshState],
   );
 
-  const sendSteer = useCallback(async (text: string): Promise<void> => {
-    try {
-      await api.steer(text);
-      void refreshState();
-    } catch (error) {
-      dispatch({
-        type: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }, [refreshState]);
+  const sendSteer = useCallback(
+    async (text: string): Promise<void> => {
+      try {
+        if (agent === 'codex') {
+          // codex has no steer command; a steer becomes a continuation.
+          await api.codexPrompt(text);
+        } else {
+          await api.steer(text);
+        }
+        void refreshState();
+      } catch (error) {
+        dispatch({
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [agent, refreshState],
+  );
 
   const abort = useCallback(async (): Promise<void> => {
     // Optimistic: mark the run aborted before the RPC response returns —
     // the settle event usually arrives first and must see the flag.
     dispatch({ type: 'runAborted' });
     try {
-      await api.abort();
+      if (agent === 'codex') {
+        await api.codexAbort();
+      } else {
+        await api.abort();
+      }
     } catch (error) {
       dispatch({
         type: 'error',
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, []);
+  }, [agent]);
 
   const setModel = useCallback(
     async (provider: string, modelId: string): Promise<void> => {

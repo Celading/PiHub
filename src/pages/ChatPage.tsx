@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useChatSession, type ChatMessage } from '../chat/chatState.js';
+import { useChatSession, type ChatMessage, type PanelAgent } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { IconButton } from '../components/IconButton.js';
@@ -233,10 +233,12 @@ function runDurationLabel(items: ChatMessage[]): string | null {
 
 interface ChatPageProps {
   onSessionChanged: () => void;
+  /** Which agent this chat view talks to (pi RPC or codex exec). */
+  agent: PanelAgent;
 }
 
-export function ChatPage({ onSessionChanged }: ChatPageProps): React.JSX.Element {
-  const chat = useChatSession();
+export function ChatPage({ onSessionChanged, agent }: ChatPageProps): React.JSX.Element {
+  const chat = useChatSession(agent);
   const { t, locale } = useI18n();
   const mode = useMode();
   const settledNotify = useLabFlag('settledNotify');

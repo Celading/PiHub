@@ -6,6 +6,7 @@ import { createRouter } from './routes.js';
 import { createFileSessionProvider } from './providers/file-session-provider.js';
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
+import { CodexAdapter, resolveCodexBinary } from './adapters/codex-adapter.js';
 import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
@@ -74,20 +75,34 @@ const hub = new SseHub();
 const bridge = new RpcBridge(PI_BINARY, AGENT_CWD);
 
 // P2-01: adapter surface — pi is the primary adapter (wraps the existing
-// bridge); codex history is a read-only integration (rollout parse) that
-// never spawns codex and never reads ~/.codex/auth.json.
+// bridge); codex is now ACTIVE as the second exec adapter (per-prompt
+// `codex exec --json --ephemeral` processes with resume; see
+// codex-adapter.ts). It never reads ~/.codex/auth.json and never writes
+// session files (ephemeral). Enabled in demo mode too? No — demo stays
+// synthetic-only: the codex adapter is created for non-demo modes.
 const piAdapter = new PiAdapter(bridge);
 // Node EventEmitter throws on unhandled 'error' — the adapter re-broadcasts
 // bridge errors, so always attach a handler here.
 piAdapter.on('error', (error) => {
   console.error(`[adapter:pi] ${error.message}`);
 });
+const codexAdapter = mode === 'demo' ? null : new CodexAdapter(resolveCodexBinary(), AGENT_CWD);
+if (codexAdapter !== null) {
+  codexAdapter.on('error', (error) => {
+    console.error(`[adapter:codex] ${error.message}`);
+  });
+  // Codex events stream through the same SSE hub; the `kind: 'codex'` mark
+  // lets the frontend route them to the codex chat view.
+  codexAdapter.on('event', (event) => {
+    hub.broadcast(event);
+  });
+}
 const adapters = [
   piAdapter.meta,
   {
     kind: 'codex' as const,
     label: 'Codex',
-    version: 'read-only', // history integration; exec adapter is opt-in
+    version: codexAdapter === null ? 'read-only' : 'exec (resume)',
     defaultColor: '#10a37f',
   },
   {
@@ -210,6 +225,38 @@ app.use(
     reloadModels: requestModelReload,
     allowedRoot: AGENT_CWD,
     lanGate,
+    codexExec:
+      codexAdapter === null
+        ? null
+        : {
+            prompt: async (message: string) => {
+              const response = await codexAdapter.send({ type: 'prompt', message });
+              return {
+                success: response.success,
+                ...(typeof response.error === 'string' ? { error: response.error } : {}),
+              };
+            },
+            abort: async () => {
+              const response = await codexAdapter.send({ type: 'abort' });
+              return { success: response.success };
+            },
+            state: async () => {
+              const response = await codexAdapter.send({ type: 'get_state' });
+              return {
+                success: response.success,
+                ...(response.data !== undefined
+                  ? { data: response.data as { isStreaming: boolean; sessionId?: string | null } }
+                  : {}),
+              };
+            },
+            switchSession: async (sessionId: string) => {
+              const response = await codexAdapter.send({ type: 'switch_session', sessionId });
+              return {
+                success: response.success,
+                ...(typeof response.error === 'string' ? { error: response.error } : {}),
+              };
+            },
+          },
     adapters: {
       list: () => adapters,
       // Read-only integrations; demo keeps them empty (synthetic-only).

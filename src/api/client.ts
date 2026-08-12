@@ -434,6 +434,30 @@ export const api = {
     return request<{ phase: string }>('/api/demo/stop', { method: 'POST' });
   },
 
+  /* ---- codex exec adapter (ACTIVE) ---- */
+
+  codexState(): Promise<{ running: boolean; sessionId: string | null }> {
+    return request<{ running: boolean; sessionId: string | null }>('/api/codex/state');
+  },
+
+  codexPrompt(message: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/codex/prompt', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  codexAbort(): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/codex/abort', { method: 'POST' });
+  },
+
+  codexSwitchSession(sessionId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/codex/session', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+  },
+
   /* ---- about (published version) ---- */
 
   health(): Promise<{ status: string; name: string; version: string; time: string }> {
