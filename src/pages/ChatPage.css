@@ -500,68 +500,6 @@
   font-size: var(--text-xs);
 }
 
-/* ---- P1-03 D: recent file operations strip ---- */
-.chat-files {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: var(--space-1) var(--space-4) 0;
-  overflow: hidden;
-}
-
-.chat-files-label {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  color: var(--text-placeholder);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.chat-files-list {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.chat-files-list::-webkit-scrollbar {
-  display: none;
-}
-
-.chat-file-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 16rem;
-  padding: 1px var(--space-2);
-  border: var(--border-thin) solid var(--border-subtle);
-  background-color: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.chat-file-chip:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-.chat-file-action {
-  flex-shrink: 0;
-  color: var(--text-placeholder);
-}
-
-.chat-file-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ---- Showcase sprint: settle-collapse animation + final summary ---- */
 /* The unit body folds with the same grid-rows transition used by the
    collapse regions, so the whole tool chain retracts as one block. */
