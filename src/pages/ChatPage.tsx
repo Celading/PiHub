@@ -39,6 +39,22 @@ function buildUnits(messages: ChatMessage[]): ChatUnit[] {
   return units;
 }
 
+/** Full user prompt text (string content or text blocks) — tree jump matcher. */
+function userTextOf(message: AgentMessage): string {
+  if (message.role !== 'user') {
+    return '';
+  }
+  const content = message.content;
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  return content
+    .filter((block) => block.type === 'text')
+    .map((block) => (block.type === 'text' ? block.text : ''))
+    .join(' ')
+    .trim();
+}
+
 function formatDuration(ms: number, locale: Locale): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -432,6 +448,29 @@ export function ChatPage({
 
   const units = buildUnits(chat.messages);
   const lastUnit = units[units.length - 1];
+
+  // Right workbench session tree: jumping a user entry scrolls the chat to
+  // the matching prompt unit (matched by its full user text).
+  useEffect(() => {
+    const onTreeJump = (event: Event): void => {
+      const detail = (event as CustomEvent<{ text?: unknown }>).detail;
+      const text = typeof detail.text === 'string' ? detail.text : '';
+      if (text.length === 0) {
+        return;
+      }
+      const unit = units.find(
+        (item) => item.user !== null && userTextOf(item.user.message) === text,
+      );
+      const key = (unit ?? units.find((item) => item.user !== null && userTextOf(item.user.message).includes(text)))?.key;
+      if (key !== undefined) {
+        jumpToPrompt(key);
+      }    };
+    window.addEventListener('pihub:tree-jump', onTreeJump);
+    return () => {
+      window.removeEventListener('pihub:tree-jump', onTreeJump);
+    };
+  }, [units, jumpToPrompt]);
+
   const runSummary = chat.lastRun;
   const thinkingStatus: ThinkingStatus =
     chat.isAgentRunning && lastUnit !== undefined && lastUnit.user !== null
