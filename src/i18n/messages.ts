@@ -155,6 +155,15 @@ export const zhMessages = {
   'sidebar.filter.aborted': '失败/终止',
   'sidebar.filter.done': '已完成',
   'sidebar.otherRecords': '其他记录',
+
+  // active run header
+  'runHeader.running': '执行中',
+  'runHeader.idle': '空闲',
+  'runHeader.filesChanged': '个文件变更',
+  'runHeader.pendingApproval': '待审批 {count}',
+  'runHeader.branch': '分支',
+  'runHeader.rerun': '重跑',
+  'runHeader.abort': '暂停/终止',
   'sidebar.msgs': '条消息',
   'sidebar.imported': '已录入',
   'sidebar.collapse': '收起侧边栏',
@@ -684,6 +693,15 @@ export const enMessages: Record<MessageKey, string> = {
   'sidebar.filter.aborted': 'Failed / aborted',
   'sidebar.filter.done': 'Completed',
   'sidebar.otherRecords': 'Other records',
+
+  // active run header
+  'runHeader.running': 'running',
+  'runHeader.idle': 'idle',
+  'runHeader.filesChanged': 'files changed',
+  'runHeader.pendingApproval': '{count} awaiting approval',
+  'runHeader.branch': 'Branch',
+  'runHeader.rerun': 'Rerun',
+  'runHeader.abort': 'Abort',
   'sidebar.msgs': 'msgs',
   'sidebar.imported': 'Imported',
   'session.status.done': 'Done',

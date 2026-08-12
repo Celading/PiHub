@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage, type PanelAgent } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
@@ -6,6 +6,7 @@ import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { FilePreview } from '../components/FilePreview.js';
 import { PromptTimeline } from '../components/PromptTimeline.js';
+import { ActiveRunHeader } from '../components/ActiveRunHeader.js';
 import { FogLoading } from '../components/FogLoading.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
@@ -257,6 +258,8 @@ interface ChatPageProps {
   codexThread?: string | null;
   /** Claude transcript to render read-only (sidebar "open record"). */
   claudeThread?: { sessionId: string; label: string } | null;
+  /** UX workbench: pending extension-UI dialogs (approval indicator). */
+  pendingApprovals?: number;
 }
 
 export function ChatPage({
@@ -264,6 +267,7 @@ export function ChatPage({
   agent,
   codexThread = null,
   claudeThread = null,
+  pendingApprovals = 0,
 }: ChatPageProps): React.JSX.Element {
   const chat = useChatSession(agent);
   const transcriptMode = claudeThread != null;
@@ -602,6 +606,76 @@ export function ChatPage({
   const runningElapsed =
     chat.isAgentRunning && chat.runStartedAt !== null ? Date.now() - chat.runStartedAt : 0;
 
+  // UX workbench (audit): changed-file count for the Active Run Header —
+  // unique edit/write/patch paths in the visible conversation.
+  const changedFiles = useMemo(() => {
+    const messages = transcriptMode ? (transcript ?? []) : chat.messages;
+    const seen = new Set<string>();
+    for (const item of messages) {
+      if (item.message.role !== 'assistant') {
+        continue;
+      }
+      for (const block of item.message.content) {
+        if (block.type !== 'toolCall') {
+          continue;
+        }
+        const name = typeof block.name === 'string' ? block.name : '';
+        if (name !== 'edit' && name !== 'write' && name !== 'patch') {
+          continue;
+        }
+        const args =
+          typeof block.arguments === 'object' && block.arguments !== null
+            ? (block.arguments as Record<string, unknown>)
+            : {};
+        const rawPath =
+          typeof args['path'] === 'string'
+            ? args['path']
+            : typeof args['filePath'] === 'string'
+              ? args['filePath']
+              : typeof args['file'] === 'string'
+                ? args['file']
+                : null;
+        if (rawPath !== null && rawPath.length > 0) {
+          seen.add(rawPath);
+        }
+      }
+    }
+    return seen.size;
+  }, [transcriptMode, transcript, chat.messages]);
+
+  // Active Run Header actions: rerun resends the last user prompt; branch
+  // forks at the last assistant reply's tree node (pi only). Both are null
+  // when there is nothing to act on (or the view is read-only).
+  const rerunAction =
+    !transcriptMode && agent === 'pi' && !chat.isAgentRunning
+      ? (() => {
+          const lastUser = [...viewMessages].reverse().find((item) => item.message.role === 'user');
+          if (lastUser === undefined) {
+            return null;
+          }
+          const text = extractUserPrompt(lastUser);
+          return text.length > 0
+            ? (): void => {
+                void chat.sendPrompt(text);
+              }
+            : null;
+        })()
+      : null;
+  const branchAction =
+    !transcriptMode && agent === 'pi' && !chat.isAgentRunning
+      ? (() => {
+          const lastAssistant = [...viewMessages]
+            .reverse()
+            .find((item) => item.message.role === 'assistant');
+          const entryId = lastAssistant?.entryId;
+          return entryId !== undefined
+            ? (): void => {
+                void forkAtReply(entryId);
+              }
+            : null;
+        })()
+      : null;
+
   const copyReplyAsMarkdown = async (item: ChatMessage): Promise<void> => {
     try {
       const text = extractAssistantMarkdown(item.message);
@@ -634,6 +708,19 @@ export function ChatPage({
     <div className="chat-workspace">
       <PromptTimeline units={units} onJump={jumpToPrompt} />
       <section className="chatpage" data-shot="chat">
+      <ActiveRunHeader
+        rpcState={chat.rpcState}
+        isAgentRunning={chat.isAgentRunning}
+        elapsedMs={runningElapsed}
+        changedFiles={changedFiles}
+        pendingApprovals={transcriptMode ? 0 : pendingApprovals}
+        onAbort={() => {
+          void chat.abort();
+          window.dispatchEvent(new Event('pihub:run-aborted'));
+        }}
+        onRerun={rerunAction}
+        onBranch={branchAction}
+      />
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
