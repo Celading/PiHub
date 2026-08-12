@@ -16,13 +16,21 @@ import path from 'node:path';
  * future databases, …). Nothing PiHub-owned is ever written into `~/.pi`.
  */
 
-let cached: { dir: string; fallback: boolean } | null = null;
+// One shared resolution promise: the FIRST call wins and concurrent callers
+// (loadPihubConfig + index wiring both resolve at import time) await the
+// same result instead of racing two probe sequences.
+let cachedPromise: Promise<{ dir: string; fallback: boolean }> | null = null;
+
+// Probe file names must be unique per invocation — concurrent probes with
+// the same pid would unlink each other's file and falsely report unusable.
+let probeCounter = 0;
 
 async function usable(dir: string): Promise<boolean> {
   try {
     await mkdir(dir, { recursive: true });
     // Write probe: mkdir can succeed where writes fail (quota, ACLs).
-    const probe = path.join(dir, `.pihub-probe-${String(process.pid)}`);
+    probeCounter += 1;
+    const probe = path.join(dir, `.pihub-probe-${String(process.pid)}-${String(probeCounter)}`);
     await writeFile(probe, 'ok', 'utf8');
     await unlink(probe);
     return true;
@@ -32,10 +40,14 @@ async function usable(dir: string): Promise<boolean> {
 }
 
 /** Resolves the PiHub home directory (env → ~/.pihub → ./itData). */
-export async function resolvePihubHome(): Promise<{ dir: string; fallback: boolean }> {
-  if (cached !== null) {
-    return cached;
+export function resolvePihubHome(): Promise<{ dir: string; fallback: boolean }> {
+  if (cachedPromise === null) {
+    cachedPromise = resolveOnce();
   }
+  return cachedPromise;
+}
+
+async function resolveOnce(): Promise<{ dir: string; fallback: boolean }> {
   const explicit = process.env.PIHUB_HOME;
   const candidates: Array<{ dir: string; fallback: boolean }> = [];
   if (explicit !== undefined && explicit.length > 0) {
@@ -46,15 +58,13 @@ export async function resolvePihubHome(): Promise<{ dir: string; fallback: boole
 
   for (const candidate of candidates) {
     if (await usable(candidate.dir)) {
-      cached = candidate;
       return candidate;
     }
   }
   // Nothing usable — last resort is the runtime dir (already tried, but
   // report it anyway so callers can fail honestly).
   const last = candidates[candidates.length - 1];
-  cached = last ?? { dir: path.resolve(process.cwd(), 'itData'), fallback: true };
-  return cached;
+  return last ?? { dir: path.resolve(process.cwd(), 'itData'), fallback: true };
 }
 
 /** Config file path inside the home. */
@@ -64,5 +74,5 @@ export function configFileOf(home: string): string {
 
 /** Test hook: drop the cached resolution (unit tests only). */
 export function resetPihubHomeCache(): void {
-  cached = null;
+  cachedPromise = null;
 }

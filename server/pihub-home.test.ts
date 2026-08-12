@@ -46,3 +46,13 @@ describe('P1-08c pihub home resolution', () => {
     expect(home.fallback).toBe(true);
   });
 });
+
+describe('P1-08c concurrent resolution', () => {
+  it('returns the SAME result for concurrent first calls (shared promise)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pihub-home-'));
+    process.env.PIHUB_HOME = dir;
+    const [a, b] = await Promise.all([resolvePihubHome(), resolvePihubHome()]);
+    expect(a.dir).toBe(dir);
+    expect(b.dir).toBe(dir);
+  });
+});
