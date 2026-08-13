@@ -121,6 +121,22 @@ binds to the loopback interface only.
   background service (e.g. `pihub &` / launchd).
 - Change the port with `PIHUB_PORT=4000 pihub` (the generic `PORT` env var
   also works). The panel binds to the loopback interface only.
+- The published bin serves its own frontend build from the package — you
+  can run it from any directory (`npx @celading/pihub` works anywhere).
+
+### LAN access (optional, off by default)
+
+The panel stays loopback-only unless you opt in:
+
+```bash
+PIHUB_NET=lan PIHUB_ALLOWED_HOSTS=192.168.1.20 pihub   # allowlist LAN IPs
+```
+
+Listening on all interfaces additionally needs `host = "0.0.0.0"` under a
+`[server]` section in `~/.pihub/config.toml` (the TOML parser only reads
+sections — options outside one are ignored). Remote peers are READ-ONLY
+until you enable capability switches in **Settings → Access**; pairing is
+required first. See the [manual](MANUAL.md) §12 for the full matrix.
 
 ### Configuration & data home
 
