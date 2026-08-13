@@ -107,4 +107,42 @@ describe('pipeline store', () => {
     // readRunLog of a pipeline with no runs is empty
     expect(store.readRunLog('missing')).toEqual([]);
   });
+
+  it('v1b: rejects path-traversal ids on write (fail-closed)', async () => {
+    const store = await makeStore();
+    expect(() => {
+      store.appendRunLine('../../escape', { step: 1 });
+    }).toThrow(/unsafe id/);
+    expect(() => {
+      store.appendRunLine('..', { step: 1 });
+    }).toThrow(/unsafe id/);
+    expect(() => {
+      store.appendRunLine('a/b', { step: 1 });
+    }).toThrow(/unsafe id/);
+    expect(() => {
+      store.appendRunLine('', { step: 1 });
+    }).toThrow(/unsafe id/);
+    // the escape file must never exist outside the runs dir
+    const { readdir } = await import('node:fs/promises');
+    const entries = tempDir === undefined ? [] : await readdir(tempDir);
+    expect(entries.some((e) => e === 'escape.jsonl')).toBe(false);
+  });
+
+  it('v1b: returns [] for unsafe ids on read (never touches the filesystem)', async () => {
+    const store = await makeStore();
+    store.appendRunLine('p1', { step: 1 });
+    expect(store.readRunLog('../../escape')).toEqual([]);
+    expect(store.readRunLog('a/b')).toEqual([]);
+  });
+
+  it('v1b: run log truncation keeps exactly MAX_RUN_LINES newest lines', async () => {
+    const store = await makeStore();
+    for (let i = 0; i < 505; i += 1) {
+      store.appendRunLine('p1', { step: i });
+    }
+    const log = store.readRunLog('p1');
+    expect(log).toHaveLength(500);
+    expect((log[0] as { step: number }).step).toBe(5);
+    expect((log[499] as { step: number }).step).toBe(504);
+  });
 });

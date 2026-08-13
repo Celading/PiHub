@@ -23,6 +23,8 @@ import type { Pipeline } from '../../shared/types.js';
 const PIPELINES_FILE = 'pipelines.json';
 const RUNS_DIR = 'pipeline-runs';
 const MAX_RUN_LINES = 500;
+/** v1b: ids used as log/receipt file names must be path-safe (audit P1-1). */
+const SAFE_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 interface PipelinesFile {
   pipelines: Pipeline[];
@@ -85,7 +87,18 @@ export function createPipelineStore(baseDir: string = path.join(homedir(), '.pih
     renameSync(tmpPath, defsPath);
   };
 
-  const runLogPath = (pipelineId: string): string => path.join(runsDir, `${pipelineId}.jsonl`);
+  /** Validates an id before it is used as a file name (v1b fail-closed:
+   *  path traversal via `../../escape` must throw, never write elsewhere). */
+  const assertSafeLogId = (id: string): void => {
+    if (id.length === 0 || id.length > 128 || !SAFE_ID_PATTERN.test(id) || path.basename(id) !== id) {
+      throw new Error(`unsafe id for log path: ${id}`);
+    }
+  };
+
+  const runLogPath = (pipelineId: string): string => {
+    assertSafeLogId(pipelineId);
+    return path.join(runsDir, `${pipelineId}.jsonl`);
+  };
 
   return {
     list() {
@@ -117,16 +130,26 @@ export function createPipelineStore(baseDir: string = path.join(homedir(), '.pih
       ensureDirs();
       const logPath = runLogPath(pipelineId);
       appendFileSync(logPath, `${JSON.stringify(line)}\n`, 'utf8');
-      // Keep the log bounded: rewrite with the last MAX_RUN_LINES lines.
+      // Keep the log bounded: atomically rewrite with the last MAX_RUN_LINES
+      // lines (v1b: off-by-one fixed — the trailing newline's empty split
+      // element used to eat one slot; >MAX now keeps exactly MAX; tmp+rename
+      // so a crash never leaves a half-written log).
       if (existsSync(logPath)) {
         const lines = readFileSync(logPath, 'utf8').split('\n');
-        if (lines.length > MAX_RUN_LINES + 1) {
-          writeFileSync(logPath, lines.slice(-MAX_RUN_LINES).join('\n'), 'utf8');
+        const dataLines = lines[lines.length - 1] === '' ? lines.slice(0, -1) : lines;
+        if (dataLines.length > MAX_RUN_LINES) {
+          const tmpPath = `${logPath}.tmp`;
+          writeFileSync(tmpPath, `${dataLines.slice(-MAX_RUN_LINES).join('\n')}\n`, 'utf8');
+          renameSync(tmpPath, logPath);
         }
       }
     },
 
     readRunLog(pipelineId: string): unknown[] {
+      if (pipelineId.length === 0 || !SAFE_ID_PATTERN.test(pipelineId) || path.basename(pipelineId) !== pipelineId) {
+        // Fail-closed on reads too: an unsafe id must not touch the filesystem.
+        return [];
+      }
       const logPath = runLogPath(pipelineId);
       if (!existsSync(logPath)) {
         return [];
