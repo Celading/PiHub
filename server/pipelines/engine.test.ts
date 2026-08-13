@@ -3,8 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PipelineEngine, expandTemplate, matchOutput, type PipelineRunRecord } from './engine.js';
+import { PipelineEngine, expandTemplate, matchOutput, EXECUTION_LEASE_RESOURCE, type PipelineRunRecord } from './engine.js';
 import { createPipelineStore } from './store.js';
+import { LeaseGate } from './lease.js';
 import type { Pipeline } from '../../shared/types.js';
 import type { PipelineBridgeLike } from './engine.js';
 import type { RpcCommand } from '../rpc-bridge.js';
@@ -592,5 +593,72 @@ describe('pipeline engine', () => {
     bridgeB.settle();
     const finalRun = await waitForStatus(engineB, runA.runId, (r) => r.status === 'completed');
     expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
+  });
+
+  it('v1c: a second engine on the same lease base cannot start a run', async () => {
+    const pipeline = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridgeA = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const storeA = createPipelineStore(tempDir);
+    const gate = new LeaseGate(tempDir);
+    const engineA = new PipelineEngine(bridgeA, storeA, 5000, gate);
+    const runA = engineA.start(pipeline, 'x', {});
+    // Second engine (different bridge, same store + gate): the execution
+    // lease is held by run-1 → conflict.
+    const bridgeB = new FakeBridge();
+    const engineB = new PipelineEngine(bridgeB, createPipelineStore(tempDir), 5000, gate);
+    expect(() => {
+      engineB.start(pipeline, 'y', {});
+    }).toThrow(/execution lease conflict/);
+    // Finish run A: the lease is released exactly at the terminal state.
+    await tick();
+    bridgeA.settle();
+    await waitForStatus(engineA, runA.runId, (r) => r.status === 'completed');
+    expect(gate.status(EXECUTION_LEASE_RESOURCE)).toBeNull();
+    // Now B can start a run.
+    const runB = engineB.start(pipeline, 'z', {});
+    expect(runB).toBeDefined();
+  });
+
+  it('v1c: recover re-acquires the execution lease (same-owner takeover)', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Plan', type: 'prompt', prompt: 'plan' },
+        { id: 's2', name: 'Exec', type: 'prompt', prompt: 'exec' },
+      ],
+    });
+    // Phase 1: engine A runs with a lease gate; step 1 completes, step 2 is
+    // left running — then the "process dies" (engineA dropped, lease file
+    // still live with owner run-1).
+    const bridgeA = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const storeA = createPipelineStore(tempDir);
+    storeA.save(pipeline);
+    const engineA = new PipelineEngine(bridgeA, storeA, 5000, new LeaseGate(tempDir));
+    const runA = engineA.start(pipeline, 'x', {});
+    await tick();
+    bridgeA.assistantText('plan done');
+    bridgeA.settle();
+    await waitForStatus(engineA, runA.runId, (r) => r.steps[1]?.status === 'running');
+
+    // Phase 2: engine B recovers; the same owner (run-1) takes over the lease.
+    const bridgeB = new FakeBridge();
+    const engineB = new PipelineEngine(bridgeB, storeA, 5000, new LeaseGate(tempDir));
+    engineB.recover();
+    const recovered = engineB.getRun(runA.runId);
+    expect(recovered).toBeDefined();
+    expect(recovered?.status).toBe('running');
+    // Only step 2's prompt is re-sent.
+    await tick();
+    expect(
+      bridgeB.sent
+        .filter((c) => c.type === 'prompt')
+        .map((c) => (c as { message: string }).message),
+    ).toEqual(['exec']);
+    bridgeB.assistantText('exec done');
+    bridgeB.settle();
+    await waitForStatus(engineB, runA.runId, (r) => r.status === 'completed');
   });
 });

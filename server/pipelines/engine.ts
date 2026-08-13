@@ -13,9 +13,10 @@
  * Every state change emits 'run-change' with a snapshot of the run record.
  */
 import { EventEmitter } from 'node:events';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Pipeline, PipelineStep } from '../../shared/types.js';
 import type { PipelineStore } from './store.js';
+import type { Lease } from './lease.js';
 import type { RpcCommand } from '../rpc-bridge.js';
 import type { RpcResponse, RpcStreamEvent } from '../../shared/types.js';
 import type {
@@ -49,6 +50,9 @@ interface EngineEvents {
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 10 * 60 * 1000;
 const RETRY_DELAY_MS = 800;
+/** v1c: the cross-process execution lease resource (one pipeline run at a
+ *  time across PiHub instances on the same machine). */
+export const EXECUTION_LEASE_RESOURCE = 'pihub:execution';
 
 /** Expands {{var}} placeholders; unknown placeholders stay untouched. */
 export function expandTemplate(
@@ -148,12 +152,21 @@ export class PipelineEngine extends EventEmitter {
   private readonly runs = new Map<string, PipelineRunRecord>();
   private readonly waiters = new Map<string, SettleWaiter>();
   private readonly approvals = new Map<string, (approved: boolean) => void>();
+  /** v1c: leases held by active runs (released at terminal state). */
+  private readonly runLeases = new Map<string, Lease>();
+  /** v1c: per-instance id so runIds are globally unique across processes —
+   *  the execution lease owner is the runId, and uniqueness is what makes
+   *  cross-process exclusivity meaningful (a recovered run keeps its id and
+   *  its owner takes over; a NEW run in another process gets a different id
+   *  and conflicts). */
+  private readonly instanceId = randomBytes(4).toString('hex');
   private nextRunId = 1;
 
   constructor(
     private readonly bridge: PipelineBridgeLike,
     private readonly store: PipelineStore,
     private readonly settleTimeoutMs: number = DEFAULT_SETTLE_TIMEOUT_MS,
+    private readonly leaseGate?: { lease(resource: string, owner: string, ttlMs?: number): Lease | null; release(lease: Lease): boolean },
   ) {
     super();
   }
@@ -189,8 +202,17 @@ export class PipelineEngine extends EventEmitter {
         throw new Error('another pipeline run is active');
       }
     }
-    const runId = `run-${String(this.nextRunId)}`;
+    const runId = `run-${this.instanceId}-${String(this.nextRunId)}`;
     this.nextRunId += 1;
+    // v1c: cross-process execution lease (when a lease gate is wired) — a
+    // live foreign lease means another PiHub process is running a pipeline.
+    if (this.leaseGate !== undefined) {
+      const lease = this.leaseGate.lease(EXECUTION_LEASE_RESOURCE, runId);
+      if (lease === null) {
+        throw new Error('execution lease conflict: another process is running a pipeline');
+      }
+      this.runLeases.set(runId, lease);
+    }
     const run: PipelineRunRecord = {
       runId,
       pipelineId: pipeline.id,
@@ -233,9 +255,23 @@ export class PipelineEngine extends EventEmitter {
         this.emitChange(run);
         continue;
       }
-      const numericId = Number(runId.replace('run-', ''));
-      if (Number.isFinite(numericId)) {
-        this.nextRunId = Math.max(this.nextRunId, numericId + 1);
+      // run-<instance>-<n>: keep the monotonic counter for future ids.
+      const match = /^run-[a-f0-9]+-(\d+)$/.exec(runId);
+      if (match !== null) {
+        const numericId = Number(match[1]);
+        if (Number.isFinite(numericId)) {
+          this.nextRunId = Math.max(this.nextRunId, numericId + 1);
+        }
+      }
+      // v1c: re-acquire the execution lease for the recovered run. The same
+      // owner (runId) takes over its own lease; a live foreign lease means
+      // another process is actively running it — skip honestly.
+      if (this.leaseGate !== undefined) {
+        const lease = this.leaseGate.lease(EXECUTION_LEASE_RESOURCE, runId);
+        if (lease === null) {
+          continue;
+        }
+        this.runLeases.set(runId, lease);
       }
       // Rebuild resume state from the last snapshot: completed steps are
       // visited (never re-sent); vars come from their collected output.
@@ -312,8 +348,16 @@ export class PipelineEngine extends EventEmitter {
     // v1b: per-run durable journal (append-only audit truth) + terminal
     // typed receipt (written exactly once per run).
     this.store.appendRunJournal(run.runId, snap);
-    if (isTerminalRunStatus(snap.status) && this.store.readRunReceipt(run.runId) === null) {
-      this.store.writeRunReceipt(run.runId, buildRunReceipt(snap));
+    if (isTerminalRunStatus(snap.status)) {
+      if (this.store.readRunReceipt(run.runId) === null) {
+        this.store.writeRunReceipt(run.runId, buildRunReceipt(snap));
+      }
+      // v1c: release the execution lease exactly once, at the terminal state.
+      const lease = this.runLeases.get(run.runId);
+      if (lease !== undefined) {
+        this.leaseGate?.release(lease);
+        this.runLeases.delete(run.runId);
+      }
     }
     this.emit('run-change', snap);
   }

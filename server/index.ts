@@ -13,6 +13,7 @@ import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
 import { createPipelineStore } from './pipelines/store.js';
+import { LeaseGate } from './pipelines/lease.js';
 import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -229,7 +230,10 @@ const pipelineStore = createPipelineStore(
 if (mode === 'demo') {
   seedDemoPipelines(pipelineStore);
 }
-const pipelineEngine = mode === 'demo' ? null : new PipelineEngine(bridge, pipelineStore);
+const pipelineEngine =
+  mode === 'demo'
+    ? null
+    : new PipelineEngine(bridge, pipelineStore, undefined, new LeaseGate(pihubHome.dir));
 if (pipelineEngine !== null) {
   pipelineEngine.on('run-change', (run) => {
     hub.broadcast({ type: 'pipeline_step', run });
