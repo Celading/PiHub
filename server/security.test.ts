@@ -244,3 +244,52 @@ describe('LanGate.isRemote (audit P1-3 — socket-based peer judgment)', () => {
     expect(gate.isRemote(v4mapped)).toBe(false);
   });
 });
+
+describe('pairing codes (P2-2 — entropy + throttle)', () => {
+  it('generates 128-bit pairing codes', () => {
+    const gate = new LanGate();
+    const code = gate.createPairCode();
+    expect(code).toMatch(/^[0-9a-f]{32}$/u);
+  });
+
+  it('throttles repeated failed pairings from the same peer', () => {
+    const gate = new LanGate();
+    for (let i = 0; i < 5; i += 1) {
+      const r = res();
+      const next = vi.fn();
+      gate.middleware(
+        req('GET', '/api/rpc/messages', '192.168.1.20:3001', { pair: 'deadbeef' }),
+        mockResponse(r),
+        next as NextFunction,
+      );
+      expect(r.status, `attempt ${String(i + 1)}`).toHaveBeenCalledWith(403);
+    }
+    // The 6th failure is locked out (429), not just 403.
+    const locked = res();
+    gate.middleware(
+      req('GET', '/api/rpc/messages', '192.168.1.20:3001', { pair: 'deadbeef' }),
+      mockResponse(locked),
+      vi.fn() as NextFunction,
+    );
+    expect(locked.status).toHaveBeenCalledWith(429);
+  });
+
+  it('does not lock out a different peer', () => {
+    const gate = new LanGate();
+    for (let i = 0; i < 5; i += 1) {
+      const r = res();
+      gate.middleware(
+        req('GET', '/api/rpc/messages', '192.168.1.20:3001', { pair: 'deadbeef' }),
+        mockResponse(r),
+        vi.fn() as NextFunction,
+      );
+    }
+    // A different socket address is not locked out by peer A's failures.
+    const other = Object.assign(req('GET', '/api/rpc/messages', '192.168.1.99:3001', { pair: 'deadbeef' }), {
+      socket: { remoteAddress: '192.168.1.99' },
+    }) as Request;
+    const r = res();
+    gate.middleware(other, mockResponse(r), vi.fn() as NextFunction);
+    expect(r.status).toHaveBeenCalledWith(403); // still 403, not locked
+  });
+});

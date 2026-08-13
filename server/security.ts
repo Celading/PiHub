@@ -132,8 +132,9 @@ const SENSITIVE_READ_EXACT = [
 export function requiresToken(req: Request): boolean {
   const p = req.path;
   if (req.method !== 'GET' && !p.startsWith('/api/demo/')) {
-    // demo write routes keep their own 503 guards; everything else that
-    // mutates state needs the token.
+    // /api/demo/* is the demo-only driver surface (synthetic data, its own
+    // control plane — see routes.ts); everything else that mutates state
+    // needs the token.
     if (p.startsWith('/api/')) {
       return true;
     }
@@ -231,6 +232,10 @@ export class LanGate {
   private readonly pairs = new Map<string, { createdAt: number; expiresAt: number }>();
   /** Remote sessions that completed pairing: token -> { expiresAt }. */
   private readonly sessions = new Map<string, { expiresAt: number }>();
+  /** P2-2: per-peer failed-pairing throttle (keyed by socket address). */
+  private readonly failedPairs = new Map<string, { count: number; lockedUntil: number }>();
+  private readonly maxFailedAttempts = 5;
+  private readonly lockMs = 60_000;
   /** Runtime-adjustable capability switches (local settings page). */
   caps: CapabilitySwitches;
   private readonly pairTtlMs: number;
@@ -263,7 +268,8 @@ export class LanGate {
 
   /** Generates a one-time pairing code (remote unlock). */
   createPairCode(): string {
-    const code = randomBytes(4).toString('hex');
+    // P2-2: 128-bit entropy (32-bit was guessable within a TTL window).
+    const code = randomBytes(16).toString('hex');
     const now = Date.now();
     this.pairs.set(code, { createdAt: now, expiresAt: now + this.pairTtlMs });
     // Keep the map small: prune expired codes.
@@ -303,8 +309,14 @@ export class LanGate {
     // In local mode this can only happen for explicitly allowlisted hosts
     // (lan-like) — pairing is still required.
     if (req.path.startsWith('/api/')) {
+      // P2-2: throttle repeated failed pairings per peer (brute force).
+      if (this.isLocked(req)) {
+        res.status(429).json({ error: 'too many failed pairing attempts' });
+        return;
+      }
       const pair = req.query['pair'];
       if (typeof pair !== 'string' || !this.validate(pair)) {
+        this.recordFailure(req);
         res.status(403).json({ error: 'remote access requires pairing' });
         return;
       }
@@ -319,6 +331,34 @@ export class LanGate {
       }
     }
     next();
+  }
+
+  /** P2-2: true when this peer is inside its failed-pairing lockout. */
+  private isLocked(req: Request): boolean {
+    const address = req.socket.remoteAddress ?? 'unknown';
+    const entry = this.failedPairs.get(address);
+    return entry !== undefined && entry.lockedUntil > Date.now();
+  }
+
+  /** P2-2: counts one failed pairing; locks the peer after the threshold. */
+  private recordFailure(req: Request): void {
+    const address = req.socket.remoteAddress ?? 'unknown';
+    const now = Date.now();
+    const entry = this.failedPairs.get(address);
+    const count =
+      entry !== undefined && entry.lockedUntil <= now ? entry.count + 1 : 1;
+    this.failedPairs.set(address, {
+      count,
+      lockedUntil: count >= this.maxFailedAttempts ? now + this.lockMs : 0,
+    });
+    // Keep the map bounded: prune long-idle peers.
+    if (this.failedPairs.size > 1000) {
+      for (const [key, value] of this.failedPairs) {
+        if (value.count === 0 || value.lockedUntil <= now) {
+          this.failedPairs.delete(key);
+        }
+      }
+    }
   }
 
   /** Validates a pair code / session token; expires and rotates cleanly. */
