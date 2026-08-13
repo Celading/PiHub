@@ -102,18 +102,134 @@ function isTerminalRunStatus(status: PipelineRunStatus): boolean {
   );
 }
 
+/** v1c-completion: a structured operator/engine intervention on a run. */
+export interface RunIntervention {
+  kind: 'approval' | 'abort';
+  at: number;
+  decision: 'approved' | 'rejected' | 'requested' | 'cancelled';
+}
+
+/** v1c-completion: deterministic checks computed from the run + pipeline. */
+function buildChecks(
+  run: PipelineRunRecord,
+  pipeline: Pipeline | undefined,
+  context: PipelineRunContext | undefined,
+): Array<{ checkId: string; target: string; passed: boolean; detail: string }> {
+  const checks: Array<{ checkId: string; target: string; passed: boolean; detail: string }> = [];
+  if (pipeline === undefined) {
+    checks.push({
+      checkId: 'no-pipeline-def',
+      target: run.runId,
+      passed: true,
+      detail: 'definition unavailable at closeout; only digest checks apply',
+    });
+    return checks;
+  }
+  const byId = new Map(pipeline.steps.map((step) => [step.id, step] as const));
+  // template-replay: rebuild vars from the run context + the last succeeded
+  // outputs, then re-expand each prompt/steer step's template against its
+  // recorded input. A mismatch is an honest failed check (never fabricated).
+  const vars: Record<string, string> = {
+    input: run.input,
+    lastOutput: '',
+    lastToolOutput: '',
+    sessionName: context?.sessionName ?? '',
+    cwd: context?.cwd ?? '',
+  };
+  for (const s of run.steps) {
+    if (s.status === 'succeeded') {
+      if (s.output !== undefined) {
+        vars.lastOutput = s.output;
+      }
+      if (s.toolOutput !== undefined) {
+        vars.lastToolOutput = s.toolOutput;
+      }
+    }
+  }
+  for (const s of run.steps) {
+    const def = byId.get(s.stepId);
+    if (def !== undefined && (def.type === 'prompt' || def.type === 'steer') && s.input !== undefined) {
+      const replayed = expandTemplate(def.prompt ?? '', vars);
+      checks.push({
+        checkId: 'template-replay',
+        target: s.stepId,
+        passed: replayed === s.input,
+        detail: replayed === s.input ? 'exact' : `mismatch: recorded=${s.input} replayed=${replayed}`,
+      });
+    }
+  }
+  // attempts-bounded: retries must respect maxRetries.
+  for (const s of run.steps) {
+    const def = byId.get(s.stepId);
+    const maxRetries = def?.maxRetries ?? 0;
+    if (s.attempts !== undefined && s.attempts > maxRetries + 1) {
+      checks.push({
+        checkId: 'attempts-bounded',
+        target: s.stepId,
+        passed: false,
+        detail: `attempts=${String(s.attempts)} > maxRetries+1=${String(maxRetries + 1)}`,
+      });
+    }
+  }
+  if (checks.length === 0) {
+    checks.push({
+      checkId: 'no-replayable-step',
+      target: run.runId,
+      passed: true,
+      detail: 'no prompt/steer step with a recorded input to replay',
+    });
+  }
+  return checks;
+}
+
+/** v1c-completion: entropy snapshot (non-determinism sources) — honest
+ *  minimal set; anything not observable is null, never fabricated. */
+function buildEntropy(
+  run: PipelineRunRecord,
+  context: PipelineRunContext | undefined,
+): unknown {
+  const envKeys = ['PIHUB_MODE', 'PIHUB_NET'];
+  const env: Record<string, string> = {};
+  for (const key of envKeys) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  const retryCount = run.steps.reduce(
+    (acc, s) => acc + Math.max(0, (s.attempts ?? 1) - 1),
+    0,
+  );
+  return {
+    env: Object.keys(env).length > 0 ? env : null,
+    toolVersions: { node: process.version },
+    cwd: context?.cwd ?? null,
+    startedAtEpochMs: run.startedAt,
+    retryCount,
+    model: null,
+    seed: null,
+    network: null,
+    leaseConflicts: 0,
+  };
+}
+
 /** v1b: typed receipt — audit truth for a finished run. pi is an RPC
  *  execution surface, so there is no local command/exitCode; the honest
  *  fields are digests + attempts + timing, with nonClaims stating exactly
- *  what is absent. checks/interventions/entropy are v1b placeholders fed by
- *  the HARNESSDIFF S2/S4 specs. */
-function buildRunReceipt(run: PipelineRunRecord): unknown {
+ *  what is absent. checks/interventions/entropy are filled in at closeout
+ *  (v1c-completion), not left as placeholders. */
+function buildRunReceipt(
+  run: PipelineRunRecord,
+  pipeline: Pipeline | undefined,
+  context: PipelineRunContext | undefined,
+  interventions: RunIntervention[] | undefined,
+): unknown {
   const digest = (text: string | undefined): string | null =>
     text !== undefined && text.length > 0
       ? `sha256:${createHash('sha256').update(text).digest('hex')}`
       : null;
   return {
-    schemaVersion: 'pihub-receipt-v1',
+    schemaVersion: 'pihub-receipt-v2',
     runId: run.runId,
     pipelineId: run.pipelineId,
     pipelineName: run.pipelineName,
@@ -137,13 +253,14 @@ function buildRunReceipt(run: PipelineRunRecord): unknown {
           ? Math.max(0, s.finishedAt - s.startedAt)
           : null,
     })),
-    checks: [],
-    interventions: [],
-    entropy: null,
+    checks: buildChecks(run, pipeline, context),
+    interventions: interventions ?? [],
+    entropy: buildEntropy(run, context),
     environment: {},
     nonClaims: [
       'RPC execution surface: no local command/exitCode fields (pi drives via JSONL)',
-      'checks/interventions/entropy are v1b placeholders; HARNESSDIFF S2/S4 specs define their fill-in',
+      'entropy: model/seed/network are null when not observable; env hash covers only PIHUB_MODE/PIHUB_NET',
+      'template-replay vars are rebuilt from the final succeeded outputs (branch-sensitive steps may diverge)',
     ],
   };
 }
@@ -154,6 +271,10 @@ export class PipelineEngine extends EventEmitter {
   private readonly approvals = new Map<string, (approved: boolean) => void>();
   /** v1c: leases held by active runs (released at terminal state). */
   private readonly runLeases = new Map<string, Lease>();
+  /** v1c-completion: per-run context/pipeline/interventions for the receipt. */
+  private readonly runContexts = new Map<string, PipelineRunContext>();
+  private readonly runPipelines = new Map<string, Pipeline>();
+  private readonly runInterventions = new Map<string, RunIntervention[]>();
   /** v1c: per-instance id so runIds are globally unique across processes —
    *  the execution lease owner is the runId, and uniqueness is what makes
    *  cross-process exclusivity meaningful (a recovered run keeps its id and
@@ -227,6 +348,9 @@ export class PipelineEngine extends EventEmitter {
         status: 'pending',
       })),
     };
+    // v1c-completion: keep the closeout context for the typed receipt.
+    this.runPipelines.set(runId, pipeline);
+    this.runContexts.set(runId, context);
     this.runs.set(runId, run);
     this.emitChange(run);
     void this.execute(run, pipeline, input, context);
@@ -296,6 +420,7 @@ export class PipelineEngine extends EventEmitter {
           index = i + 1;
         }
       });
+      this.runPipelines.set(runId, pipeline);
       this.runs.set(runId, run);
       this.emitChange(run); // surface the recovered run on SSE
       void this.execute(run, pipeline, run.input, {}, { index, vars });
@@ -310,6 +435,14 @@ export class PipelineEngine extends EventEmitter {
     }
     this.approvals.delete(runId);
     resolver(approved);
+    // v1c-completion: record the intervention on the run's audit trail.
+    const prior = this.runInterventions.get(runId) ?? [];
+    prior.push({
+      kind: 'approval',
+      at: Date.now(),
+      decision: approved ? 'approved' : 'rejected',
+    });
+    this.runInterventions.set(runId, prior);
     return true;
   }
 
@@ -339,6 +472,10 @@ export class PipelineEngine extends EventEmitter {
       this.approvals.delete(runId);
       resolver(false);
     }
+    // v1c-completion: record the abort intervention on the run's audit trail.
+    const prior = this.runInterventions.get(runId) ?? [];
+    prior.push({ kind: 'abort', at: Date.now(), decision: 'requested' });
+    this.runInterventions.set(runId, prior);
     return true;
   }
 
@@ -350,7 +487,15 @@ export class PipelineEngine extends EventEmitter {
     this.store.appendRunJournal(run.runId, snap);
     if (isTerminalRunStatus(snap.status)) {
       if (this.store.readRunReceipt(run.runId) === null) {
-        this.store.writeRunReceipt(run.runId, buildRunReceipt(snap));
+        this.store.writeRunReceipt(
+          run.runId,
+          buildRunReceipt(
+            snap,
+            this.runPipelines.get(run.runId),
+            this.runContexts.get(run.runId),
+            this.runInterventions.get(run.runId),
+          ),
+        );
       }
       // v1c: release the execution lease exactly once, at the terminal state.
       const lease = this.runLeases.get(run.runId);

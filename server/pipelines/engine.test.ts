@@ -535,7 +535,7 @@ describe('pipeline engine', () => {
       status: string;
       steps: Array<{ stepId: string; outputDigest: string | null }>;
     };
-    expect(receipt.schemaVersion).toBe('pihub-receipt-v1');
+    expect(receipt.schemaVersion).toBe('pihub-receipt-v2');
     expect(receipt.status).toBe('completed');
     expect(receipt.steps).toHaveLength(3);
     expect(receipt.steps[0]?.outputDigest).toMatch(/^sha256:/);
@@ -660,5 +660,39 @@ describe('pipeline engine', () => {
     bridgeB.assistantText('exec done');
     bridgeB.settle();
     await waitForStatus(engineB, runA.runId, (r) => r.status === 'completed');
+  });
+
+  it('v1c-completion: receipt carries checks, interventions and entropy', async () => {
+    const bridge = new FakeBridge();
+    const { engine, storePath } = await makeEngine(bridge);
+    const run = engine.start(samplePipeline(), 'x', { cwd: '/work/a' });
+    await tick();
+    bridge.assistantText('plan: rewrite sections');
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.steps[1]?.status === 'awaiting-approval');
+    engine.approve(run.runId, true);
+    await tick();
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const store2 = createPipelineStore(storePath);
+    const receipt = store2.readRunReceipt(run.runId) as {
+      schemaVersion: string;
+      checks: Array<{ checkId: string; passed: boolean }>;
+      interventions: Array<{ kind: string; decision: string }>;
+      entropy: { toolVersions: { node: string }; cwd: string | null; retryCount: number };
+    };
+    expect(receipt.schemaVersion).toBe('pihub-receipt-v2');
+    // checks: template-replay passes with the exact context, no failed check
+    expect(receipt.checks.length).toBeGreaterThan(0);
+    expect(receipt.checks.map((c) => c.checkId)).toContain('template-replay');
+    expect(receipt.checks.every((c) => c.passed)).toBe(true);
+    // interventions: the approval gate is on the audit trail
+    expect(receipt.interventions).toContainEqual(
+      expect.objectContaining({ kind: 'approval', decision: 'approved' }),
+    );
+    // entropy: observable sources only, cwd from the run context
+    expect(receipt.entropy.toolVersions.node).toBe(process.version);
+    expect(receipt.entropy.cwd).toBe('/work/a');
+    expect(receipt.entropy.retryCount).toBe(0);
   });
 });
