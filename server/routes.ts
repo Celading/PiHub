@@ -47,7 +47,7 @@ import type { AgentMessage } from '../shared/types.js';
 import type { DemoShowcase } from './demo/showcase.js';
 import { collectPrompts } from './prompts.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
-import type { RpcResponse, PiCommand } from '../shared/types.js';
+import type { PipelineRunRecord, RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import { parseSessionFile } from './sessions.js';
 import { recentFileActions } from './recent-files.js';
@@ -1577,7 +1577,15 @@ export function createRouter(
     } catch {
       // session context unavailable; empty vars stay untouched in templates
     }
-    const run = pipelineEngine.start(pipeline, body.data.input ?? '', context);
+    let run: PipelineRunRecord;
+    try {
+      run = pipelineEngine.start(pipeline, body.data.input ?? '', context);
+    } catch {
+      // v1a serialization: the engine drives one pi session and refuses a
+      // second concurrent run.
+      res.status(409).json({ error: 'another pipeline run is active' });
+      return;
+    }
     res.json({ run });
   });
 

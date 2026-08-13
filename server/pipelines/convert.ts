@@ -130,7 +130,14 @@ export async function softConvert(
       },
     ],
   };
-  const run = engine.start(oneShot, '', {});
+  let run: PipelineRunRecord;
+  try {
+    run = engine.start(oneShot, '', {});
+  } catch {
+    // v1a serialization: soft conversion must not start on a busy engine —
+    // it would share the user's active session and pollute its settle waiter.
+    throw new Error('另一个工程流运行中：软转换需要空闲引擎');
+  }
   const deadline = Date.now() + timeoutMs;
   let record: PipelineRunRecord | undefined;
   for (;;) {

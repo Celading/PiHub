@@ -326,7 +326,7 @@ describe('pipeline engine', () => {
     expect(finalRun.steps[0]?.status).toBe('succeeded');
   });
 
-  it('SPRINT-2 B2: settle timeout marks the run uncertain instead of settled', async () => {
+  it('SPRINT-2 B2 + v1a: settle timeout marks the run uncertain and stops (no later step runs)', async () => {
     const bridge = new FakeBridge();
     tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
     const store = createPipelineStore(tempDir);
@@ -335,8 +335,13 @@ describe('pipeline engine', () => {
     const run = engine.start(samplePipeline(), 'x', {});
     // Never emit agent_settled — the timeout must fire.
     const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'uncertain');
-    expect(finalRun.steps[0]?.status).toBe('succeeded');
     expect(finalRun.status).toBe('uncertain');
+    // v1a: the timed-out step is NOT marked succeeded (we do not know the
+    // outcome), and no later step may execute — uncertain is terminal.
+    expect(finalRun.steps[0]?.status).toBe('running');
+    expect(finalRun.steps[1]?.status).toBe('pending');
+    expect(finalRun.steps[2]?.status).toBe('pending');
+    expect(bridge.sent.filter((c) => c.type === 'prompt')).toHaveLength(1);
   });
 
   it('records step setModel/setThinking sends without waiting for settle', async () => {
@@ -409,5 +414,105 @@ describe('pipeline engine', () => {
     bridge.settle();
     const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
     expect(finalRun.steps[0]?.output).toContain('legacy output');
+  });
+
+  it('v1a: a second run is rejected while one is active (run serialization)', async () => {
+    const oneStep = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const runA = engine.start(oneStep, 'x', {});
+    // The engine drives one pi session and cannot attribute settle events per
+    // run — a second concurrent start must be rejected (v1a serialization).
+    expect(() => engine.start(oneStep, 'y', {})).toThrow(/another pipeline run is active/);
+    await tick(); // let run A register its settle listener before settling
+    bridge.settle();
+    const finalA = await waitForStatus(engine, runA.runId, (r) => r.status === 'completed');
+    expect(finalA.status).toBe('completed');
+    // Idle again → a new run is accepted.
+    expect(() => engine.start(oneStep, 'z', {})).not.toThrow();
+  });
+
+  it('v1a: abort racing the settle-waiter registration does not hang the run', async () => {
+    const pipeline = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    let runId = 'run-1';
+    // send resolves, then abort fires in the same microtask turn — before the
+    // engine registers its settle waiter. The waiter's synchronous status
+    // check must release it instead of hanging for the whole settle timeout.
+    bridge.send = (command: RpcCommand): Promise<RpcResponse> => {
+      bridge.sent.push(command);
+      if (command.type === 'prompt') {
+        queueMicrotask(() => {
+          engine.abort(runId);
+        });
+      }
+      return Promise.resolve({ type: 'response', command: command.type, success: true });
+    };
+    const run = engine.start(pipeline, 'x', {});
+    runId = run.runId;
+    const finalRun = await waitForStatus(engine, runId, (r) => r.status === 'aborted', 3000);
+    expect(finalRun.status).toBe('aborted');
+    expect(finalRun.steps[0]?.status).toBe('running');
+    expect(bridge.sent).toContainEqual({ type: 'abort' });
+  });
+
+  it('v1a: a match without nextOn* targets continues linearly (no silent truncation)', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Probe', type: 'prompt', prompt: 'probe', match: 'broken' },
+        { id: 's2', name: 'End', type: 'prompt', prompt: 'end' },
+      ],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(pipeline, 'x', {});
+    await tick();
+    bridge.assistantText('all broken');
+    bridge.settle();
+    await tick();
+    bridge.assistantText('done');
+    bridge.settle();
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const prompts = bridge.sent
+      .filter((c) => c.type === 'prompt')
+      .map((c) => (c as { message: string }).message);
+    expect(prompts).toEqual(['probe', 'end']);
+    expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
+  });
+
+  it('v1a: a match whose branch target is missing continues linearly', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        {
+          id: 's1',
+          name: 'Probe',
+          type: 'prompt',
+          prompt: 'probe',
+          match: 'broken',
+          nextOnMatch: 'nonexistent',
+        },
+        { id: 's2', name: 'End', type: 'prompt', prompt: 'end' },
+      ],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(pipeline, 'x', {});
+    await tick();
+    bridge.assistantText('all broken'); // match hits, but the target is missing → continue
+    bridge.settle();
+    await tick();
+    bridge.assistantText('done');
+    bridge.settle();
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const prompts = bridge.sent
+      .filter((c) => c.type === 'prompt')
+      .map((c) => (c as { message: string }).message);
+    expect(prompts).toEqual(['probe', 'end']);
+    expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
   });
 });

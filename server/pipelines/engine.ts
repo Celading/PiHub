@@ -119,10 +119,19 @@ export class PipelineEngine extends EventEmitter {
   }
 
   /**
-   * Starts a run. Returns the initial record; execution proceeds
-   * asynchronously and emits 'run-change' on every state transition.
+   * Starts a run. Throws when another run is already active (v1a
+   * serialization: the engine drives ONE bridge / pi session and the protocol
+   * cannot attribute settle events per run, so concurrent same-session runs
+   * pollute each other's waiters). Execution proceeds asynchronously and
+   * emits 'run-change' on every state transition.
    */
   start(pipeline: Pipeline, input: string, context: PipelineRunContext): PipelineRunRecord {
+    // v1a: reject a new start while any run is still active.
+    for (const existing of this.runs.values()) {
+      if (existing.status === 'running') {
+        throw new Error('another pipeline run is active');
+      }
+    }
     const runId = `run-${String(this.nextRunId)}`;
     this.nextRunId += 1;
     const run: PipelineRunRecord = {
@@ -209,10 +218,12 @@ export class PipelineEngine extends EventEmitter {
     let index = 0;
 
     while (index < pipeline.steps.length) {
-      // abort() mutates run.status from outside the async loop; re-read the
-      // full status union here so the runtime check is visible to TS.
+      // abort()/timeout mutate run.status from outside the async loop; re-read
+      // the full status union here so the runtime check is visible to TS.
+      // v1a: uncertain is a TERMINAL state — a settle timeout must not let the
+      // engine keep executing subsequent steps.
       const status: PipelineRunStatus = run.status;
-      if (status === 'aborted') {
+      if (status === 'aborted' || status === 'uncertain') {
         return;
       }
       const step = pipeline.steps[index];
@@ -230,7 +241,7 @@ export class PipelineEngine extends EventEmitter {
       }
       const outcome = await this.executeStep(run, record, step, vars, pipeline);
       const afterStep: PipelineRunStatus = run.status;
-      if (afterStep === 'aborted') {
+      if (afterStep === 'aborted' || afterStep === 'uncertain') {
         return;
       }
       if (outcome === 'stop') {
@@ -244,8 +255,15 @@ export class PipelineEngine extends EventEmitter {
       }
 
       // Branching: match against the last output, then jump or continue.
+      // v1a: a match with no resolvable route (no nextOn* targets, or a
+      // missing target) continues linearly instead of silently truncating the
+      // remaining steps.
       const next = outcome === 'branch' ? this.resolveNext(step, record, byId) : index + 1;
-      if (next === null || next === index) {
+      if (next === null) {
+        index += 1;
+        continue;
+      }
+      if (next === index) {
         break;
       }
       index = next;
@@ -274,7 +292,8 @@ export class PipelineEngine extends EventEmitter {
           return index;
         }
       }
-      // branch target missing → end the run
+      // No resolvable branch target → null; execute() continues linearly
+      // instead of silently ending the run.
       return null;
     }
     return null;
@@ -286,7 +305,7 @@ export class PipelineEngine extends EventEmitter {
     step: PipelineStep,
     vars: Record<string, string>,
     pipeline: Pipeline,
-  ): Promise<'ok' | 'stop' | 'branch'> {
+  ): Promise<'ok' | 'stop' | 'branch' | 'uncertain'> {
     let attempts = 0;
     const maxRetries = step.maxRetries ?? 0;
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -353,8 +372,11 @@ export class PipelineEngine extends EventEmitter {
             if (settled === 'aborted') {
               return 'stop';
             }
-            // 'uncertain': run.status already flipped to uncertain; the step
-            // itself completed with whatever output was collected.
+            // v1a: uncertain is terminal — the step must NOT be marked
+            // succeeded and no later step may run.
+            if (settled === 'uncertain') {
+              return 'uncertain';
+            }
             break;
           }
           case 'steer': {
@@ -373,6 +395,10 @@ export class PipelineEngine extends EventEmitter {
             );
             if (settled === 'aborted') {
               return 'stop';
+            }
+            // v1a: uncertain is terminal (same rule as the prompt case).
+            if (settled === 'uncertain') {
+              return 'uncertain';
             }
             break;
           }
@@ -434,6 +460,13 @@ export class PipelineEngine extends EventEmitter {
     runSessionId: string | null,
   ): Promise<'settled' | 'aborted' | 'uncertain'> {
     return new Promise<'settled' | 'aborted' | 'uncertain'>((resolve) => {
+      // v1a: abort-race guard — abort() may have flipped run.status between
+      // bridge.send resolving and this waiter registering; check it
+      // synchronously so the waiter never hangs for the full settle timeout.
+      if (run.status === 'aborted') {
+        resolve('aborted');
+        return;
+      }
       let done = false;
       const finish = (result: 'settled' | 'aborted' | 'uncertain'): void => {
         if (done) {
@@ -492,6 +525,10 @@ export class PipelineEngine extends EventEmitter {
         // side may still be working (or hung). Mark the run uncertain so the
         // UI shows "result uncertain" instead of a fake green completion.
         run.status = 'uncertain';
+        // v1a: broadcast the terminal transition — the step is NOT marked
+        // succeeded anymore, so without this the frontend would never see
+        // the uncertain state.
+        this.emitChange(run);
         finish('uncertain');
       }, this.settleTimeoutMs);
       this.waiters.set(run.runId, {
