@@ -51,6 +51,16 @@ export class SseHub {
     return this.clients.size;
   }
 
+  /** P2-2: write one chunk; a socket that died between broadcast and its
+   *  close handler must not throw into the broadcast loop. */
+  private writeClient(client: SseClient, chunk: string): void {
+    try {
+      client.res.write(chunk);
+    } catch {
+      this.clients.delete(client);
+    }
+  }
+
   broadcast(event: RpcStreamEvent): void {
     if (this.clients.size === 0) {
       return;
@@ -59,16 +69,16 @@ export class SseHub {
     for (const client of this.clients) {
       if (client.remote) {
         const marked = { ...event, remote: true } as RpcStreamEvent;
-        client.res.write(`event: pi\ndata: ${JSON.stringify(marked)}\n\n`);
+        this.writeClient(client, `event: pi\ndata: ${JSON.stringify(marked)}\n\n`);
       } else {
-        client.res.write(`event: pi\ndata: ${payload}\n\n`);
+        this.writeClient(client, `event: pi\ndata: ${payload}\n\n`);
       }
     }
   }
 
   broadcastComment(): void {
     for (const client of this.clients) {
-      client.res.write(': keep-alive\n\n');
+      this.writeClient(client, ': keep-alive\n\n');
     }
   }
 
