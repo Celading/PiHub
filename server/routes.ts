@@ -1538,7 +1538,8 @@ export function createRouter(
       res.status(503).json({ error: 'pipelines unavailable' });
       return;
     }
-    res.json({ runs: pipelineStore.readRunLog(req.params.id) });
+    // v1b: serve typed receipts instead of the write-only aggregate history.
+    res.json({ runs: pipelineStore.listRunReceipts(req.params.id) });
   });
 
   router.post('/api/pipelines/run', async (req, res) => {

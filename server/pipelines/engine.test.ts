@@ -515,4 +515,41 @@ describe('pipeline engine', () => {
     expect(prompts).toEqual(['probe', 'end']);
     expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
   });
+
+  it('v1b: a completed run lands a typed receipt with step digests', async () => {
+    const bridge = new FakeBridge();
+    const { engine, storePath } = await makeEngine(bridge);
+    const run = engine.start(samplePipeline(), 'x', {});
+    await tick();
+    bridge.assistantText('plan text');
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.steps[1]?.status === 'awaiting-approval');
+    engine.approve(run.runId, true);
+    await tick();
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const store2 = createPipelineStore(storePath);
+    const receipt = store2.readRunReceipt(run.runId) as {
+      schemaVersion: string;
+      status: string;
+      steps: Array<{ stepId: string; outputDigest: string | null }>;
+    };
+    expect(receipt.schemaVersion).toBe('pihub-receipt-v1');
+    expect(receipt.status).toBe('completed');
+    expect(receipt.steps).toHaveLength(3);
+    expect(receipt.steps[0]?.outputDigest).toMatch(/^sha256:/);
+    expect(receipt.steps[0]?.stepId).toBe('s1');
+  });
+
+  it('v1b: an uncertain run also lands a terminal receipt', async () => {
+    const bridge = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const store = createPipelineStore(tempDir);
+    const engine = new PipelineEngine(bridge, store, 30);
+    const run = engine.start(samplePipeline(), 'x', {});
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'uncertain');
+    const receipt = store.readRunReceipt(run.runId) as { status: string };
+    expect(receipt.status).toBe('uncertain');
+    expect(finalRun.status).toBe('uncertain');
+  });
 });

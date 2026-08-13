@@ -13,6 +13,7 @@
  * Every state change emits 'run-change' with a snapshot of the run record.
  */
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import type { Pipeline, PipelineStep } from '../../shared/types.js';
 import type { PipelineStore } from './store.js';
 import type { RpcCommand } from '../rpc-bridge.js';
@@ -85,6 +86,62 @@ interface SettleWaiter {
 
 function snapshot(run: PipelineRunRecord): PipelineRunRecord {
   return structuredClone(run);
+}
+
+/** v1b: run statuses that are terminal (the typed receipt is written once). */
+function isTerminalRunStatus(status: PipelineRunStatus): boolean {
+  return (
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'aborted' ||
+    status === 'uncertain'
+  );
+}
+
+/** v1b: typed receipt — audit truth for a finished run. pi is an RPC
+ *  execution surface, so there is no local command/exitCode; the honest
+ *  fields are digests + attempts + timing, with nonClaims stating exactly
+ *  what is absent. checks/interventions/entropy are v1b placeholders fed by
+ *  the HARNESSDIFF S2/S4 specs. */
+function buildRunReceipt(run: PipelineRunRecord): unknown {
+  const digest = (text: string | undefined): string | null =>
+    text !== undefined && text.length > 0
+      ? `sha256:${createHash('sha256').update(text).digest('hex')}`
+      : null;
+  return {
+    schemaVersion: 'pihub-receipt-v1',
+    runId: run.runId,
+    pipelineId: run.pipelineId,
+    pipelineName: run.pipelineName,
+    status: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt ?? null,
+    steps: run.steps.map((s) => ({
+      stepId: s.stepId,
+      name: s.name,
+      type: s.type,
+      status: s.status,
+      attempts: s.attempts ?? 0,
+      inputDigest: digest(s.input),
+      outputDigest: digest(s.output),
+      toolOutputDigest: digest(s.toolOutput),
+      error: s.error ?? null,
+      startedAt: s.startedAt ?? null,
+      finishedAt: s.finishedAt ?? null,
+      durationMs:
+        s.startedAt !== undefined && s.finishedAt !== undefined
+          ? Math.max(0, s.finishedAt - s.startedAt)
+          : null,
+    })),
+    checks: [],
+    interventions: [],
+    entropy: null,
+    environment: {},
+    nonClaims: [
+      'RPC execution surface: no local command/exitCode fields (pi drives via JSONL)',
+      'checks/interventions/entropy are v1b placeholders; HARNESSDIFF S2/S4 specs define their fill-in',
+    ],
+  };
 }
 
 export class PipelineEngine extends EventEmitter {
@@ -197,6 +254,12 @@ export class PipelineEngine extends EventEmitter {
   private emitChange(run: PipelineRunRecord): void {
     const snap = snapshot(run);
     this.store.appendRunLine(run.pipelineId, snap);
+    // v1b: per-run durable journal (append-only audit truth) + terminal
+    // typed receipt (written exactly once per run).
+    this.store.appendRunJournal(run.runId, snap);
+    if (isTerminalRunStatus(snap.status) && this.store.readRunReceipt(run.runId) === null) {
+      this.store.writeRunReceipt(run.runId, buildRunReceipt(snap));
+    }
     this.emit('run-change', snap);
   }
 

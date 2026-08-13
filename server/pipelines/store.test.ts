@@ -145,4 +145,38 @@ describe('pipeline store', () => {
     expect((log[0] as { step: number }).step).toBe(5);
     expect((log[499] as { step: number }).step).toBe(504);
   });
+
+  it('v1b: journal appends per-run snapshots and recoverable scans running runs', async () => {
+    const store = await makeStore();
+    store.appendRunJournal('run-1', { runId: 'run-1', status: 'running', step: 1 });
+    store.appendRunJournal('run-1', { runId: 'run-1', status: 'running', step: 2 });
+    store.appendRunJournal('run-2', { runId: 'run-2', status: 'completed' });
+    const recoverable = store.listRecoverableRuns();
+    expect(recoverable).toHaveLength(1);
+    expect(recoverable[0]?.runId).toBe('run-1');
+    expect((recoverable[0]?.snapshot as { step: number }).step).toBe(2);
+  });
+
+  it('v1b: journal and receipts reject unsafe run ids', async () => {
+    const store = await makeStore();
+    expect(() => {
+      store.appendRunJournal('../../x', {});
+    }).toThrow(/unsafe id/);
+    expect(() => {
+      store.writeRunReceipt('../../x', {});
+    }).toThrow(/unsafe id/);
+  });
+
+  it('v1b: receipts round-trip, filter by pipeline and sort newest first', async () => {
+    const store = await makeStore();
+    store.writeRunReceipt('run-1', { runId: 'run-1', pipelineId: 'p1', status: 'completed', finishedAt: 100 });
+    store.writeRunReceipt('run-2', { runId: 'run-2', pipelineId: 'p1', status: 'aborted', finishedAt: 200 });
+    store.writeRunReceipt('run-3', { runId: 'run-3', pipelineId: 'other', status: 'completed', finishedAt: 300 });
+    expect((store.readRunReceipt('run-1') as { runId: string }).runId).toBe('run-1');
+    expect(store.readRunReceipt('missing')).toBeNull();
+    const p1 = store.listRunReceipts('p1');
+    expect(p1).toHaveLength(2);
+    expect((p1[0] as { runId: string }).runId).toBe('run-2'); // newest first
+    expect(store.listRunReceipts('../../x')).toEqual([]);
+  });
 });
