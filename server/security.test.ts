@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LanGate, writeFamilyOf } from './security.js';
+import { LanGate, requiresToken, writeFamilyOf } from './security.js';
 import type { NextFunction, Request, Response } from 'express';
 
 function req(method: string, path: string, host: string, query: Record<string, unknown> = {}) {
+  // v1c-completion: remoteness is judged by socket.remoteAddress; the helper
+  // mirrors the old host-based semantics so existing tests keep their intent,
+  // and the P1-3 test below overrides the socket explicitly.
+  const loopbackHost =
+    host.startsWith('127.0.0.1') || host.startsWith('localhost') || host.startsWith('[::1]');
   return {
     method,
     path,
     headers: { host },
     query,
+    socket: { remoteAddress: loopbackHost ? '127.0.0.1' : '192.168.1.20' },
   } as unknown as Request;
 }
 
@@ -178,5 +184,63 @@ describe('LanGate middleware capability scope (audit P0)', () => {
       next as NextFunction,
     );
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('requiresToken (audit P1-2 — sensitive reads)', () => {
+  it('requires the token on full-content sensitive reads', () => {
+    for (const path of [
+      '/api/sessions/some-id',
+      '/api/claude/sessions/abc',
+      '/api/codex/sessions/xyz',
+      '/api/zcode/sessions/z',
+      '/api/atomcode/sessions',
+      '/api/codex/messages',
+      '/api/prompts',
+      '/api/git/diff',
+      '/api/files',
+      '/api/models-config',
+      '/api/file/preview',
+      '/api/rpc/messages',
+      '/api/events',
+    ]) {
+      expect(requiresToken(req('GET', path, '127.0.0.1')), `GET ${path}`).toBe(true);
+    }
+  });
+
+  it('does not require the token on non-sensitive reads', () => {
+    for (const path of ['/api/sessions', '/api/stats', '/api/health', '/api/adapters', '/api/mode']) {
+      expect(requiresToken(req('GET', path, '127.0.0.1')), `GET ${path}`).toBe(false);
+    }
+  });
+
+  it('requires the token on every non-GET api route', () => {
+    for (const path of ['/api/rpc/prompt', '/api/rpc/abort', '/api/pipelines/run', '/api/sessions/delete']) {
+      expect(requiresToken(req('POST', path, '127.0.0.1')), `POST ${path}`).toBe(true);
+    }
+  });
+});
+
+describe('LanGate.isRemote (audit P1-3 — socket-based peer judgment)', () => {
+  it('judges remoteness by socket.remoteAddress, not the forgeable Host header', () => {
+    const gate = new LanGate();
+    // Forged `Host: 127.0.0.1` with a real LAN socket → still remote.
+    const forged = Object.assign(req('GET', '/api/sessions', '127.0.0.1'), {
+      socket: { remoteAddress: '192.168.1.5' },
+    }) as Request;
+    expect(gate.isRemote(forged)).toBe(true);
+    // Loopback socket → local, regardless of the Host header.
+    const local = Object.assign(req('GET', '/api/sessions', 'whatever.local'), {
+      socket: { remoteAddress: '127.0.0.1' },
+    }) as Request;
+    expect(gate.isRemote(local)).toBe(false);
+  });
+
+  it('treats IPv4-mapped IPv6 loopback as local', () => {
+    const gate = new LanGate();
+    const v4mapped = Object.assign(req('GET', '/', '127.0.0.1'), {
+      socket: { remoteAddress: '::ffff:127.0.0.1' },
+    }) as Request;
+    expect(gate.isRemote(v4mapped)).toBe(false);
   });
 });

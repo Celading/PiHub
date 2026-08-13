@@ -104,6 +104,30 @@ export function createSecurityGate(): SecurityGate {
   return { token, isAuthorized, middleware };
 }
 
+/** v1c-completion: sensitive-read prefixes that must present the control
+ *  token — full-content session / adapter-history / git-diff / file-list /
+ *  prompt-index reads (audit P1-2: the allowlist used to miss them). */
+const SENSITIVE_READ_PREFIXES = [
+  '/api/sessions/',
+  '/api/claude/sessions/',
+  '/api/codex/sessions/',
+  '/api/zcode/sessions/',
+  '/api/atomcode/sessions',
+  '/api/codex/messages',
+  '/api/prompts',
+  '/api/git/diff',
+  '/api/files',
+] as const;
+
+const SENSITIVE_READ_EXACT = [
+  '/api/models-config',
+  '/api/file/preview',
+  '/api/rpc/messages',
+  '/api/rpc/entries',
+  '/api/rpc/tree',
+  '/api/events',
+] as const;
+
 /** Routes that must present the control token (writes + sensitive reads). */
 export function requiresToken(req: Request): boolean {
   const p = req.path;
@@ -115,26 +139,42 @@ export function requiresToken(req: Request): boolean {
     }
   }
   // Sensitive reads: credentials-bearing model config, session files,
-  // file preview, bash history/tree state, and the SSE event stream
-  // (message content flows through it).
-  return (
-    p === '/api/models-config' ||
-    p === '/api/file/preview' ||
-    p === '/api/rpc/messages' ||
-    p === '/api/rpc/entries' ||
-    p === '/api/rpc/tree' ||
-    p === '/api/events'
-  );
+  // file preview, bash history/tree state, the SSE event stream, and
+  // (v1c-completion) full-content session/adapter/git/file/prompt reads.
+  if ((SENSITIVE_READ_EXACT as readonly string[]).includes(p)) {
+    return true;
+  }
+  return SENSITIVE_READ_PREFIXES.some((prefix) => p.startsWith(prefix));
 }
 
 /* ---- P2-02: LAN access modes + capability scope ---- */
 
 export type NetMode = 'local' | 'pair' | 'lan';
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+const LOOPBACK_HOSTS = new Set([
+  '127.0.0.1',
+  'localhost',
+  '::1',
+  '[::1]',
+  '::ffff:127.0.0.1', // IPv4-mapped IPv6 loopback (Node remoteAddress form)
+]);
 
 function isLoopbackHost(host: string): boolean {
-  return LOOPBACK_HOSTS.has(bareHost(host));
+  const trimmed = host.trim().toLowerCase();
+  // Full-address match first: bareHost() mangles bare IPv6 (::1 → '::').
+  if (LOOPBACK_HOSTS.has(trimmed)) {
+    return true;
+  }
+  const bare = bareHost(trimmed);
+  if (LOOPBACK_HOSTS.has(bare)) {
+    return true;
+  }
+  // IPv4-mapped IPv6 loopback (::ffff:127.0.0.1) — the tail is dotted IPv4.
+  if (bare.startsWith('::ffff:')) {
+    const ipv4 = bare.slice('::ffff:'.length);
+    return /^127\.\d+\.\d+\.\d+$/.test(ipv4);
+  }
+  return false;
 }
 
 /** Capability families a remote peer may unlock explicitly. */
@@ -211,10 +251,14 @@ export class LanGate {
     this.caps[key] = value;
   }
 
-  /** True when the request comes from a non-loopback host (remote peer). */
+  /** True when the request comes from a non-loopback peer (v1c-completion:
+   *  judged by socket.remoteAddress, NOT the forgeable Host header — audit
+   *  P1-3: a forged `Host: 127.0.0.1` used to bypass pairing on a
+   *  LAN-exposed instance). The Host allowlist in `middleware` stays as the
+   *  DNS-rebinding line of defense; remoteness is a socket fact. */
   isRemote(req: Request): boolean {
-    const host = req.headers.host;
-    return typeof host !== 'string' || host.length === 0 || !isLoopbackHost(host);
+    const address = req.socket.remoteAddress;
+    return typeof address !== 'string' || address.length === 0 || !isLoopbackHost(address);
   }
 
   /** Generates a one-time pairing code (remote unlock). */
