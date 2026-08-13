@@ -234,6 +234,8 @@ if (pipelineEngine !== null) {
   pipelineEngine.on('run-change', (run) => {
     hub.broadcast({ type: 'pipeline_step', run });
   });
+  // v1b: resume in-flight runs from the durable journal at boot.
+  pipelineEngine.recover();
 }
 
 // Settings system prompt: `<home>/system-prompt.md`; saving restarts the pi

@@ -211,6 +211,61 @@ export class PipelineEngine extends EventEmitter {
     return snapshot(run);
   }
 
+  /** v1b: recover in-flight runs from the durable journal (idempotent replay
+   *  MVP). Terminal runs are skipped; a run whose last journal snapshot is
+   *  still `running` is rebuilt from that snapshot and resumes at the first
+   *  non-terminal step — completed steps are never re-sent. */
+  recover(): void {
+    for (const { runId, snapshot: snap } of this.store.listRecoverableRuns()) {
+      if (this.runs.has(runId)) {
+        continue;
+      }
+      const run = snap as PipelineRunRecord;
+      if (run.status !== 'running') {
+        continue;
+      }
+      const pipeline = this.store.get(run.pipelineId);
+      if (pipeline === undefined) {
+        // The pipeline definition is gone; mark the run failed honestly.
+        run.status = 'failed';
+        run.finishedAt = Date.now();
+        this.runs.set(runId, run);
+        this.emitChange(run);
+        continue;
+      }
+      const numericId = Number(runId.replace('run-', ''));
+      if (Number.isFinite(numericId)) {
+        this.nextRunId = Math.max(this.nextRunId, numericId + 1);
+      }
+      // Rebuild resume state from the last snapshot: completed steps are
+      // visited (never re-sent); vars come from their collected output.
+      const vars: Record<string, string> = {
+        input: run.input,
+        lastOutput: '',
+        lastToolOutput: '',
+        sessionName: '',
+        cwd: '',
+      };
+      let index = 0;
+      run.steps.forEach((step, i) => {
+        if (step.status === 'succeeded' || step.status === 'failed' || step.status === 'skipped') {
+          if (step.status === 'succeeded') {
+            if (step.output !== undefined) {
+              vars.lastOutput = step.output;
+            }
+            if (step.toolOutput !== undefined) {
+              vars.lastToolOutput = step.toolOutput;
+            }
+          }
+          index = i + 1;
+        }
+      });
+      this.runs.set(runId, run);
+      this.emitChange(run); // surface the recovered run on SSE
+      void this.execute(run, pipeline, run.input, {}, { index, vars });
+    }
+  }
+
   /** Answers an awaiting-approval step; false aborts the whole run. */
   approve(runId: string, approved: boolean): boolean {
     const resolver = this.approvals.get(runId);
@@ -268,8 +323,9 @@ export class PipelineEngine extends EventEmitter {
     pipeline: Pipeline,
     input: string,
     context: PipelineRunContext,
+    resume?: { index: number; vars: Record<string, string> },
   ): Promise<void> {
-    const vars: Record<string, string> = {
+    const vars: Record<string, string> = resume?.vars ?? {
       input,
       lastOutput: '',
       lastToolOutput: '',
@@ -277,8 +333,14 @@ export class PipelineEngine extends EventEmitter {
       cwd: context.cwd ?? '',
     };
     const byId = new Map(pipeline.steps.map((step) => [step.id, step] as const));
-    const visited = new Set<string>();
-    let index = 0;
+    // v1b: rebuilt from persisted step states on resume — completed steps are
+    // never re-sent (idempotent replay).
+    const visited = new Set<string>(
+      run.steps
+        .filter((s) => s.status === 'succeeded' || s.status === 'failed' || s.status === 'skipped')
+        .map((s) => s.stepId),
+    );
+    let index = resume?.index ?? 0;
 
     while (index < pipeline.steps.length) {
       // abort()/timeout mutate run.status from outside the async loop; re-read

@@ -552,4 +552,45 @@ describe('pipeline engine', () => {
     expect(receipt.status).toBe('uncertain');
     expect(finalRun.status).toBe('uncertain');
   });
+
+  it('v1b: recover resumes an interrupted run without re-sending completed steps', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Plan', type: 'prompt', prompt: 'plan' },
+        { id: 's2', name: 'Exec', type: 'prompt', prompt: 'exec' },
+      ],
+    });
+    // Phase 1: engine A starts the run; step 1 completes, step 2 is left
+    // running (never settled) — then the "process dies" (engineA dropped).
+    const bridgeA = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const storeA = createPipelineStore(tempDir);
+    storeA.save(pipeline); // definitions live in the store (real path)
+    const engineA = new PipelineEngine(bridgeA, storeA, 5000);
+    const runA = engineA.start(pipeline, 'x', {});
+    await tick();
+    bridgeA.assistantText('plan done');
+    bridgeA.settle(); // step 1 succeeds; step 2 waits for settle forever
+    await waitForStatus(engineA, runA.runId, (r) => r.steps[1]?.status === 'running');
+
+    // Phase 2: engine B on the same store recovers the run.
+    const bridgeB = new FakeBridge();
+    const engineB = new PipelineEngine(bridgeB, storeA, 5000);
+    engineB.recover();
+    const recovered = engineB.getRun(runA.runId);
+    expect(recovered).toBeDefined();
+    expect(recovered?.status).toBe('running');
+    expect(recovered?.steps[0]?.status).toBe('succeeded');
+    // step 1 must NOT be re-sent — only step 2's prompt arrives.
+    await tick();
+    expect(
+      bridgeB.sent
+        .filter((c) => c.type === 'prompt')
+        .map((c) => (c as { message: string }).message),
+    ).toEqual(['exec']);
+    bridgeB.assistantText('exec done');
+    bridgeB.settle();
+    const finalRun = await waitForStatus(engineB, runA.runId, (r) => r.status === 'completed');
+    expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
+  });
 });
