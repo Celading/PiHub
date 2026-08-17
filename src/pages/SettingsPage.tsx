@@ -94,6 +94,130 @@ const LOCALE_OPTIONS: ReadonlyArray<{ value: Locale; label: string }> = [
   { value: 'en', label: 'English' },
 ];
 
+/**
+ * Settings system prompt (owner spec): preview by default — the stored
+ * prompt renders read-only; clicking 编辑 opens the textarea, 保存 persists
+ * it to the PiHub home (`<home>/system-prompt.md`) and restarts pi so the
+ * next spawn appends it via --append-system-prompt.
+ */
+function SystemPromptSection({
+  onError,
+}: {
+  onError: (message: string | null) => void;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .systemPrompt()
+      .then((result) => {
+        if (!cancelled) {
+          setPrompt(result.prompt);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          onError(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onError]);
+
+  const save = async (): Promise<void> => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const result = await api.saveSystemPrompt(draft);
+      if (!result.success) {
+        onError(result.error ?? 'system prompt save failed');
+        return;
+      }
+      setPrompt(draft);
+      setEditing(false);
+      setSaved(true);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h2 className="settings-section-title mono">{t('settings.nav.systemPrompt')}</h2>
+      <p className="settings-hint">{t('settings.systemPrompt.hint')}</p>
+      {editing ? (
+        <>
+          <textarea
+            className="system-prompt-edit mono"
+            value={draft}
+            rows={14}
+            aria-label={t('settings.systemPrompt.edit')}
+            onChange={(event) => {
+              setDraft(event.target.value);
+            }}
+          />
+          <div className="system-prompt-actions">
+            <button
+              type="button"
+              className="btn-primary mono"
+              disabled={saving}
+              onClick={() => {
+                void save();
+              }}
+            >
+              {t('settings.systemPrompt.save')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary mono"
+              disabled={saving}
+              onClick={() => {
+                setEditing(false);
+              }}
+            >
+              {t('settings.systemPrompt.cancel')}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <pre className="system-prompt-preview mono">
+            {prompt === null
+              ? t('settings.loading')
+              : prompt.length > 0
+                ? prompt
+                : t('settings.systemPrompt.empty')}
+          </pre>
+          <p className="settings-hint">{t('settings.systemPrompt.preview')}</p>
+          <div className="system-prompt-actions">
+            <button
+              type="button"
+              className="btn-primary mono"
+              onClick={() => {
+                setDraft(prompt ?? '');
+                setEditing(true);
+                setSaved(false);
+              }}
+            >
+              {t('settings.systemPrompt.edit')}
+            </button>
+            {saved ? <span className="system-prompt-saved mono">{t('settings.systemPrompt.saved')}</span> : null}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function SettingsPage({
   section,
   onSectionChange,
@@ -385,9 +509,11 @@ export function SettingsPage({
               ? t('settings.nav.permissions')
               : section === 'favorites'
                 ? t('settings.nav.favorites')
-                : section === 'about'
-                  ? t('settings.nav.about')
-                  : t('settings.nav.lab');
+                : section === 'systemPrompt'
+                  ? t('settings.nav.systemPrompt')
+                  : section === 'about'
+                    ? t('settings.nav.about')
+                    : t('settings.nav.lab');
 
   return (
     <section className="settings-page" data-shot="settings">
@@ -808,6 +934,7 @@ export function SettingsPage({
             }}
           />
         ) : null}
+        {section === 'systemPrompt' ? <SystemPromptSection onError={setError} /> : null}
         {section === 'lab' ? <LabSection /> : null}
         {section === 'about' ? <AboutSection /> : null}
       </div>

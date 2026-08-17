@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage, type PanelAgent } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
@@ -421,46 +421,6 @@ export function ChatPage({
       window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
-
-  // P1-03 D: recent file operations aggregated from the tool calls of the
-  // visible conversation (most recent unique paths, capped).
-  const recentFiles = useMemo(() => {
-    const out: Array<{ path: string; action: string }> = [];
-    const seen = new Set<string>();
-    for (let index = chat.messages.length - 1; index >= 0 && out.length < 12; index -= 1) {
-      const item = chat.messages[index];
-      if (item === undefined || item.message.role !== 'assistant') {
-        continue;
-      }
-      for (const block of item.message.content) {
-        if (block.type !== 'toolCall') {
-          continue;
-        }
-        const name = typeof block.name === 'string' ? block.name : '';
-        if (name !== 'read' && name !== 'write' && name !== 'edit' && name !== 'patch') {
-          continue;
-        }
-        const args =
-          typeof block.arguments === 'object' && block.arguments !== null
-            ? (block.arguments as Record<string, unknown>)
-            : {};
-        const rawPath =
-          typeof args['path'] === 'string'
-            ? args['path']
-            : typeof args['filePath'] === 'string'
-              ? args['filePath']
-              : typeof args['file'] === 'string'
-                ? args['file']
-                : null;
-        if (rawPath === null || rawPath.length === 0 || seen.has(rawPath)) {
-          continue;
-        }
-        seen.add(rawPath);
-        out.push({ path: rawPath, action: name });
-      }
-    }
-    return out;
-  }, [chat.messages]);
 
   const openFile = useCallback((filePath: string): void => {
     setPreviewPath(filePath);
@@ -974,28 +934,6 @@ export function ChatPage({
         />
       ) : null}
       <div className="chatpage-bottom">
-        {/* P1-03 D: recent file operations aggregated from tool calls. */}
-        {recentFiles.length > 0 ? (
-          <div className="chat-files mono">
-            <span className="chat-files-label">{t('chat.files')}</span>
-            <div className="chat-files-list">
-              {recentFiles.map((file: { path: string; action: string }) => (
-                <button
-                  key={file.path}
-                  type="button"
-                  className="chat-file-chip mono"
-                  title={file.path}
-                  onClick={() => {
-                    setPreviewPath(file.path);
-                  }}
-                >
-                  <span className="chat-file-action">{file.action}</span>
-                  <span className="chat-file-path">{file.path}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
         <button
           type="button"
           className="chatpage-terminal-toggle mono"

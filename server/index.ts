@@ -23,6 +23,7 @@ import { getAtomcodeSession } from './adapters/atomcode-history.js';
 import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from './adapters/zcode-history.js';
 import { effectiveServerConfig, loadPihubConfig } from './config.js';
 import { configFileOf, resolvePihubHome } from './pihub-home.js';
+import { createSystemPromptStore } from './system-prompt.js';
 
 // PIHUB_HOME → ~/.pihub (fallback ./itData when no permission); config.toml
 // inside it holds the server options. Env (PIHUB_PORT/PORT) wins over the
@@ -234,6 +235,14 @@ if (pipelineEngine !== null) {
   });
 }
 
+// Settings system prompt: `<home>/system-prompt.md`; saving restarts the pi
+// runtime through the same idle/deferred path as a model-config reload (the
+// RPC bridge reads the prompt at spawn time via --append-system-prompt).
+const systemPromptStore = createSystemPromptStore({
+  home: pihubHome.dir,
+  reload: requestModelReload,
+});
+
 app.use(
   createRouter(bridge, sessions, hub, {
     mode,
@@ -241,6 +250,10 @@ app.use(
     demoShowcase,
     pipelines: { store: pipelineStore, engine: pipelineEngine },
     reloadModels: requestModelReload,
+    systemPrompt: {
+      get: () => systemPromptStore.get(),
+      save: (prompt) => systemPromptStore.save(prompt),
+    },
     allowedRoot: AGENT_CWD,
     runtimeInfo: () => ({
       home: pihubHome.dir,

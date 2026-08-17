@@ -22,8 +22,9 @@
   max-width: 80%;
   display: flex;
   align-items: stretch;
-  background-color: var(--chat-user-bubble);
-  color: var(--chat-user-text);
+  /* owner palette: fixed warm paper bubble + near-black ink in both themes */
+  background-color: #f5f3ee;
+  color: #161616;
 }
 
 /* P1-17 A / P1-18: full-height collapse strip on the left edge of the
@@ -67,11 +68,10 @@
   color: inherit;
 }
 
-/* 浅色模式下气泡是深底白字——inline code 芯片若回退到浅色 code-background
-   会白字浅底看不清；统一用半透明白芯片（两种主题下都成立）。 */
+/* 气泡固定浅色纸底 + 深色墨字（两种主题下都成立）——inline code 芯片用
+   半透明墨色，避免浅底白字看不清。 */
 .user-bubble .inline-code {
-  background-color: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.22);
+  background-color: rgba(22, 22, 22, 0.08);
 }
 
 /* P1-16 D: long prompts cap at 12 lines with the left strip toggle.
@@ -363,6 +363,36 @@
   border: var(--border-thin) solid var(--border-subtle);
 }
 
+/* system notice — centered divider row at half opacity: the message sits
+   between two flexible dash rules (owner spec). */
+.message-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-align: center;
+  opacity: 0.5;
+}
+
+.message-notice-dash {
+  flex: 1 1 2rem;
+  min-width: 1.5rem;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-placeholder);
+  letter-spacing: -0.1em;
+  user-select: none;
+}
+
+.message-notice-text {
+  max-width: 70%;
+  word-break: break-word;
+}
+
 /* P1-12 B: live reasoning body while streaming (lab option). */
 .thinking-body-live {
   padding-top: var(--space-2);
@@ -457,13 +487,15 @@
 }
 
 /* expand / collapse toggle: normal flow below the cap, sticky at the
-   viewport bottom while reading expanded content, so it never "vanishes". */
+   viewport bottom while reading expanded content, so it never "vanishes".
+   Full container width (owner spec). */
 .long-content-expand {
   position: sticky;
   bottom: var(--space-3);
   display: block;
-  margin: var(--space-2) auto 0;
+  width: 100%;
   min-width: 12rem;
+  margin: var(--space-2) auto 0;
   padding: 0.5rem 1.5rem;
   border: var(--border-thin) solid var(--border-subtle);
   background: var(--surface);

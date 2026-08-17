@@ -74,6 +74,7 @@ const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
   sessions: 'settings.nav.sessions',
   permissions: 'settings.nav.permissions',
   favorites: 'settings.nav.favorites',
+  systemPrompt: 'settings.nav.systemPrompt',
   lab: 'settings.nav.lab',
   about: 'settings.nav.about',
 };
@@ -275,6 +276,9 @@ export function Sidebar({
 }: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  /** Last non-automation view — the automation feature button returns here
+   *  when clicked a second time (owner toggle spec). */
+  const featureReturnRef = useRef<View>('chat');
   /** All-agent rows (pi + codex + atomcode + zcode) converged in one list. */
   const [agentRows, setAgentRows] = useState<AgentSessionRow[]>(() => []);
   /** Sidebar filter: 'all' shows every agent's records (default). */
@@ -307,6 +311,14 @@ export function Sidebar({
       window.removeEventListener('pihub:codex-imported-changed', sync);
     };
   }, []);
+  // Keep the feature return target in sync with ANY navigation (Alt+1..5,
+  // history page links...) — while inside automation the ref holds the last
+  // other view the user was on.
+  useEffect(() => {
+    if (view !== 'automation') {
+      featureReturnRef.current = view;
+    }
+  }, [view]);
   const [query, setQuery] = useState('');
   const [userId, setUserId] = useState<string>(() => {
     return localStorage.getItem(USER_ID_STORAGE_KEY) ?? 'guest';
@@ -958,7 +970,14 @@ export function Sidebar({
           title={t('sidebar.features')}
           data-active={view === 'automation'}
           onClick={() => {
-            onViewChange('automation');
+            if (view === 'automation') {
+              // Second click: leave the feature page, back to the view we
+              // came from (owner toggle spec).
+              onViewChange(featureReturnRef.current);
+            } else {
+              featureReturnRef.current = view;
+              onViewChange('automation');
+            }
           }}
         >
           <span className="hico hico-mind-map" aria-hidden="true" />

@@ -199,6 +199,12 @@ export interface RouterModeOptions {
   allowedRoot?: string;
   /** P1-08c: runtime info surfaced by /api/health (home dir, config file, url). */
   runtimeInfo?: () => { home?: string; configFile?: string | null; url?: string };
+  /** Settings system prompt (owner spec): preview + edit + save; saving
+   *  restarts the pi runtime so the next spawn appends the prompt. */
+  systemPrompt?: {
+    get: () => Promise<string>;
+    save: (prompt: string) => Promise<{ success: boolean; error?: string }>;
+  };
   /**
    * P2-01: registered agent adapters (metadata + codex history surface).
    * `codexHistory` is the read-only integration (rollout parse); it is
@@ -397,6 +403,39 @@ export function createRouter(
     const raw = await readJson(path.join(AGENT_DIR, 'settings.json'));
     const parsed = settingsFileSchema.safeParse(raw);
     res.json(parsed.success ? parsed.data : {});
+  });
+
+  // Settings system prompt: preview + edit + save (owner spec). The store
+  // lives in the PiHub home; saving restarts pi so the next spawn appends it
+  // via --append-system-prompt. PUT is a write → demo 503.
+  const systemPrompt = options?.systemPrompt;
+  router.get('/api/system-prompt', async (_req, res) => {
+    if (systemPrompt === undefined) {
+      res.status(503).json({ error: 'system prompt unavailable' });
+      return;
+    }
+    res.json({ prompt: await systemPrompt.get() });
+  });
+  router.put('/api/system-prompt', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
+    if (systemPrompt === undefined) {
+      res.status(503).json({ error: 'system prompt unavailable' });
+      return;
+    }
+    const body = req.body as { prompt?: unknown } | null;
+    const prompt = typeof body === 'object' && body !== null ? body['prompt'] : undefined;
+    if (typeof prompt !== 'string') {
+      res.status(400).json({ error: 'prompt must be a string' });
+      return;
+    }
+    const result = await systemPrompt.save(prompt);
+    if (!result.success) {
+      res.status(500).json({ error: result.error ?? 'system prompt save failed' });
+      return;
+    }
+    res.json({ success: true });
   });
 
   router.get('/api/models', async (_req, res) => {

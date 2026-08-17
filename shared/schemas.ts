@@ -129,11 +129,22 @@ export const bashExecutionMessageSchema = z
   })
   
 
+/** System-level notice (turn aborts, HTTP rate-limit/service errors): a
+ *  one-line divider in the chat stream, not part of the conversation. */
+export const noticeMessageSchema = z
+  .object({
+    role: z.literal('notice'),
+    content: z.string(),
+    timestamp: z.number(),
+  })
+  
+
 export const agentMessageSchema = z.discriminatedUnion('role', [
   userMessageSchema,
   assistantMessageSchema,
   toolResultMessageSchema,
   bashExecutionMessageSchema,
+  noticeMessageSchema,
 ]);
 
 export const sessionHeaderEventSchema = z

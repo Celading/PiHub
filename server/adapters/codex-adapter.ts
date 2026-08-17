@@ -114,6 +114,38 @@ function messageText(payload: {
   return undefined;
 }
 
+/* System-notice classification (owner: tool/message deep adaptation): turn
+ * aborts and HTTP status/service errors (429/503/401...) are NOT conversation
+ * — they render as divider messages (`── message ──`, half opacity). */
+const TURN_ABORTED_RE = /<turn_aborted>/;
+const HTTP_ERROR_RE =
+  /\b(?:401|403|429|500|502|503|504)\b|rate\s*limit|high demand|service unavailable|temporarily unavailable|overloaded/i;
+
+function isTurnAbortedText(text: string): boolean {
+  return TURN_ABORTED_RE.test(text);
+}
+
+/** Strips the `<turn_aborted>…</turn_aborted>` wrapper, keeping the message
+ *  body the user quoted. */
+function stripTurnAbortedTags(text: string): string {
+  return text
+    .replace(/^\s*<turn_aborted>\s*/i, '')
+    .replace(/\s*<\/turn_aborted>\s*$/i, '')
+    .trim();
+}
+
+function isHttpErrorText(text: string): boolean {
+  return HTTP_ERROR_RE.test(text);
+}
+
+/** Exported for direct unit coverage of the notice classification (the live
+ *  path and the rollout path share these predicates). */
+export const noticeClassifiers = {
+  isTurnAbortedText,
+  stripTurnAbortedTags,
+  isHttpErrorText,
+} as const;
+
 /**
  * Session sync: reads a rollout file directly and extracts the conversation
  * as chat messages. Response items carry `role` (developer / user /
@@ -160,6 +192,25 @@ export async function loadRolloutMessages(threadId: string): Promise<AgentMessag
     } catch {
       continue;
     }
+    const timestamp = Date.parse(parsed.timestamp ?? '');
+    const ts = Number.isNaN(timestamp) ? 0 : timestamp;
+    if (parsed.type === 'event_msg') {
+      // Live-run markers: turn aborts (the injected user-role <turn_aborted>
+      // message below carries the full text — this event only has a reason)
+      // and HTTP status/service errors, which surface as notices.
+      const payload = parsed.payload;
+      if (typeof payload === 'object' && payload !== null) {
+        const event = payload as { type?: unknown; message?: unknown };
+        if (
+          event.type === 'error' &&
+          typeof event.message === 'string' &&
+          isHttpErrorText(event.message)
+        ) {
+          out.push({ role: 'notice', content: event.message, timestamp: ts });
+        }
+      }
+      continue;
+    }
     if (parsed.type !== 'response_item') {
       continue;
     }
@@ -167,7 +218,23 @@ export async function loadRolloutMessages(threadId: string): Promise<AgentMessag
     if (typeof payload !== 'object' || payload === null) {
       continue;
     }
-    const record = payload as { type?: unknown; role?: unknown; content?: unknown; text?: unknown };
+    const record = payload as {
+      type?: unknown;
+      role?: unknown;
+      content?: unknown;
+      text?: unknown;
+      error?: unknown;
+    };
+    if (record.type === 'error') {
+      // Response-item error frames (provider-side failures) — HTTP status /
+      // service errors render as notices, other errors are left out of the
+      // history (the live adapter surfaces them when they happen).
+      const errorText = record.text ?? record.error ?? '';
+      if (typeof errorText === 'string' && isHttpErrorText(errorText)) {
+        out.push({ role: 'notice', content: errorText, timestamp: ts });
+      }
+      continue;
+    }
     if (record.type !== 'message') {
       continue;
     }
@@ -188,8 +255,12 @@ export async function loadRolloutMessages(threadId: string): Promise<AgentMessag
     ) {
       continue;
     }
-    const timestamp = Date.parse(parsed.timestamp ?? '');
-    const ts = Number.isNaN(timestamp) ? 0 : timestamp;
+    // Aborted turns arrive as user-role frames wrapped in <turn_aborted> —
+    // render them as notice dividers, not as prompts.
+    if (isTurnAbortedText(text)) {
+      out.push({ role: 'notice', content: stripTurnAbortedTags(text), timestamp: ts });
+      continue;
+    }
     out.push(
       role === 'user'
         ? { role: 'user', content: text, timestamp: ts }
@@ -530,6 +601,37 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
         }
         break;
       }
+      case 'event_msg': {
+        // Live-run markers: turn aborts and HTTP status/service errors
+        // render as notice dividers (owner deep-adapt spec).
+        const payload = parsed.payload;
+        if (typeof payload === 'object' && payload !== null) {
+          const event = payload as { type?: unknown; message?: unknown; reason?: unknown };
+          if (event.type === 'turn_aborted') {
+            this.emitUpdate(envelope, {
+              role: 'notice',
+              content:
+                'The user interrupted the previous turn on purpose. Any running unified exec processes may still be in the background. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.',
+              timestamp: Date.now(),
+            });
+            break;
+          }
+          if (
+            event.type === 'error' &&
+            typeof event.message === 'string' &&
+            isHttpErrorText(event.message)
+          ) {
+            this.emitUpdate(envelope, {
+              role: 'notice',
+              content: event.message,
+              timestamp: Date.now(),
+            });
+            break;
+          }
+        }
+        this.emit('event', { type: 'adapter_extension', kind: 'codex', payload: parsed });
+        break;
+      }
       case 'item.started':
         // no semantic mapping needed for v1
         break;
@@ -568,21 +670,31 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
             });
           }
         } else if (itemType === 'error') {
+          const errorText = item?.text ?? item?.error ?? '';
           // A failed resume (e.g. ephemeral mode with no rollout on disk)
           // must not wedge the adapter: drop the resume target so the next
           // prompt starts a fresh thread.
-          const errorText = item?.text ?? item?.error ?? '';
           if (errorText.includes('no rollout found')) {
             this.resumeId = null;
           }
-          this.emitUpdate(envelope, {
-            role: 'toolResult',
-            toolCallId: '',
-            toolName: 'codex.error',
-            content: [{ type: 'text', text: errorText }],
-            isError: true,
-            timestamp: Date.now(),
-          });
+          // HTTP status / service errors (429/503/401...) are system
+          // notices, not tool results.
+          if (isHttpErrorText(errorText)) {
+            this.emitUpdate(envelope, {
+              role: 'notice',
+              content: errorText,
+              timestamp: Date.now(),
+            });
+          } else {
+            this.emitUpdate(envelope, {
+              role: 'toolResult',
+              toolCallId: '',
+              toolName: 'codex.error',
+              content: [{ type: 'text', text: errorText }],
+              isError: true,
+              timestamp: Date.now(),
+            });
+          }
         } else {
           this.emit('event', {
             type: 'adapter_extension',

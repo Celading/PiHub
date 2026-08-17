@@ -530,3 +530,44 @@
   color: var(--primary);
   text-decoration: underline;
 }
+
+/* ---- settings system prompt (preview → edit → save) ---- */
+.system-prompt-preview {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--code-background);
+  border: var(--border-thin) solid var(--border-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.system-prompt-edit {
+  display: block;
+  width: 100%;
+  min-height: 16rem;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  resize: vertical;
+  background-color: var(--code-background);
+  color: var(--text-primary);
+  border: var(--border-thin) solid var(--border-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  font-family: var(--font-mono);
+}
+
+.system-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.system-prompt-saved {
+  color: var(--status-ok);
+  font-size: var(--text-xs);
+}

@@ -11,6 +11,7 @@ export type SettingsSectionId =
   | 'sessions'
   | 'permissions'
   | 'favorites'
+  | 'systemPrompt'
   | 'lab'
   | 'about';
 
@@ -49,6 +50,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   { id: 'sessions', icon: 'hico-rectangle-stack' },
   { id: 'permissions', icon: 'hico-lock' },
   { id: 'favorites', icon: 'hico-bookmark' },
+  { id: 'systemPrompt', icon: 'hico-doc-text' },
   { id: 'lab', icon: 'hico-flask' },
   { id: 'about', icon: 'hico-questionmark-circle' },
 ];

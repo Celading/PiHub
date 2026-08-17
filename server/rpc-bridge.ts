@@ -83,9 +83,16 @@ export class RpcBridge extends EventEmitter {
   constructor(
     private readonly piBinary: string,
     private readonly cwd: string,
+    options?: { systemPrompt?: () => string },
   ) {
     super();
+    this.systemPrompt = options?.systemPrompt ?? null;
   }
+
+  /** Settings system prompt, appended to pi's default coding assistant
+   *  prompt at spawn time (owner spec: system prompt setting). Read lazily
+   *  so a save followed by restart() picks up the new text. */
+  private readonly systemPrompt: (() => string) | null;
 
   override on<K extends keyof RpcBridgeEvents>(
     event: K,
@@ -105,7 +112,12 @@ export class RpcBridge extends EventEmitter {
     if (this.stopped || this.child !== null) {
       return;
     }
-    this.child = spawn(this.piBinary, ['--mode', 'rpc'], {
+    const args = ['--mode', 'rpc'];
+    const systemPromptText = this.systemPrompt?.() ?? '';
+    if (systemPromptText.trim().length > 0) {
+      args.push('--append-system-prompt', systemPromptText);
+    }
+    this.child = spawn(this.piBinary, args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -185,6 +197,12 @@ export class RpcBridge extends EventEmitter {
 
   isRunning(): boolean {
     return this.child !== null;
+  }
+
+  /** Current pi session file (from get_state responses; null before the
+   *  first state read). Consumers use it to correlate events to a session. */
+  getSessionId(): string | null {
+    return this.sessionId;
   }
 
   /** Number of in-flight RPC requests awaiting a response (debug channel). */
@@ -313,6 +331,20 @@ export class RpcBridge extends EventEmitter {
           this.pending.delete(id);
           pending.resolve(response.data);
         }
+      }
+      // Correlation entry (audit P1 fix): pi RPC events carry NO session/run
+      // ids (probe-verified), so the session id is captured from the
+      // get_state response instead — every subsequent event envelope gets it
+      // injected (handleLine below), which lets consumers (pipeline engine)
+      // filter events per session. runId has no protocol source yet; it is a
+      // Run Kernel concern (next phase).
+      const data = response.data.data as { sessionFile?: unknown } | undefined;
+      if (
+        typeof data?.sessionFile === 'string' &&
+        data.sessionFile.length > 0 &&
+        data.sessionFile !== this.sessionId
+      ) {
+        this.sessionId = data.sessionFile;
       }
       this.emit('response', response.data);
       return;

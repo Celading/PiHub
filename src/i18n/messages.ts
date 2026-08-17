@@ -46,7 +46,6 @@ export const zhMessages = {
   'automation.source.skill': '技能',
   'automation.source.prompt': '提示词模板',
   'automation.source.extension': '扩展命令',
-  'automation.run': '运行',
   'automation.skills.empty': '无匹配项',
   'automation.skills.note': '输入 / 唤起实时建议；点击运行以 /name 发送。',
   'automation.autoCompaction': '自动压缩',
@@ -203,7 +202,6 @@ export const zhMessages = {
   'chat.expand': '展开',
   'chat.collapse': '收起',
   'chat.processPrefix': '过程 {count} 条',
-  'chat.files': '最近文件',
   'chat.filePreview': '文件预览',
   'tool.summary.read': '读取了 {target}',
   'tool.summary.write': '改动了 {target}',
@@ -439,8 +437,18 @@ export const zhMessages = {
   'settings.nav.sessions': '会话管理',
   'settings.nav.permissions': '权限管理',
   'settings.nav.favorites': '提示词收藏夹',
+  'settings.nav.systemPrompt': '系统提示词',
   'settings.nav.lab': '实验室能力',
   'settings.nav.about': '关于',
+
+  // system prompt section
+  'settings.systemPrompt.hint': '附加到 pi 默认系统提示词之后（--append-system-prompt）；保存后下一次会话生效。',
+  'settings.systemPrompt.preview': '预览模式——点击「编辑」才能修改。',
+  'settings.systemPrompt.edit': '编辑',
+  'settings.systemPrompt.save': '保存',
+  'settings.systemPrompt.cancel': '取消',
+  'settings.systemPrompt.saved': '已保存 ✓',
+  'settings.systemPrompt.empty': '（未设置——使用 pi 默认系统提示词）',
 
   // permissions section
   'permissions.notify': '通知',
@@ -554,7 +562,6 @@ export const enMessages: Record<MessageKey, string> = {
   'automation.source.skill': 'Skills',
   'automation.source.prompt': 'Prompt templates',
   'automation.source.extension': 'Extension commands',
-  'automation.run': 'Run',
   'automation.skills.empty': 'No matches',
   'automation.skills.note': 'Type / for live suggestions; Run sends `/name`.',
   'automation.autoCompaction': 'Auto compaction',
@@ -705,7 +712,6 @@ export const enMessages: Record<MessageKey, string> = {
   'chat.expand': 'Expand',
   'chat.collapse': 'Collapse',
   'chat.processPrefix': 'Process ({count})',
-  'chat.files': 'Recent files',
   'chat.filePreview': 'File preview',
   'tool.summary.read': 'Read {target}',
   'tool.summary.write': 'Modified {target}',
@@ -933,8 +939,18 @@ export const enMessages: Record<MessageKey, string> = {
   'settings.nav.sessions': 'Session Management',
   'settings.nav.permissions': 'Permissions',
   'settings.nav.favorites': 'Prompt Favorites',
+  'settings.nav.systemPrompt': 'System Prompt',
   'settings.nav.lab': 'Lab',
   'settings.nav.about': 'About',
+
+  // system prompt section
+  'settings.systemPrompt.hint': "Appended after pi's default coding assistant prompt (--append-system-prompt); takes effect on the next session.",
+  'settings.systemPrompt.preview': 'Preview mode — click Edit to modify.',
+  'settings.systemPrompt.edit': 'Edit',
+  'settings.systemPrompt.save': 'Save',
+  'settings.systemPrompt.cancel': 'Cancel',
+  'settings.systemPrompt.saved': 'Saved ✓',
+  'settings.systemPrompt.empty': "(not set — pi's default system prompt is used)",
 
   // permissions section
   'permissions.notify': 'Notifications',
