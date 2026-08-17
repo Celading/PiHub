@@ -13,8 +13,10 @@ import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
 import { PipelineEngine } from './pipelines/engine.js';
 import { createPipelineStore } from './pipelines/store.js';
+import { LeaseGate } from './pipelines/lease.js';
 import { seedDemoPipelines } from './demo/demo-pipelines.js';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { createSecurityGate, LanGate, requiresToken } from './security.js';
 import { PiAdapter } from './adapters/pi-adapter.js';
@@ -228,11 +230,16 @@ const pipelineStore = createPipelineStore(
 if (mode === 'demo') {
   seedDemoPipelines(pipelineStore);
 }
-const pipelineEngine = mode === 'demo' ? null : new PipelineEngine(bridge, pipelineStore);
+const pipelineEngine =
+  mode === 'demo'
+    ? null
+    : new PipelineEngine(bridge, pipelineStore, undefined, new LeaseGate(pihubHome.dir));
 if (pipelineEngine !== null) {
   pipelineEngine.on('run-change', (run) => {
     hub.broadcast({ type: 'pipeline_step', run });
   });
+  // v1b: resume in-flight runs from the durable journal at boot.
+  pipelineEngine.recover();
 }
 
 // Settings system prompt: `<home>/system-prompt.md`; saving restarts the pi
@@ -336,7 +343,14 @@ app.use(
 // The per-process control token is injected into the served HTML (SPRINT-2 A1):
 // the SPA reads window.__PIHUB_TOKEN__ and sends it as X-PiHub-Token on
 // writes / sensitive reads, and as ?token= on the SSE EventSource.
-const distDir = path.resolve(process.cwd(), 'dist');
+// Published-bin safe dist resolution: the bin (dist-server/server/index.js)
+// sits two levels under the package root, so the frontend build is ALWAYS
+// at <pkg>/dist relative to this file — resolving from process.cwd() broke
+// `npx pihub` / global installs run from any other directory (frontend 404).
+// The tsx dev layout (server/index.ts) has the same relative shape. cwd
+// remains as a fallback for exotic setups.
+const pkgDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist');
+const distDir = existsSync(pkgDist) ? pkgDist : path.resolve(process.cwd(), 'dist');
 const indexFile = path.join(distDir, 'index.html');
 app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api/')) {

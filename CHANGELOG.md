@@ -4,6 +4,71 @@ All notable changes to PiHub are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-08-17
+
+### Added
+
+- **Pipeline run kernel v1**: runs are serialized (a busy engine returns a clear
+  conflict instead of interleaving), an uncertain settle is terminal (no later
+  steps execute), abort races are closed, and match steps without explicit
+  targets continue linearly instead of silently truncating.
+- **Durable run ledger**: per-run journals are append-only, terminal runs emit
+  typed receipts with step digests / attempts / timing, and a restart recovery
+  pass resumes interrupted runs idempotently without re-sending completed steps.
+- **Cross-process lease gate**: an exclusive execution lease prevents two PiHub
+  processes from running pipelines at the same time; crashed owners are
+  reclaimed and the same owner can take over after restart.
+- **Pipeline visual editor**: steps are edited in an execution band with
+  per-step inspector (variables, streaming, provider/model, thinking, output
+  match, retries) and a failure policy; the JSON source view remains available.
+- **Active run header**: a stable status line above the chat shows project /
+  model / run state with a live clock, changed-file count and pending-approval
+  chip, plus pause / rerun / branch actions when available.
+- **Run ledger**: tool, bash, thinking and extra assistant frames render as
+  compact event rows with expandable raw blocks; only the final answer keeps
+  full layout.
+- **Sidebar task-ification**: project groups collapse to one summary line,
+  session rows gain run-state filtering, and agent filter glyphs have tooltips.
+- **Codex console depth**: aborted/error frames render as centered notices,
+  hash routing preserves the selected view and session across refreshes, and a
+  System Prompt setting persists a prompt file and restarts the runtime with it.
+- **Published bin runs from any directory**: the frontend build is resolved
+  relative to the package itself, so `npx pihub` / global installs work from
+  any cwd.
+
+### Fixed
+
+- **Remote capability gate**: every non-read API route is classified and remote
+  peers are fail-closed for unclassified writes; remote writes remain off by
+  default and are independently toggleable.
+- **Codex thread dedup**: resumed threads with multiple rollout files now
+  resolve to one authoritative record (newest file, deduplicated by embedded
+  id), fixing duplicate sidebar rows.
+- **Event correlation**: streamed RPC events now carry the active session id so
+  concurrent runs from other sessions cannot steal settle/output events.
+- **Sensitive-read token coverage**: full-content reads (session detail, adapter
+  history, prompts, git diff, files) now require the control token.
+- **Host-header LAN bypass**: remote-ness is judged from the socket address
+  instead of the forgeable `Host` header; IPv4-mapped IPv6 loopback is handled.
+- **SSRF guard**: model catalog fetches reject loopback / private / link-local /
+  metadata addresses.
+- **Git inspection hardening**: `git status` / `git diff` run with
+  `--no-ext-diff --no-textconv` and a cleared external diff env, so
+  repository-owned executables are never run.
+- **Pairing hardening**: pairing codes use 128-bit entropy with a per-peer
+  failed-pairing throttle.
+- **RPC bridge robustness**: stdout framing is bounded (1 MiB), runaway
+  processes are restarted on a sliding 60-second budget, and SSE broadcast
+  write failures no longer break the broadcast loop.
+- **Sessions page scroll**: the session history page now scrolls correctly
+  instead of compressing its groups.
+
+### Security
+
+- No new external network surface. The panel remains loopback-only by default;
+  all new write surfaces are token-gated and demo routes stay 503 in
+  non-demo modes.
+
 ## [0.3.0] - 2026-08-12
 
 ### Added

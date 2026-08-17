@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatSession, type ChatMessage, type PanelAgent } from '../chat/chatState.js';
 import { Composer } from '../components/Composer.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
@@ -6,6 +6,8 @@ import { IconButton } from '../components/IconButton.js';
 import { MessageItem, type ThinkingStatus } from '../components/MessageItem.js';
 import { FilePreview } from '../components/FilePreview.js';
 import { PromptTimeline } from '../components/PromptTimeline.js';
+import { ActiveRunHeader } from '../components/ActiveRunHeader.js';
+import { RunLedger } from '../components/RunLedger.js';
 import { FogLoading } from '../components/FogLoading.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
@@ -126,129 +128,6 @@ function isToolMessage(item: ChatMessage): boolean {
 
 /** Tool-cluster collapse (P1-10 C3): all tool blocks of one prompt run fold
  *  into a single set with a tool-name list header. */
-function ToolCluster({
-  items,
-  onOpenFile,
-}: {
-  items: ChatMessage[];
-  onOpenFile?: ((path: string) => void) | undefined;
-}): React.JSX.Element {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const names = [
-    ...new Set(
-      items
-        .map((item) => {
-          if (item.message.role === 'toolResult') {
-            return item.message.toolName;
-          }
-          if (item.message.role === 'bashExecution') {
-            return 'bash';
-          }
-          if (item.message.role === 'assistant') {
-            const call = item.message.content.find((block) => block.type === 'toolCall');
-            return call?.type === 'toolCall' && typeof call.name === 'string' ? call.name : '';
-          }
-          return '';
-        })
-        .filter((name) => name.length > 0),
-    ),
-  ];
-  return (
-    <div className="tool-cluster" data-expanded={expanded}>
-      <button
-        type="button"
-        className="tool-cluster-header mono"
-        onClick={() => {
-          setExpanded(!expanded);
-        }}
-        aria-expanded={expanded}
-      >
-        <span className="hico hico-rectangle-stack" aria-hidden="true" />
-        <span>{t('workflow.tools', { names: names.join(' / ') })}</span>
-        <span className="tool-cluster-chevron" aria-hidden="true">
-          {expanded ? '−' : '+'}
-        </span>
-      </button>
-      {expanded ? (
-        <div className="tool-cluster-body">
-          {items.map((item) => (
-            <MessageItem key={item.key} message={item.message} isStreaming={item.isStreaming} onOpenFile={onOpenFile} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * P1-16 E: a settled prompt run can leave several `.message message-assistant`
- * entries — only the LAST one is kept fully visible; the earlier ones fold
- * behind a process toggle (animated via the collapse-region grid rows).
- * P1-17 B: the toggle shows the run's total working duration.
- */
-function AssistantProcessCollapse({
-  items,
-  durationLabel,
-  onOpenFile,
-}: {
-  items: ChatMessage[];
-  durationLabel: string | null;
-  onOpenFile?: ((path: string) => void) | undefined;
-}): React.JSX.Element {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className="assistant-process">
-      <button
-        type="button"
-        className="assistant-process-toggle mono"
-        data-shot="process"
-        aria-expanded={expanded}
-        onClick={() => {
-          setExpanded(!expanded);
-        }}
-      >
-        <span className="assistant-process-chevron" aria-hidden="true">
-          {expanded ? '−' : '>'}
-        </span>
-        <span>{t('chat.processPrefix', { count: String(items.length) })}</span>
-        {durationLabel !== null ? (
-          <span className="assistant-process-duration" aria-label={durationLabel}>
-            {durationLabel}
-          </span>
-        ) : null}
-      </button>
-      <div className="collapse-region" data-collapsed={!expanded}>
-        <div className="collapse-region-inner">
-          {items.map((item) => (
-            <MessageItem key={item.key} message={item.message} isStreaming={false} thinkingStatus="done" onOpenFile={onOpenFile} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** P1-17 B: wall-clock span of a prompt run, from the first to the last
- *  message of the unit (epoch-ms timestamps), or null when undeterminable. */
-function runDurationLabel(items: ChatMessage[]): string | null {
-  const times = items
-    .map((item) => item.message.timestamp)
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  if (times.length < 2) {
-    return null;
-  }
-  const spanMs = Math.max(0, (times[times.length - 1] ?? 0) - (times[0] ?? 0));
-  const totalSeconds = Math.round(spanMs / 1000);
-  if (totalSeconds < 60) {
-    return `${String(totalSeconds)}s`;
-  }
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes)}m ${String(seconds).padStart(2, '0')}s`;
-}
-
 interface ChatPageProps {
   onSessionChanged: () => void;
   /** Which agent this chat view talks to (pi RPC or codex exec). */
@@ -257,6 +136,8 @@ interface ChatPageProps {
   codexThread?: string | null;
   /** Claude transcript to render read-only (sidebar "open record"). */
   claudeThread?: { sessionId: string; label: string } | null;
+  /** UX workbench: pending extension-UI dialogs (approval indicator). */
+  pendingApprovals?: number;
 }
 
 export function ChatPage({
@@ -264,6 +145,7 @@ export function ChatPage({
   agent,
   codexThread = null,
   claudeThread = null,
+  pendingApprovals = 0,
 }: ChatPageProps): React.JSX.Element {
   const chat = useChatSession(agent);
   const transcriptMode = claudeThread != null;
@@ -602,6 +484,76 @@ export function ChatPage({
   const runningElapsed =
     chat.isAgentRunning && chat.runStartedAt !== null ? Date.now() - chat.runStartedAt : 0;
 
+  // UX workbench (audit): changed-file count for the Active Run Header —
+  // unique edit/write/patch paths in the visible conversation.
+  const changedFiles = useMemo(() => {
+    const messages = transcriptMode ? (transcript ?? []) : chat.messages;
+    const seen = new Set<string>();
+    for (const item of messages) {
+      if (item.message.role !== 'assistant') {
+        continue;
+      }
+      for (const block of item.message.content) {
+        if (block.type !== 'toolCall') {
+          continue;
+        }
+        const name = typeof block.name === 'string' ? block.name : '';
+        if (name !== 'edit' && name !== 'write' && name !== 'patch') {
+          continue;
+        }
+        const args =
+          typeof block.arguments === 'object' && block.arguments !== null
+            ? (block.arguments as Record<string, unknown>)
+            : {};
+        const rawPath =
+          typeof args['path'] === 'string'
+            ? args['path']
+            : typeof args['filePath'] === 'string'
+              ? args['filePath']
+              : typeof args['file'] === 'string'
+                ? args['file']
+                : null;
+        if (rawPath !== null && rawPath.length > 0) {
+          seen.add(rawPath);
+        }
+      }
+    }
+    return seen.size;
+  }, [transcriptMode, transcript, chat.messages]);
+
+  // Active Run Header actions: rerun resends the last user prompt; branch
+  // forks at the last assistant reply's tree node (pi only). Both are null
+  // when there is nothing to act on (or the view is read-only).
+  const rerunAction =
+    !transcriptMode && agent === 'pi' && !chat.isAgentRunning
+      ? (() => {
+          const lastUser = [...viewMessages].reverse().find((item) => item.message.role === 'user');
+          if (lastUser === undefined) {
+            return null;
+          }
+          const text = extractUserPrompt(lastUser);
+          return text.length > 0
+            ? (): void => {
+                void chat.sendPrompt(text);
+              }
+            : null;
+        })()
+      : null;
+  const branchAction =
+    !transcriptMode && agent === 'pi' && !chat.isAgentRunning
+      ? (() => {
+          const lastAssistant = [...viewMessages]
+            .reverse()
+            .find((item) => item.message.role === 'assistant');
+          const entryId = lastAssistant?.entryId;
+          return entryId !== undefined
+            ? (): void => {
+                void forkAtReply(entryId);
+              }
+            : null;
+        })()
+      : null;
+
   const copyReplyAsMarkdown = async (item: ChatMessage): Promise<void> => {
     try {
       const text = extractAssistantMarkdown(item.message);
@@ -634,6 +586,19 @@ export function ChatPage({
     <div className="chat-workspace">
       <PromptTimeline units={units} onJump={jumpToPrompt} />
       <section className="chatpage" data-shot="chat">
+      <ActiveRunHeader
+        rpcState={chat.rpcState}
+        isAgentRunning={chat.isAgentRunning}
+        elapsedMs={runningElapsed}
+        changedFiles={changedFiles}
+        pendingApprovals={transcriptMode ? 0 : pendingApprovals}
+        onAbort={() => {
+          void chat.abort();
+          window.dispatchEvent(new Event('pihub:run-aborted'));
+        }}
+        onRerun={rerunAction}
+        onBranch={branchAction}
+      />
       <div className="chatpage-scroll scroll-area" ref={scrollRef} onScroll={updateAtBottom}>
         {chat.error !== null ? (
           <div className="chatpage-error mono" role="alert">
@@ -785,37 +750,58 @@ export function ChatPage({
                         )
                       ) : null}
                       {(() => {
-                        // Tool blocks of this run collapse into one set
-                        // (P1-10 C3); thinking/text messages render inline.
-                        // P1-16 E: once the run settles, multiple assistant
-                        // messages fold — only the last stays visible.
-                        const toolItems = unit.rest.filter(isToolMessage);
-                        const nonToolItems = unit.rest.filter((item) => !isToolMessage(item));
-                        const canFoldProcess =
-                          nonToolItems.length > 1 && nonToolItems.every((item) => !item.isStreaming);
-                        const processItems = canFoldProcess ? nonToolItems.slice(0, -1) : [];
-                        const keptItems = canFoldProcess ? nonToolItems.slice(-1) : nonToolItems;
+                        // UX workbench (audit): Run Ledger — the process
+                        // items of this unit (tools, bash, thinking, extra
+                        // assistant frames) render as compact event rows;
+                        // only the FINAL answer keeps full layout. System
+                        // notices stay as their own divider rows.
+                        let finalIndex = -1;
+                        for (let index = unit.rest.length - 1; index >= 0; index -= 1) {
+                          const item = unit.rest[index];
+                          if (
+                            item !== undefined &&
+                            item.message.role === 'assistant' &&
+                            !isToolMessage(item)
+                          ) {
+                            finalIndex = index;
+                            break;
+                          }
+                        }
+                        const finalAnswer = finalIndex >= 0 ? (unit.rest[finalIndex] ?? null) : null;
+                        const processItems = unit.rest.filter(
+                          (item, index) =>
+                            index !== finalIndex && item.message.role !== 'notice',
+                        );
+                        const notices = unit.rest.filter(
+                          (item) => item.message.role === 'notice',
+                        );
+                        const statusFor =
+                          unitIndex === units.length - 1 ? thinkingStatus : 'done';
                         return (
                           <>
-                            {canFoldProcess ? (
-                              <AssistantProcessCollapse
-                                items={processItems}
-                                durationLabel={runDurationLabel(unit.rest)}
-                                onOpenFile={openFile}
-                              />
-                            ) : null}
-                            {keptItems.map((item) => (
+                            {notices.map((item) => (
                               <MessageItem
                                 key={item.key}
                                 message={item.message}
-                                isStreaming={item.isStreaming}
-                                thinkingStatus={
-                                  unitIndex === units.length - 1 ? thinkingStatus : 'done'
-                                }
+                                isStreaming={false}
+                                thinkingStatus={statusFor}
                                 onOpenFile={openFile}
                               />
                             ))}
-                            {toolItems.length > 0 ? <ToolCluster items={toolItems} onOpenFile={openFile} /> : null}
+                            <RunLedger
+                              items={processItems}
+                              streaming={chat.isAgentRunning}
+                              thinkingStatus={statusFor}
+                              onOpenFile={openFile}
+                            />
+                            {finalAnswer !== null ? (
+                              <MessageItem
+                                message={finalAnswer.message}
+                                isStreaming={finalAnswer.isStreaming}
+                                thinkingStatus={statusFor}
+                                onOpenFile={openFile}
+                              />
+                            ) : null}
                           </>
                         );
                       })()}

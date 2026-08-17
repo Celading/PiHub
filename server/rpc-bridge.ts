@@ -6,6 +6,12 @@ import type { ExtensionUiMethod, ExtensionUiRequest, ExtensionUiResponse, RpcRes
 const MAX_RESTARTS = 3;
 const RESTART_BACKOFF_MS = 1000;
 const RESPONSE_TIMEOUT_MS = 30_000;
+/** P2-2: bound the stdout framing buffer (a runaway pi with no newlines
+ *  must not grow memory without limit). */
+const MAX_STDOUT_BUFFER_BYTES = 1024 * 1024;
+/** P2-2: restart budget is a sliding 60s window — a long-stable process
+ *  resets it instead of counting restarts forever. */
+const RESTART_WINDOW_MS = 60_000;
 
 export type RpcCommand =
   | { type: 'prompt'; message: string; streamingBehavior?: 'steer' | 'followUp' }
@@ -71,7 +77,8 @@ export class RpcBridge extends EventEmitter {
   private pendingUi = new Map<string, PendingUiRequest>();
   private nextId = 1;
   private buffer = '';
-  private restartCount = 0;
+  /** P2-2: sliding window of crash timestamps (see RESTART_WINDOW_MS). */
+  private restartTimes: number[] = [];
   private stopped = false;
   /** SPRINT-2 B4: per-process monotonic event sequence (event envelope). */
   private sequence = 0;
@@ -124,6 +131,15 @@ export class RpcBridge extends EventEmitter {
     this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', (chunk: string) => {
       this.buffer += chunk;
+      // P2-2: a runaway pi (no newlines) must not grow the buffer unbounded.
+      if (this.buffer.length > MAX_STDOUT_BUFFER_BYTES) {
+        this.emit('error', new Error('pi stdout exceeded the framing buffer limit; restarting'));
+        this.buffer = '';
+        if (this.child === exitedChild) {
+          this.child.kill('SIGKILL'); // the exit handler owns the restart
+        }
+        return;
+      }
       let newlineIndex = this.buffer.indexOf('\n');
       while (newlineIndex !== -1) {
         const line = this.buffer.slice(0, newlineIndex);
@@ -152,13 +168,19 @@ export class RpcBridge extends EventEmitter {
         pending.reject(new Error(`pi process exited with code ${String(code)}`));
       }
       this.pending.clear();
-      if (!this.stopped && this.restartCount < MAX_RESTARTS) {
-        this.restartCount += 1;
-        setTimeout(() => {
-          if (!this.stopped) {
-            this.start();
-          }
-        }, RESTART_BACKOFF_MS * this.restartCount);
+      if (!this.stopped) {
+        // P2-2: sliding restart window — a long-stable process resets the
+        // budget instead of exhausting it forever.
+        const now = Date.now();
+        this.restartTimes = this.restartTimes.filter((t) => now - t < RESTART_WINDOW_MS);
+        this.restartTimes.push(now);
+        if (this.restartTimes.length <= MAX_RESTARTS) {
+          setTimeout(() => {
+            if (!this.stopped) {
+              this.start();
+            }
+          }, RESTART_BACKOFF_MS * this.restartTimes.length);
+        }
       }
     });
     this.child.on('error', (error) => {

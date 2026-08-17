@@ -3,8 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PipelineEngine, expandTemplate, matchOutput, type PipelineRunRecord } from './engine.js';
+import { PipelineEngine, expandTemplate, matchOutput, EXECUTION_LEASE_RESOURCE, type PipelineRunRecord } from './engine.js';
 import { createPipelineStore } from './store.js';
+import { LeaseGate } from './lease.js';
 import type { Pipeline } from '../../shared/types.js';
 import type { PipelineBridgeLike } from './engine.js';
 import type { RpcCommand } from '../rpc-bridge.js';
@@ -326,7 +327,7 @@ describe('pipeline engine', () => {
     expect(finalRun.steps[0]?.status).toBe('succeeded');
   });
 
-  it('SPRINT-2 B2: settle timeout marks the run uncertain instead of settled', async () => {
+  it('SPRINT-2 B2 + v1a: settle timeout marks the run uncertain and stops (no later step runs)', async () => {
     const bridge = new FakeBridge();
     tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
     const store = createPipelineStore(tempDir);
@@ -335,8 +336,13 @@ describe('pipeline engine', () => {
     const run = engine.start(samplePipeline(), 'x', {});
     // Never emit agent_settled — the timeout must fire.
     const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'uncertain');
-    expect(finalRun.steps[0]?.status).toBe('succeeded');
     expect(finalRun.status).toBe('uncertain');
+    // v1a: the timed-out step is NOT marked succeeded (we do not know the
+    // outcome), and no later step may execute — uncertain is terminal.
+    expect(finalRun.steps[0]?.status).toBe('running');
+    expect(finalRun.steps[1]?.status).toBe('pending');
+    expect(finalRun.steps[2]?.status).toBe('pending');
+    expect(bridge.sent.filter((c) => c.type === 'prompt')).toHaveLength(1);
   });
 
   it('records step setModel/setThinking sends without waiting for settle', async () => {
@@ -409,5 +415,284 @@ describe('pipeline engine', () => {
     bridge.settle();
     const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
     expect(finalRun.steps[0]?.output).toContain('legacy output');
+  });
+
+  it('v1a: a second run is rejected while one is active (run serialization)', async () => {
+    const oneStep = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const runA = engine.start(oneStep, 'x', {});
+    // The engine drives one pi session and cannot attribute settle events per
+    // run — a second concurrent start must be rejected (v1a serialization).
+    expect(() => engine.start(oneStep, 'y', {})).toThrow(/another pipeline run is active/);
+    await tick(); // let run A register its settle listener before settling
+    bridge.settle();
+    const finalA = await waitForStatus(engine, runA.runId, (r) => r.status === 'completed');
+    expect(finalA.status).toBe('completed');
+    // Idle again → a new run is accepted.
+    expect(() => engine.start(oneStep, 'z', {})).not.toThrow();
+  });
+
+  it('v1a: abort racing the settle-waiter registration does not hang the run', async () => {
+    const pipeline = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    let runId = 'run-1';
+    // send resolves, then abort fires in the same microtask turn — before the
+    // engine registers its settle waiter. The waiter's synchronous status
+    // check must release it instead of hanging for the whole settle timeout.
+    bridge.send = (command: RpcCommand): Promise<RpcResponse> => {
+      bridge.sent.push(command);
+      if (command.type === 'prompt') {
+        queueMicrotask(() => {
+          engine.abort(runId);
+        });
+      }
+      return Promise.resolve({ type: 'response', command: command.type, success: true });
+    };
+    const run = engine.start(pipeline, 'x', {});
+    runId = run.runId;
+    const finalRun = await waitForStatus(engine, runId, (r) => r.status === 'aborted', 3000);
+    expect(finalRun.status).toBe('aborted');
+    expect(finalRun.steps[0]?.status).toBe('running');
+    expect(bridge.sent).toContainEqual({ type: 'abort' });
+  });
+
+  it('v1a: a match without nextOn* targets continues linearly (no silent truncation)', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Probe', type: 'prompt', prompt: 'probe', match: 'broken' },
+        { id: 's2', name: 'End', type: 'prompt', prompt: 'end' },
+      ],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(pipeline, 'x', {});
+    await tick();
+    bridge.assistantText('all broken');
+    bridge.settle();
+    await tick();
+    bridge.assistantText('done');
+    bridge.settle();
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const prompts = bridge.sent
+      .filter((c) => c.type === 'prompt')
+      .map((c) => (c as { message: string }).message);
+    expect(prompts).toEqual(['probe', 'end']);
+    expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
+  });
+
+  it('v1a: a match whose branch target is missing continues linearly', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        {
+          id: 's1',
+          name: 'Probe',
+          type: 'prompt',
+          prompt: 'probe',
+          match: 'broken',
+          nextOnMatch: 'nonexistent',
+        },
+        { id: 's2', name: 'End', type: 'prompt', prompt: 'end' },
+      ],
+    });
+    const bridge = new FakeBridge();
+    const { engine } = await makeEngine(bridge);
+    const run = engine.start(pipeline, 'x', {});
+    await tick();
+    bridge.assistantText('all broken'); // match hits, but the target is missing → continue
+    bridge.settle();
+    await tick();
+    bridge.assistantText('done');
+    bridge.settle();
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const prompts = bridge.sent
+      .filter((c) => c.type === 'prompt')
+      .map((c) => (c as { message: string }).message);
+    expect(prompts).toEqual(['probe', 'end']);
+    expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
+  });
+
+  it('v1b: a completed run lands a typed receipt with step digests', async () => {
+    const bridge = new FakeBridge();
+    const { engine, storePath } = await makeEngine(bridge);
+    const run = engine.start(samplePipeline(), 'x', {});
+    await tick();
+    bridge.assistantText('plan text');
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.steps[1]?.status === 'awaiting-approval');
+    engine.approve(run.runId, true);
+    await tick();
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const store2 = createPipelineStore(storePath);
+    const receipt = store2.readRunReceipt(run.runId) as {
+      schemaVersion: string;
+      status: string;
+      steps: Array<{ stepId: string; outputDigest: string | null }>;
+    };
+    expect(receipt.schemaVersion).toBe('pihub-receipt-v2');
+    expect(receipt.status).toBe('completed');
+    expect(receipt.steps).toHaveLength(3);
+    expect(receipt.steps[0]?.outputDigest).toMatch(/^sha256:/);
+    expect(receipt.steps[0]?.stepId).toBe('s1');
+  });
+
+  it('v1b: an uncertain run also lands a terminal receipt', async () => {
+    const bridge = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const store = createPipelineStore(tempDir);
+    const engine = new PipelineEngine(bridge, store, 30);
+    const run = engine.start(samplePipeline(), 'x', {});
+    const finalRun = await waitForStatus(engine, run.runId, (r) => r.status === 'uncertain');
+    const receipt = store.readRunReceipt(run.runId) as { status: string };
+    expect(receipt.status).toBe('uncertain');
+    expect(finalRun.status).toBe('uncertain');
+  });
+
+  it('v1b: recover resumes an interrupted run without re-sending completed steps', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Plan', type: 'prompt', prompt: 'plan' },
+        { id: 's2', name: 'Exec', type: 'prompt', prompt: 'exec' },
+      ],
+    });
+    // Phase 1: engine A starts the run; step 1 completes, step 2 is left
+    // running (never settled) — then the "process dies" (engineA dropped).
+    const bridgeA = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const storeA = createPipelineStore(tempDir);
+    storeA.save(pipeline); // definitions live in the store (real path)
+    const engineA = new PipelineEngine(bridgeA, storeA, 5000);
+    const runA = engineA.start(pipeline, 'x', {});
+    await tick();
+    bridgeA.assistantText('plan done');
+    bridgeA.settle(); // step 1 succeeds; step 2 waits for settle forever
+    await waitForStatus(engineA, runA.runId, (r) => r.steps[1]?.status === 'running');
+
+    // Phase 2: engine B on the same store recovers the run.
+    const bridgeB = new FakeBridge();
+    const engineB = new PipelineEngine(bridgeB, storeA, 5000);
+    engineB.recover();
+    const recovered = engineB.getRun(runA.runId);
+    expect(recovered).toBeDefined();
+    expect(recovered?.status).toBe('running');
+    expect(recovered?.steps[0]?.status).toBe('succeeded');
+    // step 1 must NOT be re-sent — only step 2's prompt arrives.
+    await tick();
+    expect(
+      bridgeB.sent
+        .filter((c) => c.type === 'prompt')
+        .map((c) => (c as { message: string }).message),
+    ).toEqual(['exec']);
+    bridgeB.assistantText('exec done');
+    bridgeB.settle();
+    const finalRun = await waitForStatus(engineB, runA.runId, (r) => r.status === 'completed');
+    expect(finalRun.steps.map((s) => s.status)).toEqual(['succeeded', 'succeeded']);
+  });
+
+  it('v1c: a second engine on the same lease base cannot start a run', async () => {
+    const pipeline = samplePipeline({
+      steps: [{ id: 's1', name: 'Go', type: 'prompt', prompt: 'work' }],
+    });
+    const bridgeA = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const storeA = createPipelineStore(tempDir);
+    const gate = new LeaseGate(tempDir);
+    const engineA = new PipelineEngine(bridgeA, storeA, 5000, gate);
+    const runA = engineA.start(pipeline, 'x', {});
+    // Second engine (different bridge, same store + gate): the execution
+    // lease is held by run-1 → conflict.
+    const bridgeB = new FakeBridge();
+    const engineB = new PipelineEngine(bridgeB, createPipelineStore(tempDir), 5000, gate);
+    expect(() => {
+      engineB.start(pipeline, 'y', {});
+    }).toThrow(/execution lease conflict/);
+    // Finish run A: the lease is released exactly at the terminal state.
+    await tick();
+    bridgeA.settle();
+    await waitForStatus(engineA, runA.runId, (r) => r.status === 'completed');
+    expect(gate.status(EXECUTION_LEASE_RESOURCE)).toBeNull();
+    // Now B can start a run.
+    const runB = engineB.start(pipeline, 'z', {});
+    expect(runB).toBeDefined();
+  });
+
+  it('v1c: recover re-acquires the execution lease (same-owner takeover)', async () => {
+    const pipeline = samplePipeline({
+      steps: [
+        { id: 's1', name: 'Plan', type: 'prompt', prompt: 'plan' },
+        { id: 's2', name: 'Exec', type: 'prompt', prompt: 'exec' },
+      ],
+    });
+    // Phase 1: engine A runs with a lease gate; step 1 completes, step 2 is
+    // left running — then the "process dies" (engineA dropped, lease file
+    // still live with owner run-1).
+    const bridgeA = new FakeBridge();
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-panel-engine-test-'));
+    const storeA = createPipelineStore(tempDir);
+    storeA.save(pipeline);
+    const engineA = new PipelineEngine(bridgeA, storeA, 5000, new LeaseGate(tempDir));
+    const runA = engineA.start(pipeline, 'x', {});
+    await tick();
+    bridgeA.assistantText('plan done');
+    bridgeA.settle();
+    await waitForStatus(engineA, runA.runId, (r) => r.steps[1]?.status === 'running');
+
+    // Phase 2: engine B recovers; the same owner (run-1) takes over the lease.
+    const bridgeB = new FakeBridge();
+    const engineB = new PipelineEngine(bridgeB, storeA, 5000, new LeaseGate(tempDir));
+    engineB.recover();
+    const recovered = engineB.getRun(runA.runId);
+    expect(recovered).toBeDefined();
+    expect(recovered?.status).toBe('running');
+    // Only step 2's prompt is re-sent.
+    await tick();
+    expect(
+      bridgeB.sent
+        .filter((c) => c.type === 'prompt')
+        .map((c) => (c as { message: string }).message),
+    ).toEqual(['exec']);
+    bridgeB.assistantText('exec done');
+    bridgeB.settle();
+    await waitForStatus(engineB, runA.runId, (r) => r.status === 'completed');
+  });
+
+  it('v1c-completion: receipt carries checks, interventions and entropy', async () => {
+    const bridge = new FakeBridge();
+    const { engine, storePath } = await makeEngine(bridge);
+    const run = engine.start(samplePipeline(), 'x', { cwd: '/work/a' });
+    await tick();
+    bridge.assistantText('plan: rewrite sections');
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.steps[1]?.status === 'awaiting-approval');
+    engine.approve(run.runId, true);
+    await tick();
+    bridge.settle();
+    await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+    const store2 = createPipelineStore(storePath);
+    const receipt = store2.readRunReceipt(run.runId) as {
+      schemaVersion: string;
+      checks: Array<{ checkId: string; passed: boolean }>;
+      interventions: Array<{ kind: string; decision: string }>;
+      entropy: { toolVersions: { node: string }; cwd: string | null; retryCount: number };
+    };
+    expect(receipt.schemaVersion).toBe('pihub-receipt-v2');
+    // checks: template-replay passes with the exact context, no failed check
+    expect(receipt.checks.length).toBeGreaterThan(0);
+    expect(receipt.checks.map((c) => c.checkId)).toContain('template-replay');
+    expect(receipt.checks.every((c) => c.passed)).toBe(true);
+    // interventions: the approval gate is on the audit trail
+    expect(receipt.interventions).toContainEqual(
+      expect.objectContaining({ kind: 'approval', decision: 'approved' }),
+    );
+    // entropy: observable sources only, cwd from the run context
+    expect(receipt.entropy.toolVersions.node).toBe(process.version);
+    expect(receipt.entropy.cwd).toBe('/work/a');
+    expect(receipt.entropy.retryCount).toBe(0);
   });
 });

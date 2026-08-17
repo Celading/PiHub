@@ -7,6 +7,11 @@
   gap: var(--space-5);
   height: 100%;
   box-sizing: border-box;
+  /* The shell page wrapper is height:100% + min-height:0 (grid row
+     minmax(0,1fr)) — without a page-level scroll container the session
+     groups got COMPRESSED instead of scrolled (every other page already
+     has overflow-y:auto; this one was missed). */
+  overflow-y: auto;
 }
 
 .sessions-head {

@@ -1,6 +1,6 @@
 {
   "name": "@celading/pihub",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Local-first web panel for the pi coding agent — streaming chat, session trees, cost insights, pipelines; everything on your machine",
   "type": "module",
   "scripts": {

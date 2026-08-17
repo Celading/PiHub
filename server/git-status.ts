@@ -64,10 +64,14 @@ function kindOf(index: string, worktree: string): GitChange['kind'] | null {
 
 function runGit(root: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
+    // P2-2: a malicious repository's .gitattributes can point diff drivers /
+    // textconv at arbitrary executables — disable both, and clear the
+    // GIT_EXTERNAL_DIFF escape hatch, so git never runs repository-owned
+    // code while the panel reads status/diff.
     const child = spawn('git', args, {
       cwd: root,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_EXTERNAL_DIFF: '' },
     });
     let stdout = '';
     let stderr = '';
@@ -102,7 +106,11 @@ function runGit(root: string, args: string[], timeoutMs: number): Promise<string
 /** Read-only git status; null when the root is not a git repository. */
 export async function gitStatus(root: string): Promise<GitChange[] | null> {
   try {
-    const raw = await runGit(root, ['status', '--porcelain=v1', '-z'], 10_000);
+    const raw = await runGit(
+      root,
+      ['status', '--porcelain=v1', '-z', '--no-ext-diff', '--no-textconv'],
+      10_000,
+    );
     return parseGitStatusZ(raw);
   } catch (error) {
     if (error instanceof Error && /not a git repository/i.test(error.message)) {
@@ -118,7 +126,9 @@ export async function gitDiff(
   relPath: string,
   staged: boolean,
 ): Promise<string | null> {
-  const args = staged ? ['diff', '--cached', '--', relPath] : ['diff', '--', relPath];
+  const args = staged
+    ? ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--', relPath]
+    : ['diff', '--no-ext-diff', '--no-textconv', '--', relPath];
   try {
     return await runGit(root, args, 10_000);
   } catch (error) {

@@ -1,0 +1,102 @@
+/* UX workbench (audit): Active Run Header — one stable status line above
+   the chat stream; run actions live here instead of being scattered. */
+.active-run-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  background: var(--surface);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.active-run-project {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-run-sep {
+  color: var(--text-placeholder);
+  flex-shrink: 0;
+}
+
+.active-run-model {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-run-state {
+  color: var(--text-placeholder);
+  flex-shrink: 0;
+}
+
+.active-run-state[data-running='true'] {
+  color: var(--primary);
+}
+
+.active-run-header[data-running='true'] .active-run-state::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: var(--space-1);
+  border-radius: 50%;
+  background-color: var(--primary);
+  animation: active-run-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes active-run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.active-run-files {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.active-run-approval {
+  color: var(--status-error);
+  border: var(--border-thin) solid var(--status-error);
+  padding: 0 var(--space-1);
+  flex-shrink: 0;
+}
+
+.active-run-spacer {
+  flex: 1;
+}
+
+.active-run-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: var(--border-thin) solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+}
+
+.active-run-action:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.active-run-action[data-danger] {
+  color: var(--status-error);
+}
+
+.active-run-action[data-danger]:hover {
+  background-color: rgb(220 50 47 / 0.08);
+}

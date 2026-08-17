@@ -426,6 +426,7 @@ export function App(): React.JSX.Element {
               agent={agent}
               codexThread={codexThread}
               claudeThread={claudeThread}
+              pendingApprovals={extensionUi.dialogs.length}
               onSessionChanged={handleChatSessionChanged}
             />
           </div>

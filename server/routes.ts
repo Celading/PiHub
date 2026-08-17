@@ -1,5 +1,6 @@
 import { readFile, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
+import { lookup } from 'node:dns/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +48,7 @@ import type { AgentMessage } from '../shared/types.js';
 import type { DemoShowcase } from './demo/showcase.js';
 import { collectPrompts } from './prompts.js';
 import { DEMO_RUNNING_ID } from './providers/mock-session-provider.js';
-import type { RpcResponse, PiCommand } from '../shared/types.js';
+import type { PipelineRunRecord, RpcResponse, PiCommand } from '../shared/types.js';
 import type { SessionStore } from './sessions.js';
 import { parseSessionFile } from './sessions.js';
 import { recentFileActions } from './recent-files.js';
@@ -68,6 +69,64 @@ const promptImageSchema = z.object({
   data: z.string(),
   mimeType: z.string().optional(),
 });
+
+/* ---- P2-2: SSRF guard for /api/models/fetch ---- */
+
+/** True for loopback / private / link-local / metadata IPv4 or IPv6. */
+export function isPrivateIp(ip: string): boolean {
+  if (
+    ip.startsWith('127.') ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    ip.startsWith('169.254.') ||
+    ip.startsWith('0.') ||
+    ip === '::1' ||
+    ip.startsWith('fe80:') ||
+    ip.startsWith('fc') ||
+    ip.startsWith('fd')
+  ) {
+    return true;
+  }
+  const m = /^172\.(\d+)\./u.exec(ip);
+  if (m !== null) {
+    const second = Number(m[1]);
+    if (second >= 16 && second <= 31) {
+      return true; // 172.16.0.0/12
+    }
+  }
+  return false;
+}
+
+/**
+ * P2-2: /api/models/fetch must never send the channel API key to a
+ * non-public host (SSRF). Resolves the hostname and rejects when any
+ * address is loopback/private/link-local (covers cloud metadata
+ * 169.254.169.254). DNS-rebinding is bounded: the lookup happens right
+ * before the fetch and the fetch uses the same hostname.
+ */
+export async function assertPublicUrl(rawUrl: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('invalid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('only http/https URLs are allowed');
+  }
+  if (parsed.hostname.length === 0) {
+    throw new Error('missing hostname');
+  }
+  const addresses = await lookup(parsed.hostname, { all: true });
+  if (addresses.length === 0) {
+    throw new Error(`no addresses for ${parsed.hostname}`);
+  }
+  for (const { address } of addresses) {
+    if (isPrivateIp(address)) {
+      throw new Error(`blocked non-public host: ${parsed.hostname}`);
+    }
+  }
+}
 
 const promptBodySchema = z.object({
   message: z.string().min(1).max(32_000),
@@ -303,6 +362,12 @@ export function createRouter(
     res.json({ mode });
   });
 
+  // Demo driver surface (P2-2 red-line alignment): these routes exist ONLY in
+  // demo mode (demoMachine !== null) and drive the SYNTHETIC demo state
+  // machine — they are the showcase's own control plane, not outward API
+  // writes. Every outward write route still 503s in demo mode via
+  // writeDenied(); /api/demo/* is the documented exemption and never touches
+  // real sessions or real pi.
   if (demoMachine !== null) {
     router.get('/api/demo/state', (_req, res) => {
       // The showcase player supersedes the step-machine for the scripted
@@ -1459,6 +1524,8 @@ export function createRouter(
       headers['authorization'] = `Bearer ${apiKey}`;
     }
     try {
+      // P2-2: never send the channel API key to a non-public host.
+      await assertPublicUrl(url);
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
       if (!response.ok) {
         res.status(502).json({ error: `provider returned HTTP ${String(response.status)}` });
@@ -1538,7 +1605,8 @@ export function createRouter(
       res.status(503).json({ error: 'pipelines unavailable' });
       return;
     }
-    res.json({ runs: pipelineStore.readRunLog(req.params.id) });
+    // v1b: serve typed receipts instead of the write-only aggregate history.
+    res.json({ runs: pipelineStore.listRunReceipts(req.params.id) });
   });
 
   router.post('/api/pipelines/run', async (req, res) => {
@@ -1577,7 +1645,15 @@ export function createRouter(
     } catch {
       // session context unavailable; empty vars stay untouched in templates
     }
-    const run = pipelineEngine.start(pipeline, body.data.input ?? '', context);
+    let run: PipelineRunRecord;
+    try {
+      run = pipelineEngine.start(pipeline, body.data.input ?? '', context);
+    } catch {
+      // v1a serialization: the engine drives one pi session and refuses a
+      // second concurrent run.
+      res.status(409).json({ error: 'another pipeline run is active' });
+      return;
+    }
     res.json({ run });
   });
 

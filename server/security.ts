@@ -104,37 +104,78 @@ export function createSecurityGate(): SecurityGate {
   return { token, isAuthorized, middleware };
 }
 
+/** v1c-completion: sensitive-read prefixes that must present the control
+ *  token — full-content session / adapter-history / git-diff / file-list /
+ *  prompt-index reads (audit P1-2: the allowlist used to miss them). */
+const SENSITIVE_READ_PREFIXES = [
+  '/api/sessions/',
+  '/api/claude/sessions/',
+  '/api/codex/sessions/',
+  '/api/zcode/sessions/',
+  '/api/atomcode/sessions',
+  '/api/codex/messages',
+  '/api/prompts',
+  '/api/git/diff',
+  '/api/files',
+] as const;
+
+const SENSITIVE_READ_EXACT = [
+  '/api/models-config',
+  '/api/file/preview',
+  '/api/rpc/messages',
+  '/api/rpc/entries',
+  '/api/rpc/tree',
+  '/api/events',
+] as const;
+
 /** Routes that must present the control token (writes + sensitive reads). */
 export function requiresToken(req: Request): boolean {
   const p = req.path;
   if (req.method !== 'GET' && !p.startsWith('/api/demo/')) {
-    // demo write routes keep their own 503 guards; everything else that
-    // mutates state needs the token.
+    // /api/demo/* is the demo-only driver surface (synthetic data, its own
+    // control plane — see routes.ts); everything else that mutates state
+    // needs the token.
     if (p.startsWith('/api/')) {
       return true;
     }
   }
   // Sensitive reads: credentials-bearing model config, session files,
-  // file preview, bash history/tree state, and the SSE event stream
-  // (message content flows through it).
-  return (
-    p === '/api/models-config' ||
-    p === '/api/file/preview' ||
-    p === '/api/rpc/messages' ||
-    p === '/api/rpc/entries' ||
-    p === '/api/rpc/tree' ||
-    p === '/api/events'
-  );
+  // file preview, bash history/tree state, the SSE event stream, and
+  // (v1c-completion) full-content session/adapter/git/file/prompt reads.
+  if ((SENSITIVE_READ_EXACT as readonly string[]).includes(p)) {
+    return true;
+  }
+  return SENSITIVE_READ_PREFIXES.some((prefix) => p.startsWith(prefix));
 }
 
 /* ---- P2-02: LAN access modes + capability scope ---- */
 
 export type NetMode = 'local' | 'pair' | 'lan';
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+const LOOPBACK_HOSTS = new Set([
+  '127.0.0.1',
+  'localhost',
+  '::1',
+  '[::1]',
+  '::ffff:127.0.0.1', // IPv4-mapped IPv6 loopback (Node remoteAddress form)
+]);
 
 function isLoopbackHost(host: string): boolean {
-  return LOOPBACK_HOSTS.has(bareHost(host));
+  const trimmed = host.trim().toLowerCase();
+  // Full-address match first: bareHost() mangles bare IPv6 (::1 → '::').
+  if (LOOPBACK_HOSTS.has(trimmed)) {
+    return true;
+  }
+  const bare = bareHost(trimmed);
+  if (LOOPBACK_HOSTS.has(bare)) {
+    return true;
+  }
+  // IPv4-mapped IPv6 loopback (::ffff:127.0.0.1) — the tail is dotted IPv4.
+  if (bare.startsWith('::ffff:')) {
+    const ipv4 = bare.slice('::ffff:'.length);
+    return /^127\.\d+\.\d+\.\d+$/.test(ipv4);
+  }
+  return false;
 }
 
 /** Capability families a remote peer may unlock explicitly. */
@@ -191,6 +232,10 @@ export class LanGate {
   private readonly pairs = new Map<string, { createdAt: number; expiresAt: number }>();
   /** Remote sessions that completed pairing: token -> { expiresAt }. */
   private readonly sessions = new Map<string, { expiresAt: number }>();
+  /** P2-2: per-peer failed-pairing throttle (keyed by socket address). */
+  private readonly failedPairs = new Map<string, { count: number; lockedUntil: number }>();
+  private readonly maxFailedAttempts = 5;
+  private readonly lockMs = 60_000;
   /** Runtime-adjustable capability switches (local settings page). */
   caps: CapabilitySwitches;
   private readonly pairTtlMs: number;
@@ -211,15 +256,20 @@ export class LanGate {
     this.caps[key] = value;
   }
 
-  /** True when the request comes from a non-loopback host (remote peer). */
+  /** True when the request comes from a non-loopback peer (v1c-completion:
+   *  judged by socket.remoteAddress, NOT the forgeable Host header — audit
+   *  P1-3: a forged `Host: 127.0.0.1` used to bypass pairing on a
+   *  LAN-exposed instance). The Host allowlist in `middleware` stays as the
+   *  DNS-rebinding line of defense; remoteness is a socket fact. */
   isRemote(req: Request): boolean {
-    const host = req.headers.host;
-    return typeof host !== 'string' || host.length === 0 || !isLoopbackHost(host);
+    const address = req.socket.remoteAddress;
+    return typeof address !== 'string' || address.length === 0 || !isLoopbackHost(address);
   }
 
   /** Generates a one-time pairing code (remote unlock). */
   createPairCode(): string {
-    const code = randomBytes(4).toString('hex');
+    // P2-2: 128-bit entropy (32-bit was guessable within a TTL window).
+    const code = randomBytes(16).toString('hex');
     const now = Date.now();
     this.pairs.set(code, { createdAt: now, expiresAt: now + this.pairTtlMs });
     // Keep the map small: prune expired codes.
@@ -259,8 +309,14 @@ export class LanGate {
     // In local mode this can only happen for explicitly allowlisted hosts
     // (lan-like) — pairing is still required.
     if (req.path.startsWith('/api/')) {
+      // P2-2: throttle repeated failed pairings per peer (brute force).
+      if (this.isLocked(req)) {
+        res.status(429).json({ error: 'too many failed pairing attempts' });
+        return;
+      }
       const pair = req.query['pair'];
       if (typeof pair !== 'string' || !this.validate(pair)) {
+        this.recordFailure(req);
         res.status(403).json({ error: 'remote access requires pairing' });
         return;
       }
@@ -275,6 +331,34 @@ export class LanGate {
       }
     }
     next();
+  }
+
+  /** P2-2: true when this peer is inside its failed-pairing lockout. */
+  private isLocked(req: Request): boolean {
+    const address = req.socket.remoteAddress ?? 'unknown';
+    const entry = this.failedPairs.get(address);
+    return entry !== undefined && entry.lockedUntil > Date.now();
+  }
+
+  /** P2-2: counts one failed pairing; locks the peer after the threshold. */
+  private recordFailure(req: Request): void {
+    const address = req.socket.remoteAddress ?? 'unknown';
+    const now = Date.now();
+    const entry = this.failedPairs.get(address);
+    const count =
+      entry !== undefined && entry.lockedUntil <= now ? entry.count + 1 : 1;
+    this.failedPairs.set(address, {
+      count,
+      lockedUntil: count >= this.maxFailedAttempts ? now + this.lockMs : 0,
+    });
+    // Keep the map bounded: prune long-idle peers.
+    if (this.failedPairs.size > 1000) {
+      for (const [key, value] of this.failedPairs) {
+        if (value.count === 0 || value.lockedUntil <= now) {
+          this.failedPairs.delete(key);
+        }
+      }
+    }
   }
 
   /** Validates a pair code / session token; expires and rotates cleanly. */
