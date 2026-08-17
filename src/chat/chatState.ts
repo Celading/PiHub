@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { AgentMessage, RpcState, RpcStreamEvent } from '../../shared/types.js';
 import { api, type PromptImage } from '../api/client.js';
 import { eventsUrl } from '../api/controlToken.js';
@@ -301,7 +301,13 @@ export function useChatSession(agent: PanelAgent): ChatSession {
   // the streamed showcase events fill it in). In codex mode the messages
   // come from the codex adapter (rollout history + live turns), so switching
   // agents or refreshing keeps the full conversation visible.
+  // P1-08e: stale-load guard — rapid session switching can fire several
+  // reloads; only the newest request may dispatch, older ones drop their
+  // result instead of blanking/replacing the freshly loaded conversation.
+  const reloadSeq = useRef(0);
   const reload = useCallback(async (): Promise<void> => {
+    const seq = reloadSeq.current + 1;
+    reloadSeq.current = seq;
     try {
       let messagesRes: { messages: unknown[] };
       let stateRes: RpcState | null = null;
@@ -333,12 +339,18 @@ export function useChatSession(agent: PanelAgent): ChatSession {
           }
         });
       }
+      if (reloadSeq.current !== seq) {
+        return; // a newer reload superseded this one — drop stale data
+      }
       dispatch({
         type: 'reset',
         messages: chatMessages,
         rpcState: agent === 'codex' ? null : stateRes,
       });
     } catch (error) {
+      if (reloadSeq.current !== seq) {
+        return;
+      }
       dispatch({
         type: 'error',
         error: error instanceof Error ? error.message : String(error),

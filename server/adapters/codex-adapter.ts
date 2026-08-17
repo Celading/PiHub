@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
@@ -120,6 +120,11 @@ function messageText(payload: {
  * assistant) — system/developer frames are skipped, so the chat shows only
  * real user prompts and assistant replies (plus tool frames when present).
  */
+// mtime-keyed parse cache: switch_session + getMessages run on every codex
+// record navigation — the extraction must not re-read and re-parse the
+// rollout each time (multi-MB files made record loading very slow).
+const rolloutMessagesCache = new Map<string, { mtimeMs: number; messages: AgentMessage[] | null }>();
+
 export async function loadRolloutMessages(threadId: string): Promise<AgentMessage[] | null> {
   // Direct file-name lookup (rollout names embed the thread id) — no full
   // store parse, so resuming a codex thread stays fast.
@@ -127,14 +132,25 @@ export async function loadRolloutMessages(threadId: string): Promise<AgentMessag
   if (file === null) {
     return null;
   }
-  let content: string;
+  let info;
   try {
-    content = await readFile(file, 'utf8');
+    info = await stat(file);
   } catch {
     return null;
   }
+  const cached = rolloutMessagesCache.get(file);
+  if (cached !== undefined && cached.mtimeMs === info.mtimeMs) {
+    return cached.messages;
+  }
+  // Bounded read: resumed threads can have multi-hundred-MB rollouts that
+  // blow the V8 string limit when read whole — stream chunks and stop at the
+  // cap (the conversation head is enough for the chat view).
+  const lines = await readRolloutLines(file);
+  if (lines === null) {
+    return null;
+  }
   const out: AgentMessage[] = [];
-  for (const line of content.split('\n')) {
+  for (const line of lines) {
     if (line.trim().length === 0) {
       continue;
     }
@@ -180,7 +196,45 @@ export async function loadRolloutMessages(threadId: string): Promise<AgentMessag
         : { role: 'assistant', content: [{ type: 'text', text }], timestamp: ts },
     );
   }
+  rolloutMessagesCache.set(file, { mtimeMs: info.mtimeMs, messages: out });
   return out;
+}
+
+/** Read a rollout file line-by-line in chunks, capped at MAX_ROLLOUT_BYTES
+ *  (avoids the V8 string-length limit on huge files; partial last line is
+ *  dropped). Returns null on read errors. */
+const MAX_ROLLOUT_BYTES = 64 * 1024 * 1024;
+
+async function readRolloutLines(file: string): Promise<string[] | null> {
+  const { createReadStream } = await import('node:fs');
+  return new Promise((resolve) => {
+    const stream = createReadStream(file, { encoding: 'utf8', highWaterMark: 1024 * 1024 });
+    let collected = '';
+    let done = false;
+    const finish = (lines: string[] | null): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      resolve(lines);
+    };
+    stream.on('data', (chunk: string | Buffer) => {
+      collected += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      if (collected.length >= MAX_ROLLOUT_BYTES) {
+        stream.destroy();
+        // cut the trailing partial line
+        const cut = collected.slice(0, MAX_ROLLOUT_BYTES);
+        const lastNewline = cut.lastIndexOf('\n');
+        finish(lastNewline >= 0 ? cut.slice(0, lastNewline).split('\n') : []);
+      }
+    });
+    stream.on('end', () => {
+      finish(collected.split('\n'));
+    });
+    stream.on('error', () => {
+      finish(null);
+    });
+  });
 }
 
 export class CodexAdapter extends EventEmitter implements AgentAdapter {

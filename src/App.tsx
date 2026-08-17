@@ -44,6 +44,10 @@ export function App(): React.JSX.Element {
   const cycleTheme = useCallback((): void => {
     setTheme((current) => nextTheme(current));
   }, []);
+  // Right workbench visibility — shared by the TabBar toggle and AppShell.
+  const [rightOpen, setRightOpen] = useState(true);
+  /** Claude transcript to render read-only in the chat (sidebar "open"). */
+  const [claudeThread, setClaudeThread] = useState<{ sessionId: string; label: string } | null>(null);
   const [view, setView] = useState<View>('chat');
   // Which agent the chat view talks to — pi (RPC) or codex (exec adapter).
   const [agent, setAgent] = useState<PanelAgent>('pi');
@@ -142,6 +146,20 @@ export function App(): React.JSX.Element {
       void newDraftTab();
     },
     [newDraftTab],
+  );
+
+  /** Open a claude transcript from the sidebar in a labeled read-only tab. */
+  const handleOpenClaudeSession = useCallback(
+    (sessionId: string, label: string): void => {
+      setClaudeThread({ sessionId, label });
+      setAgent('pi');
+      const tab: ChatTab = { id: newTabId(), sessionFile: null, label };
+      setTabs((prev) => [...prev, tab]);
+      setActiveTabId(tab.id);
+      setView('chat');
+      bumpTab(tab.id);
+    },
+    [bumpTab],
   );
 
   /** Close a tab; never leave the workspace tabless (fresh draft tab). */
@@ -323,6 +341,10 @@ export function App(): React.JSX.Element {
             <TabBar
               tabs={tabs}
               activeId={active.id}
+              rightOpen={rightOpen}
+              onToggleRight={() => {
+                setRightOpen((value) => !value);
+              }}
               onSelect={(id) => {
                 const tab = tabs.find((item) => item.id === id);
                 if (tab !== undefined) {
@@ -337,9 +359,10 @@ export function App(): React.JSX.Element {
             {/* key remounts the chat whenever the tab, its epoch or the
                 agent changes — each combination gets a clean message list. */}
             <ChatPage
-              key={`${active.id}:${String(epoch)}:${agent}:${codexThread ?? ''}`}
+              key={`${active.id}:${String(epoch)}:${agent}:${codexThread ?? ''}:${claudeThread?.sessionId ?? ''}`}
               agent={agent}
               codexThread={codexThread}
+              claudeThread={claudeThread}
               onSessionChanged={handleChatSessionChanged}
             />
           </div>
@@ -407,7 +430,12 @@ export function App(): React.JSX.Element {
       }}
       onThemeToggle={cycleTheme}
       agent={agent}
+      rightOpen={rightOpen}
+      onToggleRight={() => {
+        setRightOpen((value) => !value);
+      }}
       onOpenCodexSession={handleOpenCodexSession}
+      onOpenClaudeSession={handleOpenClaudeSession}
     >
       {/* P1-17 F: each view switch replays the 3D entry (perspective
           rotateY) + rise-from-below with fade. */}
