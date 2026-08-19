@@ -670,38 +670,79 @@ export function createRouter(
     res.json({ providers });
   });
 
-  /* ---- P2-02: LAN access + capability scope ----
-   * Pairing codes and capability switches are managed locally; remote peers
-   * (non-loopback Host) are gated by the LanGate middleware and can only use
-   * capabilities the operator enabled. */
+  /* ---- P2-02/R0: LAN compatibility sessions + capability scope ----
+   * Bootstrap/session management is local-only. Remote peers receive only
+   * filtered mode/capability state and authenticate through an HttpOnly
+   * cookie; no credential is accepted from or returned to a URL. */
   const lanGate = options?.lanGate;
-  router.get('/api/net', (_req, res) => {
+  router.get('/api/net', (req, res) => {
     res.json(
       lanGate === undefined
-        ? { mode: 'local', caps: { remoteApprove: false, remotePrompt: false, remoteShell: false } }
-        : { mode: lanGate.mode, caps: lanGate.caps, pairs: lanGate.listPairs() },
+        ? {
+            mode: 'local',
+            caps: { remoteApprove: false, remotePrompt: false, remoteShell: false },
+            remote: false,
+            bootstraps: [],
+            sessions: [],
+          }
+        : lanGate.netState(req),
     );
   });
-  router.post('/api/net/pair', (_req, res) => {
+  router.post('/api/net/bootstrap', (_req, res) => {
     if (lanGate === undefined || lanGate.mode === 'local') {
-      res.status(503).json({ error: 'pairing disabled in local mode' });
+      res.status(503).json({ error: 'remote sessions are disabled in local mode' });
       return;
     }
-    res.json({ code: lanGate.createPairCode() });
+    res.json({ bootstrap: lanGate.createBootstrap() });
   });
-  router.post('/api/net/pair/revoke', (req, res) => {
+  router.post('/api/net/bootstrap/revoke', (req, res) => {
     if (lanGate === undefined) {
-      res.status(503).json({ error: 'pairing disabled' });
+      res.status(503).json({ error: 'remote sessions are disabled' });
       return;
     }
     const body = req.body as Record<string, unknown> | null;
-    const code = typeof body === 'object' && body !== null ? body['code'] : undefined;
-    if (typeof code !== 'string' || code.length === 0) {
-      res.status(400).json({ error: 'invalid pair code' });
+    const id = typeof body === 'object' && body !== null ? body['id'] : undefined;
+    if (typeof id !== 'string' || id.length === 0) {
+      res.status(400).json({ error: 'invalid bootstrap id' });
       return;
     }
-    lanGate.revoke(code);
+    res.json({ success: lanGate.revokeBootstrap(id) });
+  });
+  router.post('/api/net/session', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'remote sessions are disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const bootstrap = typeof body === 'object' && body !== null ? body['bootstrap'] : undefined;
+    const exchange = lanGate.exchangeBootstrap(req, bootstrap);
+    if (!exchange.ok) {
+      res.status(exchange.status).json({ error: exchange.error });
+      return;
+    }
+    res.setHeader('Set-Cookie', exchange.setCookie);
+    res.json({ success: true, session: exchange.session });
+  });
+  router.post('/api/net/session/logout', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'remote sessions are disabled' });
+      return;
+    }
+    res.setHeader('Set-Cookie', lanGate.endSession(req));
     res.json({ success: true });
+  });
+  router.post('/api/net/session/revoke', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'remote sessions are disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const id = typeof body === 'object' && body !== null ? body['id'] : undefined;
+    if (typeof id !== 'string' || id.length === 0) {
+      res.status(400).json({ error: 'invalid session id' });
+      return;
+    }
+    res.json({ success: lanGate.revokeSession(id) });
   });
   router.post('/api/net/caps', (req, res) => {
     if (lanGate === undefined) {
@@ -2340,7 +2381,7 @@ export function createRouter(
   });
 
   router.get('/api/events', (req, res) => {
-    hub.addClient(req, res);
+    hub.addClient(req, res, lanGate?.sessionAuthorization(req));
     req.on('close', () => {
       // Client disconnect is handled inside the hub via res 'close'.
     });

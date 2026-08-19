@@ -21,16 +21,36 @@ import './styles/tokens.css';
 import './styles/base.css';
 import { App } from './App';
 import { I18nProvider } from './i18n/I18nProvider.js';
+import {
+  initializePendingRemoteSession,
+  scrubLegacyRemoteCredentials,
+} from './api/remoteSession.js';
 
 const rootElement = document.getElementById('root');
 if (rootElement === null) {
   throw new Error('Root element #root not found');
 }
+const reactRoot = createRoot(rootElement);
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <I18nProvider>
-      <App />
-    </I18nProvider>
-  </StrictMode>,
-);
+async function boot(): Promise<void> {
+  scrubLegacyRemoteCredentials();
+  try {
+    // Electron passes a remote bootstrap out-of-band. Complete the one-time
+    // cookie exchange before any React child can issue an API request.
+    await initializePendingRemoteSession();
+  } catch {
+    // Keep the UI available so the operator can retry manually in Settings;
+    // never include bootstrap material in this diagnostic.
+    console.error('[pihub] remote session bootstrap failed');
+  }
+
+  reactRoot.render(
+    <StrictMode>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </StrictMode>,
+  );
+}
+
+void boot();

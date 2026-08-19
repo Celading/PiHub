@@ -18,7 +18,6 @@ import { useI18n } from './i18n/I18nProvider.js';
 import { findDraftTab, newTabId, type ChatTab } from './chat/tabs.js';
 import type { SessionDraft } from './chat/sessionDraft.js';
 import { NewSessionDialog, NEW_SESSION_REQUEST_EVENT } from './components/NewSessionDialog.js';
-import { initPairFromUrl } from './api/pairToken.js';
 import type { PanelAgent } from './chat/chatState.js';
 import type { SessionSummary } from '../shared/types.js';
 import { parseRoute, serializeRoute } from './router.js';
@@ -357,12 +356,6 @@ export function App(): React.JSX.Element {
   }, []);
 
   // Any new-session request (sidebar button etc.) opens the same dialog.
-  // Distributed mode: a remote-open URL may carry ?pair= — adopt it before
-  // any API call so the pairing code is presented everywhere.
-  useEffect(() => {
-    initPairFromUrl();
-  }, []);
-
   useEffect(() => {
     const onRequest = (): void => {
       setNewSessionOpen(true);

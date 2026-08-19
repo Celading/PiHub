@@ -1,9 +1,18 @@
-// Minimal production service worker: network-first with a small app-shell
-// fallback cache. Registered only in production builds (see main.tsx) so the
-// dev server's HMR is never intercepted.
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest'];
-const SHELL_CACHE = 'pihub-shell-v2';
-const ASSET_CACHE = 'pihub-assets-v1';
+// Minimal production service worker. Dynamic HTML stays network-only because
+// the local page may contain a per-process control token. Registered only in
+// production builds (see main.tsx) so the dev server's HMR is never intercepted.
+const APP_SHELL = ['/manifest.webmanifest'];
+const SHELL_CACHE = 'pihub-shell-v3';
+const ASSET_CACHE = 'pihub-assets-v2';
+
+function isCacheableResponse(response, url) {
+  const contentType = response.headers.get('content-type') ?? '';
+  return (
+    response.ok &&
+    url.origin === self.location.origin &&
+    !contentType.toLowerCase().includes('text/html')
+  );
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -35,6 +44,16 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) {
     return;
   }
+  // Cache-Control: no-store does not prevent an explicit Cache API write.
+  // Keep every document request network-only and also guard the two canonical
+  // HTML paths when fetched without a browser navigation destination.
+  if (
+    request.mode === 'navigate' || request.destination === 'document' ||
+    url.pathname === '/' || url.pathname === '/index.html'
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
   // Hashed build assets are immutable — cache-first with a network miss
   // falling back to the cache (P1-07: offline works after first load).
   if (url.pathname.startsWith('/assets/')) {
@@ -44,8 +63,10 @@ self.addEventListener('fetch', (event) => {
           return cached;
         }
         return fetch(request).then((response) => {
-          const copy = response.clone();
-          void caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
+          if (isCacheableResponse(response, url)) {
+            const copy = response.clone();
+            void caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
+          }
           return response;
         });
       }),
@@ -55,7 +76,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        if (url.origin === self.location.origin && request.destination !== 'document') {
+        if (isCacheableResponse(response, url)) {
           const copy = response.clone();
           void caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
         }
@@ -65,10 +86,6 @@ self.addEventListener('fetch', (event) => {
         caches.match(request).then((cached) => {
           if (cached !== undefined) {
             return cached;
-          }
-          // Offline fallback for navigations: serve the cached shell.
-          if (request.mode === 'navigate') {
-            return caches.match('/index.html').then((shell) => shell ?? Response.error());
           }
           return Response.error();
         }),

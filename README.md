@@ -39,8 +39,8 @@ no external UI source is reused.
 
 ### Local-first by design
 
-Your conversations stay on your machine. The panel binds to the loopback
-interface only, never reads your agent credentials, and operates no cloud
+Conversation history is stored on your machine. The panel binds to the loopback
+interface by default, never reads your agent credentials, and operates no cloud
 service of its own — the only outbound requests are the ones you explicitly
 configure (model catalog lookups and prompts to your chosen provider). See
 [`SECURITY.md`](SECURITY.md) for the exact boundary.
@@ -115,12 +115,12 @@ pihub
 
 Then open **http://127.0.0.1:3001** in your browser. `pihub` spawns
 `pi --mode rpc` itself — no terminal window needed afterwards. The panel
-binds to the loopback interface only.
+binds to the loopback interface by default.
 
 - To keep it always available, run `pihub` in a terminal tab or as a
   background service (e.g. `pihub &` / launchd).
 - Change the port with `PIHUB_PORT=4000 pihub` (the generic `PORT` env var
-  also works). The panel binds to the loopback interface only.
+  also works). The panel binds to the loopback interface by default.
 - The published bin serves its own frontend build from the package — you
   can run it from any directory (`npx @celading/pihub` works anywhere).
 
@@ -134,9 +134,17 @@ PIHUB_NET=lan PIHUB_ALLOWED_HOSTS=192.168.1.20 pihub   # allowlist LAN IPs
 
 Listening on all interfaces additionally needs `host = "0.0.0.0"` under a
 `[server]` section in `~/.pihub/config.toml` (the TOML parser only reads
-sections — options outside one are ignored). Remote peers are READ-ONLY
-until you enable capability switches in **Settings → Access**; pairing is
-required first. See the [manual](MANUAL.md) §12 for the full matrix.
+sections — options outside one are ignored). A local operator generates a
+one-use 64-hex bootstrap in **Settings → Access**; the remote browser submits
+it once in a POST body and receives a separate short-lived HttpOnly session
+cookie. No LAN credential is put in a URL, EventSource query, or Web Storage.
+Remote peers are READ-ONLY until you enable an individual prompt, shell, or
+approval capability.
+
+This direct HTTP LAN mode is compatibility-only and **not end-to-end
+encrypted**. Do not expose it to the public Internet or place it behind a
+proxy that hides the client/Host identity. See the [manual](MANUAL.md) §12
+for the full matrix and limits.
 
 ### Configuration & data home
 
@@ -248,14 +256,16 @@ public/    PWA manifest, icon, service worker
 
 ## Boundaries
 
-- **Localhost-only**: the panel listens on `127.0.0.1` / `localhost` only and
-  refuses other Host headers. Optional LAN access (`PIHUB_NET=pair` / `lan`)
-  is **off by default**; enabling it requires a one-time pairing code per
-  peer, and every remote capability (prompt / steer / delete / shell /
-  approval) has its own switch, all defaulting to off.
+- **Loopback-first**: the panel listens on `127.0.0.1` / `localhost` by
+  default and refuses non-allowlisted Host headers. Optional LAN access
+  (`PIHUB_NET=pair` / `lan`) is **off by default**; a 60-second one-use
+  bootstrap creates a separate HttpOnly session (maximum 15 minutes).
+  Prompt/steer, shell and approval capabilities are independent and default
+  to off; every other remote write remains denied.
 - **Control token**: every write route and every sensitive read route
   (model config, file preview, session state, SSE) requires a random
-  per-process token that the served page receives automatically.
+  per-process token that the served local page receives automatically.
+  EventSource authentication uses an HttpOnly cookie, never a query token.
 - **Never reads credentials**: `~/.pi/agent/auth.json` is never read or
   exposed by the panel. Custom channel API keys are stored only in your
   local `~/.pi/agent/models.json` and sent only to the provider you
