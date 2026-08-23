@@ -116,6 +116,15 @@
   color: var(--status-error);
 }
 
+.right-changes-source {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border-subtle);
+  color: var(--status-warning);
+  background-color: var(--surface-subtle);
+  font-size: 0.625rem;
+}
+
 /* per-file diff view */
 .right-changes-diff {
   flex: 1;

@@ -1,0 +1,134 @@
+.external-sessions {
+  margin: 0 0 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 6px;
+}
+
+.external-sessions-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.external-sessions-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.external-sessions-count {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.external-sessions-hint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 4px 0 8px;
+}
+
+.external-sessions-error {
+  font-size: 12px;
+  color: #c62828;
+}
+
+.external-sessions-empty {
+  font-size: 12px;
+  opacity: 0.6;
+  margin: 4px 0 0;
+}
+
+.external-sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.external-session {
+  display: grid;
+  grid-template-columns: 92px 96px minmax(80px, 160px) 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.external-session-agent,
+.external-live-agent {
+  font-weight: 600;
+}
+
+.external-session-agent[data-agent='dsh'],
+.external-live-agent[data-agent='dsh'] {
+  color: #7c3aed;
+}
+
+.external-session-agent[data-agent='codex'],
+.external-live-agent[data-agent='codex'] {
+  color: #10a37f;
+}
+
+.external-session-agent[data-agent='pi'],
+.external-live-agent[data-agent='pi'] {
+  color: #005fb8;
+}
+
+.external-session-id,
+.external-session-workspace,
+.external-session-time {
+  opacity: 0.65;
+}
+
+.external-session-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-sessions-live {
+  margin-top: 10px;
+  border-top: 1px dashed var(--border, #d9d9d9);
+  padding-top: 8px;
+}
+
+.external-sessions-live-label {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.external-sessions-live-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.external-live-line {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.external-live-role[data-role='user'] {
+  color: #005fb8;
+}
+
+.external-live-role[data-role='assistant'] {
+  color: #7c3aed;
+}
+
+.external-live-role[data-role='tool'] {
+  color: #b26a00;
+}
+
+.external-live-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

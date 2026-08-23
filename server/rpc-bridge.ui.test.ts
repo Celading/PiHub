@@ -12,6 +12,7 @@ import { RpcBridge } from './rpc-bridge.js';
 const FAKE_PI = `#!/usr/bin/env node
 import fs from 'node:fs';
 const LOG = process.env.FAKE_PI_LOG;
+fs.appendFileSync(LOG, JSON.stringify({ startup: true, argv: process.argv.slice(2) }) + '\\n');
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + '\\n');
 }
@@ -30,11 +31,62 @@ process.stdin.on('data', (chunk) => {
 });
 `;
 
-function makeBridge(): { bridge: RpcBridge; logFile: string; stop: () => void } {
+const RESTART_FAKE_PI = `#!/usr/bin/env node
+import fs from 'node:fs';
+const LOG = process.env.FAKE_PI_LOG;
+fs.appendFileSync(LOG, 'startup\\n');
+process.on('SIGTERM', () => {
+  setTimeout(() => process.exit(0), 80);
+});
+let buf = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+  buf += chunk;
+  let i;
+  while ((i = buf.indexOf('\\n')) !== -1) {
+    const line = buf.slice(0, i);
+    buf = buf.slice(i + 1);
+    const request = JSON.parse(line);
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({
+        type: 'response',
+        id: request.id,
+        command: request.type,
+        success: true,
+        data: { generation: 'current' },
+      }) + '\\n');
+    }, 160);
+  }
+});
+`;
+
+function makeBridge(viaNode = false): { bridge: RpcBridge; logFile: string; stop: () => void } {
   const dir = mkdtempSync(path.join(tmpdir(), 'pihub-extui-'));
   const piFile = path.join(dir, 'fake-pi.mjs');
   const logFile = path.join(dir, 'responses.log');
   writeFileSync(piFile, FAKE_PI);
+  chmodSync(piFile, 0o755);
+  process.env.FAKE_PI_LOG = logFile;
+  const bridge = viaNode
+    ? new RpcBridge(process.execPath, dir, {
+        baseArgs: ['--jitless', piFile],
+      })
+    : new RpcBridge(piFile, dir);
+  bridge.start();
+  return {
+    bridge,
+    logFile,
+    stop: () => {
+      bridge.stop();
+    },
+  };
+}
+
+function makeRestartBridge(): { bridge: RpcBridge; logFile: string; stop: () => void } {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pihub-restart-'));
+  const piFile = path.join(dir, 'fake-pi.mjs');
+  const logFile = path.join(dir, 'restarts.log');
+  writeFileSync(piFile, RESTART_FAKE_PI);
   chmodSync(piFile, 0o755);
   process.env.FAKE_PI_LOG = logFile;
   const bridge = new RpcBridge(piFile, dir);
@@ -100,8 +152,11 @@ describe('extension UI protocol bridge (P1-01)', () => {
     // Answer the select dialog with a value.
     const ok = bridge.sendUiResponse({ id: 'sel-1', value: 'b' });
     expect(ok).toBe(true);
-    await waitFor(() => (existsSync(logFile) ? readFileSync(logFile, 'utf8') : undefined));
-    const log = readFileSync(logFile, 'utf8');
+    const log = await waitFor(() => {
+      if (!existsSync(logFile)) return undefined;
+      const content = readFileSync(logFile, 'utf8');
+      return content.includes('"type":"extension_ui_response"') ? content : undefined;
+    });
     expect(log).toContain('"type":"extension_ui_response"');
     expect(log).toContain('"id":"sel-1"');
     expect(log).toContain('"value":"b"');
@@ -116,8 +171,61 @@ describe('extension UI protocol bridge (P1-01)', () => {
     expect(bridge.sendUiResponse({ id: 'nope', value: 'x' })).toBe(false);
     const ok = bridge.sendUiResponse({ id: 'sel-1', cancelled: true });
     expect(ok).toBe(true);
-    await waitFor(() => (existsSync(logFile) ? readFileSync(logFile, 'utf8') : undefined));
-    const log = readFileSync(logFile, 'utf8');
+    const log = await waitFor(() => {
+      if (!existsSync(logFile)) return undefined;
+      const content = readFileSync(logFile, 'utf8');
+      return content.includes('"cancelled":true') ? content : undefined;
+    });
     expect(log).toContain('"cancelled":true');
+  });
+
+  it('runs a JavaScript Pi CLI through Node with the configured base arguments', async () => {
+    ctx = makeBridge(true);
+    const logFile = ctx.logFile;
+    await waitFor(() => (existsSync(logFile) ? readFileSync(logFile, 'utf8') : undefined));
+    const firstLine = readFileSync(logFile, 'utf8').split('\n')[0];
+    expect(firstLine).toBeDefined();
+    const startup = JSON.parse(firstLine ?? '{}') as {
+      startup?: boolean;
+      argv?: string[];
+    };
+    expect(startup).toMatchObject({
+      startup: true,
+      argv: ['--mode', 'rpc'],
+    });
+  });
+
+  it('keeps replacement requests alive when the retired child exits later', async () => {
+    ctx = makeRestartBridge();
+    const bridge = ctx.bridge;
+    const logFile = ctx.logFile;
+    await waitFor(() => {
+      if (!existsSync(logFile)) return undefined;
+      return readFileSync(logFile, 'utf8').includes('startup') ? true : undefined;
+    });
+
+    bridge.restart();
+    await waitFor(() => {
+      if (!existsSync(logFile)) return undefined;
+      const startups = readFileSync(logFile, 'utf8').match(/startup/g)?.length ?? 0;
+      return startups >= 2 ? true : undefined;
+    });
+    const response = await bridge.send({ type: 'get_state' });
+
+    expect(response).toMatchObject({
+      command: 'get_state',
+      success: true,
+      data: { generation: 'current' },
+    });
+    expect(bridge.isRunning()).toBe(true);
+  });
+
+  it('waits for an RPC response instead of only observing child spawn', async () => {
+    ctx = makeRestartBridge();
+    const bridge = ctx.bridge;
+    const started = Date.now();
+    await bridge.waitReady(2000);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100);
+    expect(bridge.isRunning()).toBe(true);
   });
 });

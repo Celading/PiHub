@@ -7,6 +7,7 @@ export type Theme = 'light' | 'dark' | 'fog';
 export type SettingsSectionId =
   | 'general'
   | 'personal'
+  | 'piAgent'
   | 'models'
   | 'sessions'
   | 'permissions'
@@ -46,6 +47,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: 'general', icon: 'hico-gearshape' },
   { id: 'personal', icon: 'hico-sliders' },
+  { id: 'piAgent', icon: 'hico-bolt' },
   { id: 'models', icon: 'hico-cross-store' },
   { id: 'sessions', icon: 'hico-rectangle-stack' },
   { id: 'permissions', icon: 'hico-lock' },

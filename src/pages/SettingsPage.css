@@ -9,6 +9,11 @@
   box-sizing: border-box;
 }
 
+/* Settings is a management surface rather than an editorial headline surface. */
+.settings-page .panel-title {
+  font-family: var(--font-body);
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 12rem minmax(0, 1fr);
@@ -163,6 +168,19 @@
   align-items: center;
   padding: var(--space-2) var(--space-3);
   border-bottom: var(--border-thin) solid var(--border-subtle);
+}
+
+@media (max-width: 760px) {
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+  }
+
+  .setting-row .channel-input,
+  .setting-row select {
+    min-width: 9rem;
+    max-width: 48vw;
+  }
 }
 
 .setting-label {
@@ -570,4 +588,19 @@
 .system-prompt-saved {
   color: var(--status-ok);
   font-size: var(--text-xs);
+}
+
+/* P2-02: remote pairing-code input (read-only supervisor flow). */
+.pair-input {
+  flex: 1;
+  min-width: 160px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+.pair-input:focus {
+  outline: none;
+  border-color: var(--primary);
 }

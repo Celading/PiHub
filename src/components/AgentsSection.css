@@ -1,0 +1,92 @@
+.agents-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agents-row {
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.agents-row-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.agents-kind {
+  font-weight: 600;
+  min-width: 48px;
+}
+
+.agents-kind[data-kind='dsh'] {
+  color: #7c3aed;
+}
+
+.agents-kind[data-kind='codex'] {
+  color: #10a37f;
+}
+
+.agents-kind[data-kind='pi'] {
+  color: #005fb8;
+}
+
+.agents-status[data-ok='true'] {
+  color: #2e7d32;
+}
+
+.agents-status[data-ok='false'] {
+  color: #c62828;
+}
+
+.agents-version,
+.agents-lifecycle {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.agents-enable {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.agents-row-body {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.agents-binary {
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.agents-row-body .setting-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.agents-install-output {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: var(--code-bg, #f6f6f6);
+  border-radius: 4px;
+  font-size: 11px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

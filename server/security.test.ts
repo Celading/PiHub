@@ -200,6 +200,7 @@ describe('requiresToken (audit P1-2 — sensitive reads)', () => {
       '/api/git/diff',
       '/api/files',
       '/api/models-config',
+      '/api/pi-agent/settings',
       '/api/file/preview',
       '/api/rpc/messages',
       '/api/events',

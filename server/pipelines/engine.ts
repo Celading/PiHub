@@ -42,6 +42,19 @@ export interface PipelineBridgeLike {
    *  settle/output events from OTHER sessions are ignored, so concurrent
    *  runs cannot steal each other's events. */
   getSessionId?: () => string | null;
+  /** Run targeting (chosen folder): the bridge may respawn with a new cwd. */
+  getCwd?: () => string;
+  restart?: (cwd?: string) => void;
+  isRunning?: () => boolean;
+  waitReady?: (timeoutMs?: number) => Promise<void>;
+}
+
+/** Optional codex executor: prompt steps route here for agent=codex runs.
+ *  `prompt` resolves when the turn settles (codex spawns per prompt), so the
+ *  engine's bridge-based settle waiting is bypassed for codex runs. */
+export interface CodexRunExecutor {
+  prompt(message: string, opts?: { cwd?: string }): Promise<{ success: boolean; error?: string }>;
+  abort(): Promise<unknown>;
 }
 
 interface EngineEvents {
@@ -288,6 +301,7 @@ export class PipelineEngine extends EventEmitter {
     private readonly store: PipelineStore,
     private readonly settleTimeoutMs: number = DEFAULT_SETTLE_TIMEOUT_MS,
     private readonly leaseGate?: { lease(resource: string, owner: string, ttlMs?: number): Lease | null; release(lease: Lease): boolean },
+    private readonly codex?: CodexRunExecutor,
   ) {
     super();
   }
@@ -316,7 +330,12 @@ export class PipelineEngine extends EventEmitter {
    * pollute each other's waiters). Execution proceeds asynchronously and
    * emits 'run-change' on every state transition.
    */
-  start(pipeline: Pipeline, input: string, context: PipelineRunContext): PipelineRunRecord {
+  start(
+    pipeline: Pipeline,
+    input: string,
+    context: PipelineRunContext,
+    targeting?: { cwd?: string; agent?: 'pi' | 'codex' },
+  ): PipelineRunRecord {
     // v1a: reject a new start while any run is still active.
     for (const existing of this.runs.values()) {
       if (existing.status === 'running') {
@@ -340,6 +359,8 @@ export class PipelineEngine extends EventEmitter {
       pipelineName: pipeline.name,
       status: 'running',
       input,
+      ...(targeting?.cwd !== undefined && targeting.cwd.length > 0 ? { cwd: targeting.cwd } : {}),
+      ...(targeting?.agent !== undefined ? { agent: targeting.agent } : {}),
       startedAt: Date.now(),
       steps: pipeline.steps.map((step) => ({
         stepId: step.id,
@@ -454,11 +475,18 @@ export class PipelineEngine extends EventEmitter {
     run.status = 'aborted';
     run.finishedAt = Date.now();
     this.emitChange(run);
-    // SPRINT-2 B3: cancel the pi side too — previously only the in-memory
-    // waiter was released and pi kept running the prompt to completion.
-    void this.bridge.send({ type: 'abort' }).catch(() => {
-      // best effort: pi may already be idle
-    });
+    if (run.agent === 'codex') {
+      // SPRINT-2 B3 (codex analogue): cancel the adapter side too.
+      void this.codex?.abort().catch(() => {
+        // best effort
+      });
+    } else {
+      // SPRINT-2 B3: cancel the pi side too — previously only the in-memory
+      // waiter was released and pi kept running the prompt to completion.
+      void this.bridge.send({ type: 'abort' }).catch(() => {
+        // best effort: pi may already be idle
+      });
+    }
     // Release a pending settle wait; the loop then stops.
     const waiter = this.waiters.get(runId);
     if (waiter !== undefined) {
@@ -521,6 +549,23 @@ export class PipelineEngine extends EventEmitter {
       sessionName: context.sessionName ?? '',
       cwd: context.cwd ?? '',
     };
+    // Run targeting: a chosen folder on a pi run respawns the bridge with
+    // that cwd (codex runs pass the folder per prompt instead).
+    if (run.agent !== 'codex' && run.cwd !== undefined && this.bridge.getCwd !== undefined) {
+      if (this.bridge.getCwd() !== run.cwd) {
+        this.bridge.restart?.(run.cwd);
+        try {
+          if (this.bridge.waitReady !== undefined) {
+            await this.bridge.waitReady(10_000);
+          }
+        } catch {
+          run.status = 'failed';
+          run.finishedAt = Date.now();
+          this.emitChange(run);
+          return;
+        }
+      }
+    }
     const byId = new Map(pipeline.steps.map((step) => [step.id, step] as const));
     // v1b: rebuilt from persisted step states on resume — completed steps are
     // never re-sent (idempotent replay).
@@ -669,6 +714,18 @@ export class PipelineEngine extends EventEmitter {
               step.streamingBehavior === 'steer' || step.streamingBehavior === 'followUp'
                 ? step.streamingBehavior
                 : undefined;
+            if (run.agent === 'codex') {
+              // Codex runs spawn one exec per prompt; the promise resolves
+              // when the turn settles, so no bridge settle wait is needed.
+              if (this.codex === undefined) {
+                throw new Error('agent codex 未接线（executor 不可用）');
+              }
+              const sent = await this.codex.prompt(message, run.cwd !== undefined ? { cwd: run.cwd } : undefined);
+              if (!sent.success) {
+                throw new Error(sent.error ?? 'prompt 被 codex 拒绝');
+              }
+              break;
+            }
             const sent = await this.bridge.send({
               type: 'prompt',
               message,
@@ -697,6 +754,11 @@ export class PipelineEngine extends EventEmitter {
             const message = expandTemplate(step.prompt ?? '', vars);
             record.input = message;
             this.emitChange(run);
+            if (run.agent === 'codex') {
+              // codex exec has no steer surface — honest refusal instead of
+              // pretending the step ran.
+              throw new Error('agent codex 不支持 steer 步骤');
+            }
             const sent = await this.bridge.send({ type: 'steer', message });
             if (!sent.success) {
               throw new Error(sent.error ?? 'steer 被 pi 拒绝');
@@ -717,12 +779,18 @@ export class PipelineEngine extends EventEmitter {
             break;
           }
           case 'setModel': {
+            if (run.agent === 'codex') {
+              throw new Error('agent codex 不支持 setModel 步骤');
+            }
             if (step.model !== undefined) {
               await this.bridge.send({ type: 'set_model', provider: step.model.provider, modelId: step.model.id });
             }
             break;
           }
           case 'setThinking': {
+            if (run.agent === 'codex') {
+              throw new Error('agent codex 不支持 setThinking 步骤');
+            }
             await this.bridge.send({ type: 'set_thinking_level', level: step.thinkingLevel ?? '' });
             break;
           }

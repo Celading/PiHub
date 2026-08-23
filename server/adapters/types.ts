@@ -16,7 +16,7 @@ import type { RpcStreamEvent, RpcResponse, ExtensionUiRequest } from '../../shar
  */
 
 /** Which agent backend a session/message belongs to (for UI coloring). */
-export type AgentKind = 'pi' | 'codex' | 'atomcode' | 'zcode';
+export type AgentKind = 'pi' | 'codex' | 'dsh' | 'claude' | 'atomcode' | 'zcode';
 
 export interface AgentMeta {
   kind: AgentKind;
@@ -30,8 +30,8 @@ export interface AgentMeta {
 
 /** Minimal common command surface. Extension fields keep agent power. */
 export type AgentCommand =
-  | { type: 'prompt'; message: string; streamingBehavior?: 'steer' | 'followUp' }
-  | { type: 'steer'; message: string }
+  | { type: 'prompt'; message: string; streamingBehavior?: 'steer' | 'followUp'; cwd?: string }
+  | { type: 'steer'; message: string; cwd?: string }
   | { type: 'abort' }
   | { type: 'switch_session'; sessionId: string }
   | { type: 'set_model'; provider: string; modelId: string }

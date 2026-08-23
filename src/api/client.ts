@@ -22,6 +22,7 @@ import type { PromptRecord } from '../../server/prompts.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
 import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { controlTokenHeader } from './controlToken.js';
+import { withPair } from './pairToken.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -30,7 +31,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   for (const [name, value] of Object.entries(controlTokenHeader())) {
     headers.set(name, value);
   }
-  const response = await fetch(path, { ...init, headers });
+  // P2-02: remote peers present their pairing code as a query param.
+  const response = await fetch(withPair(path), { ...init, headers });
   const raw = await response.text();
   const parsed = (raw.length === 0 ? null : (JSON.parse(raw) as unknown)) as
     | T
@@ -71,6 +73,114 @@ export interface MessagesResponse {
   messages: unknown[];
 }
 
+/** Embedded dsh kernel settings surface (no credentials ever leave the server). */
+export interface DshSettingsInfo {
+  available: boolean;
+  dshVersion: string;
+  nodeVersion: string;
+  home: string | null;
+  provider: string | null;
+  model: string | null;
+  models: string[];
+  baseURL: string | null;
+  apiKeyEnv: string | null;
+  hasKey: boolean;
+  patchPath: string | null;
+}
+
+/** One external (terminal-side) agent session from the shared stream. */
+export interface ExternalSessionEntry {
+  agent: 'pi' | 'codex' | 'dsh';
+  sessionId: string;
+  workspace: string;
+  lastActivity: number;
+  lastText: string;
+  file: string;
+}
+
+/** One dsh session row from the auto-discovered history. */
+export interface DshSessionRow {
+  sessionId: string;
+  updatedAt: number;
+  cwd: string;
+  running: boolean;
+  agentPreset?: string;
+  source: 'web' | 'files';
+}
+
+/** One managed agent row (panel-side startup/config). */
+export interface AgentManageRow {
+  kind: 'pi' | 'codex' | 'dsh' | 'claude';
+  available: boolean;
+  enabled: boolean;
+  running: boolean;
+  binary: string | null;
+  version: string | null;
+  lifecycle: string;
+  config: { binary?: string; enabled?: boolean };
+}
+
+/** One-click install status for an agent. */
+export interface AgentInstallStatus {
+  plan: { command: string[]; label: string } | null;
+  running: boolean;
+  exit: number | null;
+  output: string;
+}
+
+export interface PiAgentSettingsInfo {
+  settings: Record<string, unknown>;
+  workspace: string | null;
+  agentHome: string;
+  settingsFile: string;
+  nodeVersion: string;
+  privateSpace: boolean;
+  runtime: {
+    kind: 'pi';
+    available: boolean;
+    binary: string | null;
+    version: string | null;
+    sessionDir: string | null;
+    home: string | null;
+  } | null;
+  managed: AgentManageRow | null;
+}
+
+export type RuntimeCapabilityStatus = 'ready' | 'degraded' | 'blocked' | 'unavailable';
+export type ServiceTargetId = 'builtin-pihub' | 'local-service' | 'remote-pihub' | 'nearby-pihub';
+
+export interface RuntimeEngineCapability {
+  engine: 'pi' | 'dsh';
+  label: string;
+  status: RuntimeCapabilityStatus;
+  available: boolean;
+  ready: boolean;
+  canCreateSession: boolean;
+  checks: string[];
+  reason: string | null;
+}
+
+export interface RuntimeServiceCapability {
+  id: ServiceTargetId;
+  kind: 'builtin' | 'local' | 'remote' | 'nearby';
+  label: string;
+  status: RuntimeCapabilityStatus;
+  sessionCreation: 'supported' | 'configuration-required' | 'connection-required';
+  canCreateSession: boolean;
+  reason: string | null;
+  endpoint: string | null;
+}
+
+export interface RuntimeCapabilitiesResponse {
+  mode: 'production' | 'debug' | 'demo';
+  checkedAt: string;
+  engines: RuntimeEngineCapability[];
+  services: RuntimeServiceCapability[];
+  defaultEngine: 'pi';
+  fallbackEngine: 'dsh';
+  debug: Record<string, unknown> | null;
+}
+
 export interface PromptImage {
   type: 'image';
   data: string;
@@ -92,6 +202,23 @@ export const api = {
 
   settings(): Promise<Record<string, unknown>> {
     return request<Record<string, unknown>>('/api/settings');
+  },
+
+  piAgentSettings(): Promise<PiAgentSettingsInfo> {
+    return request<PiAgentSettingsInfo>('/api/pi-agent/settings');
+  },
+
+  savePiAgentSettings(
+    settings: Record<string, unknown>,
+  ): Promise<{
+    success: boolean;
+    settings: Record<string, unknown>;
+    reload: 'reloaded' | 'deferred';
+  }> {
+    return request('/api/pi-agent/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    });
   },
 
   // Settings system prompt: preview + edit + save (owner spec).
@@ -138,6 +265,10 @@ export const api = {
     adapters: Array<{ kind: string; label: string; version: string | null; defaultColor: string }>;
   }> {
     return request('/api/adapters');
+  },
+
+  runtimeCapabilities(): Promise<RuntimeCapabilitiesResponse> {
+    return request<RuntimeCapabilitiesResponse>('/api/runtime/capabilities');
   },
 
   // P2-01: read-only codex session records (never spawns codex).
@@ -242,8 +373,18 @@ export const api = {
     });
   },
 
-  newSession(): Promise<RpcResponse> {
-    return request<RpcResponse>('/api/rpc/new_session', { method: 'POST' });
+  /** New session with optional targeting (chosen folder + agent). */
+  newSession(
+    params?: { cwd?: string; agent?: string; serviceTarget?: ServiceTargetId },
+  ): Promise<RpcResponse & { cwd?: string; agent?: string }> {
+    return request<RpcResponse & { cwd?: string; agent?: string }>('/api/rpc/new_session', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(params?.cwd !== undefined && params.cwd.length > 0 ? { cwd: params.cwd } : {}),
+        ...(params?.agent !== undefined ? { agent: params.agent } : {}),
+        ...(params?.serviceTarget !== undefined ? { serviceTarget: params.serviceTarget } : {}),
+      }),
+    });
   },
 
   forkSession(entryId: string): Promise<RpcResponse> {
@@ -346,9 +487,16 @@ export const api = {
   },
 
   /** P1-03: read-only file preview within the workspace root. */
-  filePreview(path: string): Promise<{ path: string; size: number; content: string }> {
+  filePreview(
+    path: string,
+    session?: string,
+  ): Promise<{ path: string; size: number; content: string }> {
+    const params = new URLSearchParams({ path });
+    if (session !== undefined && session.length > 0) {
+      params.set('session', session);
+    }
     return request<{ path: string; size: number; content: string }>(
-      `/api/file/preview?path=${encodeURIComponent(path)}`,
+      `/api/file/preview?${params.toString()}`,
     );
   },
 
@@ -362,17 +510,30 @@ export const api = {
   },
 
   /** P1-08b: read-only git worktree status of the session's cwd. */
-  gitStatus(session?: string): Promise<{ root: string; repo: boolean; changes: GitChange[] }> {
+  gitStatus(session?: string): Promise<{
+    root: string;
+    repo: boolean;
+    source: 'git' | 'snapshot' | 'none';
+    changes: GitChange[];
+  }> {
     const params = new URLSearchParams();
     if (session !== undefined && session.length > 0) {
       params.set('session', session);
     }
     const suffix = params.toString().length > 0 ? `?${params.toString()}` : '';
-    return request<{ root: string; repo: boolean; changes: GitChange[] }>(`/api/git/status${suffix}`);
+    return request<{
+      root: string;
+      repo: boolean;
+      source: 'git' | 'snapshot' | 'none';
+      changes: GitChange[];
+    }>(`/api/git/status${suffix}`);
   },
 
   /** P1-08b: read-only diff of one path (staged or worktree). */
-  gitDiff(path: string, session?: string, staged = false): Promise<{ diff: string }> {
+  gitDiff(path: string, session?: string, staged = false): Promise<{
+    source: 'git' | 'snapshot' | 'none';
+    diff: string;
+  }> {
     const params = new URLSearchParams({ path });
     if (session !== undefined && session.length > 0) {
       params.set('session', session);
@@ -380,7 +541,9 @@ export const api = {
     if (staged) {
       params.set('staged', '1');
     }
-    return request<{ diff: string }>(`/api/git/diff?${params.toString()}`);
+    return request<{ source: 'git' | 'snapshot' | 'none'; diff: string }>(
+      `/api/git/diff?${params.toString()}`,
+    );
   },
 
   /** pi.dev official per-provider model catalog (P1-15 C). */
@@ -433,13 +596,177 @@ export const api = {
     return request<{ runs: PipelineRunRecord[] }>('/api/pipelines/runs');
   },
 
-  runPipeline(pipelineId: string, input?: string): Promise<{ run: PipelineRunRecord }> {
+  runPipeline(
+    pipelineId: string,
+    input?: string,
+    targeting?: { cwd?: string; agent?: 'pi' | 'codex' },
+  ): Promise<{ run: PipelineRunRecord }> {
     return request<{ run: PipelineRunRecord }>('/api/pipelines/run', {
       method: 'POST',
       body: JSON.stringify({
         pipelineId,
         ...(input === undefined || input.length === 0 ? {} : { input }),
+        ...(targeting?.cwd !== undefined && targeting.cwd.length > 0 ? { cwd: targeting.cwd } : {}),
+        ...(targeting?.agent !== undefined ? { agent: targeting.agent } : {}),
       }),
+    });
+  },
+
+  /** Subdirectories of an absolute path (session/task folder targeting). */
+  dirs(path?: string): Promise<{ path: string; dirs: string[] }> {
+    const query = path === undefined || path.length === 0 ? '' : `?path=${encodeURIComponent(path)}`;
+    return request<{ path: string; dirs: string[] }>(`/api/dirs${query}`);
+  },
+
+  /** Embedded dsh kernel settings (provider/model surface, no credentials). */
+  dshSettings(): Promise<DshSettingsInfo> {
+    return request<DshSettingsInfo>('/api/dsh/settings');
+  },
+
+  /** Terminal-side agent sessions visible through the shared session stream. */
+  externalSessions(): Promise<{ sessions: ExternalSessionEntry[] }> {
+    return request<{ sessions: ExternalSessionEntry[] }>('/api/external/sessions');
+  },
+
+  /** dsh web integration (stage 3): connection status. */
+  dshWebStatus(): Promise<{
+    connected: boolean;
+    state: 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
+    url: string | null;
+    protocol: 'dsh-web-rpc-v1';
+    describe: unknown;
+    lastError: string | null;
+  }> {
+    return request('/api/dsh/web/status');
+  },
+
+  /** dsh session history (auto-discovered; 503 when the form disables dsh). */
+  dshSessions(): Promise<{ sessions: DshSessionRow[] }> {
+    return request<{ sessions: DshSessionRow[] }>('/api/dsh/sessions');
+  },
+
+  dshWebConnect(url: string): Promise<{ success: boolean; status: { connected: boolean; url: string | null } }> {
+    return request<{ success: boolean; status: { connected: boolean; url: string | null } }>('/api/dsh/web/connect', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+  },
+
+  dshWebSessions(): Promise<{ sessions: unknown }> {
+    return request<{ sessions: unknown }>('/api/dsh/web/sessions');
+  },
+
+  dshWebHistory(sessionId: string): Promise<{ history: unknown }> {
+    return request<{ history: unknown }>(`/api/dsh/web/history?sessionId=${encodeURIComponent(sessionId)}`);
+  },
+
+  dshWebPrompt(
+    sessionId: string,
+    text: string,
+    mode: 'queue' | 'steer' = 'queue',
+  ): Promise<{ success: boolean; value?: unknown }> {
+    return request<{ success: boolean; value?: unknown }>('/api/dsh/web/prompt', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, text, mode }),
+    });
+  },
+
+  dshWebCancel(sessionId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/dsh/web/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+  },
+
+  dshWebApprove(
+    rpcId: string,
+    sessionId: string,
+    approvalId: string,
+    outcome: 'allowed-once' | 'rejected',
+  ): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/dsh/web/approve', {
+      method: 'POST',
+      body: JSON.stringify({ rpcId, sessionId, approvalId, outcome }),
+    });
+  },
+
+  dshWebCreateSession(cwd?: string): Promise<{ success: boolean; session: unknown }> {
+    return request<{ success: boolean; session: unknown }>('/api/dsh/web/session', {
+      method: 'POST',
+      body: JSON.stringify(cwd === undefined ? {} : { cwd }),
+    });
+  },
+
+  dshWebModels(): Promise<{ models: unknown }> {
+    return request<{ models: unknown }>('/api/dsh/web/models');
+  },
+
+  dshWebApprovals(): Promise<{ approvals: unknown }> {
+    return request<{ approvals: unknown }>('/api/dsh/web/approvals');
+  },
+
+  /** Claude exec adapter: headless per-prompt conversation. */
+  claudePrompt(
+    message: string,
+    cwd?: string,
+  ): Promise<{ success: boolean; data?: { answer?: string } }> {
+    return request<{ success: boolean; data?: { answer?: string } }>('/api/claude/prompt', {
+      method: 'POST',
+      body: JSON.stringify({
+        message,
+        ...(cwd !== undefined && cwd.length > 0 ? { cwd } : {}),
+      }),
+    });
+  },
+
+  claudeAbort(): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/claude/abort', { method: 'POST' });
+  },
+
+  claudeState(): Promise<{ running: boolean }> {
+    return request<{ running: boolean }>('/api/claude/state');
+  },
+
+  claudeMessages(): Promise<{ messages: unknown[] }> {
+    return request<{ messages: unknown[] }>('/api/claude/messages');
+  },
+
+  /** Agent management (panel-side startup/config). */
+  agents(): Promise<{ agents: AgentManageRow[] }> {
+    return request<{ agents: AgentManageRow[] }>('/api/agents');
+  },
+
+  configureAgent(
+    kind: 'pi' | 'codex' | 'dsh' | 'claude',
+    patch: { binary?: string; enabled?: boolean },
+  ): Promise<{ success: boolean; agents: AgentManageRow[] }> {
+    return request<{ success: boolean; agents: AgentManageRow[] }>(`/api/agents/${kind}/configure`, {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    });
+  },
+
+  restartPiAgent(): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/agents/pi/restart', { method: 'POST' });
+  },
+
+  installAgent(
+    kind: 'pi' | 'codex' | 'dsh' | 'claude',
+  ): Promise<{ success: boolean; status: AgentInstallStatus }> {
+    return request<{ success: boolean; status: AgentInstallStatus }>(`/api/agents/${kind}/install`, {
+      method: 'POST',
+    });
+  },
+
+  agentInstallStatus(kind: string): Promise<{ status: AgentInstallStatus }> {
+    return request<{ status: AgentInstallStatus }>(`/api/agents/${encodeURIComponent(kind)}/install`);
+  },
+
+  /** Switch the dsh gateway model (rewrites the --patch layer). */
+  updateDshSettings(model: string): Promise<{ success: boolean; model: string }> {
+    return request<{ success: boolean; model: string }>('/api/dsh/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ model }),
     });
   },
 
@@ -509,14 +836,47 @@ export const api = {
     return request<{ sessions: ClaudeSessionMeta[] }>('/api/claude/sessions');
   },
 
+  /* ---- dsh (DeepSeek Harness) embedded kernel (D2) ---- */
+
+  dshPrompt(
+    message: string,
+    cwd?: string,
+  ): Promise<{ success: boolean; data?: { answer?: string; sessionId?: string; mode?: string } }> {
+    return request<{ success: boolean; data?: { answer?: string; sessionId?: string; mode?: string } }>(
+      '/api/dsh/prompt',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          message,
+          ...(cwd !== undefined && cwd.length > 0 ? { cwd } : {}),
+        }),
+      },
+    );
+  },
+
+  dshState(): Promise<{ running: boolean }> {
+    return request<{ running: boolean }>('/api/dsh/state');
+  },
+
+  dshAbort(): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>('/api/dsh/abort', { method: 'POST' });
+  },
+
+  dshMessages(): Promise<{ messages: unknown[] }> {
+    return request<{ messages: unknown[] }>('/api/dsh/messages');
+  },
+
   codexState(): Promise<{ running: boolean; sessionId: string | null }> {
     return request<{ running: boolean; sessionId: string | null }>('/api/codex/state');
   },
 
-  codexPrompt(message: string): Promise<{ success: boolean }> {
+  codexPrompt(message: string, cwd?: string): Promise<{ success: boolean }> {
     return request<{ success: boolean }>('/api/codex/prompt', {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        ...(cwd !== undefined && cwd.length > 0 ? { cwd } : {}),
+      }),
     });
   },
 
@@ -538,7 +898,9 @@ export const api = {
 
   /* ---- about (published version) ---- */
 
-  health(): Promise<{ status: string; name: string; version: string; time: string }> {
-    return request<{ status: string; name: string; version: string; time: string }>('/api/health');
+  health(): Promise<{ status: string; name: string; version: string; build?: string; time: string }> {
+    return request<{ status: string; name: string; version: string; build?: string; time: string }>(
+      '/api/health',
+    );
   },
 };

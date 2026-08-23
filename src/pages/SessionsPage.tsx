@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const CODEX_IMPORTED_KEY = 'pi-panel:codex-imported';
 import type { SessionSummary } from '../../shared/types.js';
-import type { CodexSessionDetail, CodexSessionMeta } from '../../server/adapters/codex-history.js';
+import type { CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
 import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
 import type { ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { loadAdapterColors } from '../adapters/adapterColors.js';
 import { api } from '../api/client.js';
+import { ExternalSessionsPanel } from '../components/ExternalSessionsPanel.js';
+import { DshSessionsPanel } from '../components/DshSessionsPanel.js';
+import { AdapterSessionsSection, type AdapterSessionLine } from '../components/AdapterSessionsSection.js';
 import { useI18n, type MessageKey } from '../i18n/I18nProvider.js';
 import { SessionDetailView } from './SessionDetailView.js';
 import { LoadingHint } from '../components/LoadingHint.js';
@@ -80,10 +83,7 @@ export function SessionsPage({
   // P2-01 B/D: read-only codex records + per-adapter accent color.
   const [codexSessions, setCodexSessions] = useState<CodexSessionMeta[] | null>(null);
   const [claudeSessions, setClaudeSessions] = useState<ClaudeSessionMeta[] | null>(null);
-  const [claudeOpenDetail, setClaudeOpenDetail] = useState<string | null>(null);
-  const [claudeDetail, setClaudeDetail] = useState<Array<{ role: string; text: string; timestamp: string }> | null>(null);
   const [codexError, setCodexError] = useState<string | null>(null);
-  const [codexOpenDetail, setCodexOpenDetail] = useState<CodexSessionDetail | null>(null);
   /** "录入" (import): pin a codex record into the sidebar 会话 area. */
   const [importedCodex, setImportedCodex] = useState<string[]>(() => {
     try {
@@ -114,20 +114,6 @@ export function SessionsPage({
   const atomcodeColor = useMemo(() => loadAdapterColors()['atomcode'] ?? '#e4572e', []);
   const zcodeColor = useMemo(() => loadAdapterColors()['zcode'] ?? '#7f56d9', []);
   const codexColor = useMemo(() => loadAdapterColors()['codex'] ?? '#10a37f', []);
-
-  const openCodexDetail = useCallback(
-    async (id: string): Promise<void> => {
-      setCodexError(null);
-      try {
-        const detail = await api.codexSessionDetail(id);
-        // Inline expand: show the first messages of the rollout below the row.
-        setCodexOpenDetail((prev) => (prev?.sessionId === detail.sessionId ? null : detail));
-      } catch (err) {
-        setCodexError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -226,6 +212,85 @@ export function SessionsPage({
     return [...groups.entries()];
   }, [sessions]);
 
+  const codexRows: AdapterSessionLine[] | null =
+    codexSessions === null
+      ? null
+      : codexSessions.map((session) => ({
+          key: session.sessionId,
+          title: session.cwd,
+          meta: [
+            `${String(session.messageCount)} ${t('codex.messages')}`,
+            `${String(session.toolCalls)} ${t('codex.tools')}`,
+            session.modelProvider ?? '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          color: codexColor,
+          actions: (
+            <button
+              type="button"
+              className={
+                importedCodex.includes(session.sessionId)
+                  ? 'btn-primary codex-session-import codex-session-imported'
+                  : 'btn-secondary codex-session-import'
+              }
+              onClick={() => {
+                toggleImportCodex(session.sessionId);
+              }}
+            >
+              {importedCodex.includes(session.sessionId)
+                ? t('codex.imported')
+                : t('codex.import')}
+            </button>
+          ),
+          detail: async () => {
+            const detail = await api.codexSessionDetail(session.sessionId);
+            return detail.entries
+              .filter((entry) => typeof entry.text === 'string' && entry.text.length > 0)
+              .map((entry) => ({ role: entry.type, text: entry.text as string }));
+          },
+        }));
+
+  const atomcodeRows: AdapterSessionLine[] | null =
+    atomcodeSession === null
+      ? null
+      : [
+          {
+            key: 'atomcode-history',
+            title: 'AtomCode history',
+            meta: `${String(atomcodeSession.messageCount)} ${t('codex.messages')}`,
+            color: atomcodeColor,
+          },
+        ];
+
+  const zcodeRows: AdapterSessionLine[] | null =
+    zcodeSessions === null
+      ? null
+      : zcodeSessions.map((session) => ({
+          key: session.sessionId,
+          title: session.sessionId,
+          meta: [
+            `${String(session.turns)} ${t('adapter.turns')}`,
+            `${String(session.totalTokens)} ${t('adapter.tokens')}`,
+            session.modelId,
+          ].join(' · '),
+          color: zcodeColor,
+        }));
+
+  const claudeRows: AdapterSessionLine[] | null =
+    claudeSessions === null
+      ? null
+      : claudeSessions.map((session) => ({
+          key: session.sessionId,
+          title: session.cwd,
+          meta: `${String(session.messageCount)} ${t('codex.messages')} · ${String(session.toolCalls)} ${t('codex.tools')}`,
+          color: '#d97757',
+          detail: async () => {
+            const detail = await api.claudeSessionDetail(session.sessionId);
+            return detail.turns.map((turn) => ({ role: turn.role, text: turn.text }));
+          },
+        }));
+
   if (selectedId !== null) {
     return (
       <SessionDetailView
@@ -262,6 +327,8 @@ export function SessionsPage({
       </div>
 
       {error !== null ? <div className="sessions-error mono">{error}</div> : null}
+
+      <ExternalSessionsPanel />
 
       <FogLoading loading={grouped === null}>
       {grouped === null ? (
@@ -300,207 +367,43 @@ export function SessionsPage({
       </FogLoading>
 
       {/* P2-01 B: read-only codex session records (never spawned). */}
-      <section className="codex-sessions">
-        <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">
-            <img src="/icons/agents/codex.svg" alt="" className="agent-section-logo" />
-            {t('codex.sessions')}
-          </h2>
-          <p className="codex-sessions-hint mono">{t('codex.sessionsHint')}</p>
-        </div>
-        {codexError !== null ? <div className="sessions-error mono">{codexError}</div> : null}
-        {codexSessions === null ? (
-          <p className="sessions-hint">
-            <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
-          </p>
-        ) : codexSessions.length === 0 ? (
-          <p className="sessions-hint">{t('sessions.hint.empty')}</p>
-        ) : (
-          <div className="codex-sessions-list">
-            {codexSessions.map((session) => (
-              <div
-                key={session.sessionId}
-                className="codex-session-row"
-                style={{ borderLeftColor: codexColor }}
-              >
-                <div className="codex-session-main">
-                  <span className="codex-session-cwd mono" title={session.cwd}>
-                    {session.cwd}
-                  </span>
-                  <span className="codex-session-meta mono">
-                    {String(session.messageCount)} {t('codex.messages')} ·{' '}
-                    {String(session.toolCalls)} {t('codex.tools')}
-                    {session.modelProvider !== undefined
-                      ? ` · ${session.modelProvider}`
-                      : ''}
-                  </span>
-                </div>
-                <div className="codex-session-actions">
-                  <button
-                    type="button"
-                    className={
-                      importedCodex.includes(session.sessionId)
-                        ? 'btn-primary codex-session-import codex-session-imported'
-                        : 'btn-secondary codex-session-import'
-                    }
-                    onClick={() => {
-                      toggleImportCodex(session.sessionId);
-                    }}
-                  >
-                    {importedCodex.includes(session.sessionId)
-                      ? t('codex.imported')
-                      : t('codex.import')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary codex-session-open"
-                    onClick={() => {
-                      void openCodexDetail(session.sessionId);
-                    }}
-                  >
-                    {t('codex.open')}
-                  </button>
-                </div>
-                {codexOpenDetail !== null && codexOpenDetail.sessionId === session.sessionId ? (
-                  <div className="codex-session-detail">
-                    {codexOpenDetail.entries
-                      .filter((entry) => typeof entry.text === 'string' && entry.text.length > 0)
-                      .slice(0, 8)
-                      .map((entry, index) => (
-                        <p key={index} className="codex-session-line mono" data-type={entry.type}>
-                          {entry.text}
-                        </p>
-                      ))}
-                    {codexOpenDetail.entries.length === 0 ? (
-                      <p className="sessions-hint">{t('sessions.hint.empty')}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <AdapterSessionsSection
+        icon="/icons/agents/codex.svg"
+        label="Codex"
+        hint={t('codex.sessionsHint')}
+        error={codexError}
+        rows={codexRows}
+        emptyText={t('sessions.hint.empty')}
+      />
 
       {/* ADAPTER2: read-only atomcode records (history.json). */}
-      <section className="codex-sessions">
-        <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">
-            <img src="/icons/agents/atomcode.svg" alt="" className="agent-section-logo agent-section-logo-dark" />
-            {t('adapter.sessions', { label: 'AtomCode' })}
-          </h2>
-          <p className="codex-sessions-hint mono">~/.atomcode/history.json</p>
-        </div>
-        {atomcodeSession === null ? (
-          <p className="sessions-hint">
-            <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
-          </p>
-        ) : (
-          <div className="codex-sessions-list">
-            <div className="codex-session-row" style={{ borderLeftColor: atomcodeColor }}>
-              <div className="codex-session-main">
-                <span className="codex-session-cwd mono">AtomCode history</span>
-                <span className="codex-session-meta mono">
-                  {String(atomcodeSession.messageCount)} {t('codex.messages')}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
+      <AdapterSessionsSection
+        icon="/icons/agents/atomcode.svg"
+        iconDark
+        label="AtomCode"
+        hint="~/.atomcode/history.json"
+        rows={atomcodeRows}
+      />
 
       {/* ADAPTER2: read-only zcode records (rollout model I/O). */}
-      <section className="codex-sessions">
-        <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">
-            <img src="/icons/agents/zcode.svg" alt="" className="agent-section-logo" />
-            {t('adapter.sessions', { label: 'ZCode' })}
-          </h2>
-          <p className="codex-sessions-hint mono">~/.zcode/cli/rollout</p>
-        </div>
-        {zcodeSessions === null ? (
-          <p className="sessions-hint">
-            <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
-          </p>
-        ) : zcodeSessions.length === 0 ? (
-          <p className="sessions-hint">{t('sessions.hint.empty')}</p>
-        ) : (
-          <div className="codex-sessions-list">
-            {zcodeSessions.map((session) => (
-              <div key={session.sessionId} className="codex-session-row" style={{ borderLeftColor: zcodeColor }}>
-                <div className="codex-session-main">
-                  <span className="codex-session-cwd mono" title={session.sessionId}>
-                    {session.sessionId}
-                  </span>
-                  <span className="codex-session-meta mono">
-                    {String(session.turns)} {t('adapter.turns')} ·{' '}
-                    {String(session.totalTokens)} {t('adapter.tokens')} · {session.modelId}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <AdapterSessionsSection
+        icon="/icons/agents/zcode.svg"
+        label="ZCode"
+        hint="~/.zcode/cli/rollout"
+        rows={zcodeRows}
+      />
 
-      <section className="codex-sessions">
-        <div className="codex-sessions-head">
-          <h2 className="codex-sessions-title mono">
-            <img src="/icons/agents/claude.svg" alt="" className="agent-section-logo" />
-            {t('adapter.sessions', { label: 'Claude' })}
-          </h2>
-          <p className="codex-sessions-hint mono">~/.claude/projects</p>
-        </div>
-        {claudeSessions === null ? (
-          <p className="sessions-hint">
-            <LoadingHint>{t('sessions.hint.loading')}</LoadingHint>
-          </p>
-        ) : claudeSessions.length === 0 ? (
-          <p className="sessions-hint">{t('sessions.hint.empty')}</p>
-        ) : (
-          <div className="codex-sessions-list">
-            {claudeSessions.map((session) => (
-              <div key={session.sessionId} className="codex-session-row" style={{ borderLeftColor: '#d97757' }}>
-                <div className="codex-session-main">
-                  <span className="codex-session-cwd mono" title={session.sessionId}>
-                    {session.cwd}
-                  </span>
-                  <span className="codex-session-meta mono">
-                    {String(session.messageCount)} {t('codex.messages')} ·{' '}
-                    {String(session.toolCalls)} {t('codex.tools')}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="btn-primary codex-session-open"
-                  onClick={() => {
-                    void (async () => {
-                      setClaudeOpenDetail(session.sessionId);
-                      try {
-                        const detail = await api.claudeSessionDetail(session.sessionId);
-                        setClaudeDetail(detail.turns);
-                      } catch {
-                        setClaudeDetail(null);
-                      }
-                    })();
-                  }}
-                >
-                  {t('codex.open')}
-                </button>
-                {claudeOpenDetail === session.sessionId && claudeDetail !== null ? (
-                  <div className="codex-session-detail">
-                    {claudeDetail.slice(0, 8).map((turn, index) => (
-                      <p key={index} className="codex-session-line mono" data-type={turn.role}>
-                        {turn.role}: {turn.text.slice(0, 120)}
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Claude transcript records (read-only). */}
+      <AdapterSessionsSection
+        icon="/icons/agents/claude.svg"
+        label="Claude"
+        hint="~/.claude/projects"
+        rows={claudeRows}
+        emptyText={t('sessions.hint.empty')}
+      />
+
+      {/* DeepSeek Harness session records (read-only). */}
+      <DshSessionsPanel />
     </section>
   );
 }

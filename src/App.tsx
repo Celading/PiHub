@@ -16,6 +16,9 @@ import { useSessionWatch } from './chat/sessionWatch.js';
 import { usePref } from './prefs/preferences.js';
 import { useI18n } from './i18n/I18nProvider.js';
 import { findDraftTab, newTabId, type ChatTab } from './chat/tabs.js';
+import type { SessionDraft } from './chat/sessionDraft.js';
+import { NewSessionDialog, NEW_SESSION_REQUEST_EVENT } from './components/NewSessionDialog.js';
+import { initPairFromUrl } from './api/pairToken.js';
 import type { PanelAgent } from './chat/chatState.js';
 import type { SessionSummary } from '../shared/types.js';
 import { parseRoute, serializeRoute } from './router.js';
@@ -49,9 +52,31 @@ export function App(): React.JSX.Element {
   const [rightOpen, setRightOpen] = useState(true);
   /** Claude transcript to render read-only in the chat (sidebar "open"). */
   const [claudeThread, setClaudeThread] = useState<{ sessionId: string; label: string } | null>(null);
+  /** dsh session transcript opened from the sidebar (read-only). */
+  const [dshThread, setDshThread] = useState<{ sessionId: string; label: string } | null>(null);
   const [view, setView] = useState<View>('chat');
-  // Which agent the chat view talks to — pi (RPC) or codex (exec adapter).
+  // Which agent the chat view talks to — pi (RPC), codex/claude (exec
+  // adapters) or dsh (harness kernel). Default pi; fall back when the
+  // backend does not expose the currently selected agent.
   const [agent, setAgent] = useState<PanelAgent>('pi');
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .adapters()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        const hasDsh = response.adapters.some((entry) => entry.kind === 'dsh');
+        setAgent((current) => (current === 'dsh' && !hasDsh ? 'pi' : current));
+      })
+      .catch(() => {
+        // offline — keep the current agent
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   /** Codex thread to resume when the chat opens in codex mode. */
   const [codexThread, setCodexThread] = useState<string | null>(null);
   // P1-06: the chat workspace is a tab strip; each tab binds one session
@@ -82,6 +107,18 @@ export function App(): React.JSX.Element {
       // storage unavailable
     }
   }, [sidebarCollapsed]);
+
+  // WelcomeView favorite-chip click: jump to settings → favorites.
+  useEffect(() => {
+    const handler = (): void => {
+      setView('settings');
+      setSettingsSection('favorites');
+    };
+    window.addEventListener('pihub:open-prompt-favorites', handler);
+    return (): void => {
+      window.removeEventListener('pihub:open-prompt-favorites', handler);
+    };
+  }, []);
 
   const bumpTab = useCallback((id: string): void => {
     setTabEpochs((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
@@ -143,6 +180,8 @@ export function App(): React.JSX.Element {
   const handleOpenCodexSession = useCallback(
     (threadId: string): void => {
       setCodexThread(threadId);
+      setClaudeThread(null);
+      setDshThread(null);
       setAgent('codex');
       void newDraftTab();
     },
@@ -153,7 +192,24 @@ export function App(): React.JSX.Element {
   const handleOpenClaudeSession = useCallback(
     (sessionId: string, label: string): void => {
       setClaudeThread({ sessionId, label });
+      setDshThread(null);
       setAgent('pi');
+      const tab: ChatTab = { id: newTabId(), sessionFile: null, label };
+      setTabs((prev) => [...prev, tab]);
+      setActiveTabId(tab.id);
+      setView('chat');
+      bumpTab(tab.id);
+    },
+    [bumpTab],
+  );
+
+  /** Open a dsh session from the sidebar: switch to the dsh agent in a
+   *  fresh chat tab (the dsh history itself lives in the sessions view). */
+  const handleOpenDshSession = useCallback(
+    (sessionId: string, label: string): void => {
+      setClaudeThread(null);
+      setDshThread({ sessionId, label });
+      setAgent('dsh');
       const tab: ChatTab = { id: newTabId(), sessionFile: null, label };
       setTabs((prev) => [...prev, tab]);
       setActiveTabId(tab.id);
@@ -181,10 +237,12 @@ export function App(): React.JSX.Element {
         if (route.kind === 'draft') {
           setAgent('pi');
           setClaudeThread(null);
+          setDshThread(null);
           await newDraftTab();
         } else if (route.kind === 'pi') {
           setAgent('pi');
           setClaudeThread(null);
+          setDshThread(null);
           const list = await api.sessions().catch(() => null);
           const found = list?.sessions.find((session) => session.fileName === route.sessionFile);
           await openSessionTab(
@@ -193,8 +251,17 @@ export function App(): React.JSX.Element {
           );
         } else if (route.kind === 'codex') {
           handleOpenCodexSession(route.threadId);
-        } else {
+        } else if (route.kind === 'claude') {
           handleOpenClaudeSession(route.sessionId, route.label);
+        } else if (route.sessionId !== null) {
+          // dsh transcript route.
+          handleOpenDshSession(route.sessionId, route.label);
+        } else {
+          // dsh: fresh draft tab in the dsh agent.
+          setClaudeThread(null);
+          setDshThread(null);
+          setAgent('dsh');
+          await newDraftTab();
         }
         return;
       }
@@ -203,21 +270,29 @@ export function App(): React.JSX.Element {
         setSettingsSection(route.section);
       }
     },
-    [handleOpenClaudeSession, handleOpenCodexSession, newDraftTab, openSessionTab],
+    [handleOpenClaudeSession, handleOpenCodexSession, handleOpenDshSession, newDraftTab, openSessionTab],
   );
 
+  // The hydrate handler is a useCallback over stateful helpers (tabs etc.),
+  // so its identity changes on every tabs update — a mount effect depending
+  // on it would RE-RUN hydration after the first sidebar interaction,
+  // resetting the agent/thread state from the initial hash (owner-reported:
+  // clicking a dsh session snapped back to #/chat with agent=pi). Keep the
+  // mount effect one-shot and read the LATEST handler via a ref.
+  const hydrateRef = useRef(hydrateFromHash);
+  hydrateRef.current = hydrateFromHash;
   useEffect(() => {
-    void hydrateFromHash(initialHashRef.current).finally(() => {
+    void hydrateRef.current(initialHashRef.current).finally(() => {
       hydratedRef.current = true;
     });
     const onHashChange = (): void => {
-      void hydrateFromHash(window.location.hash);
+      void hydrateRef.current(window.location.hash);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => {
       window.removeEventListener('hashchange', onHashChange);
     };
-  }, [hydrateFromHash]);
+  }, []); // mount-only by design — hydrateRef keeps the handler fresh
 
   // Keep the address bar in sync with the app state (replaceState — no
   // history spam, no hashchange loop; manual edits still work via the
@@ -232,13 +307,14 @@ export function App(): React.JSX.Element {
       agent,
       codexThread,
       claudeThread,
+      dshThread,
       sessionFile: activeTab?.sessionFile ?? null,
       settingsSection,
     });
     if (target !== window.location.hash) {
       window.history.replaceState(null, '', target);
     }
-  }, [view, agent, codexThread, claudeThread, tabs, activeTabId, settingsSection]);
+  }, [view, agent, codexThread, claudeThread, dshThread, tabs, activeTabId, settingsSection]);
 
   /** Close a tab; never leave the workspace tabless (fresh draft tab). */
   const closeTab = useCallback(
@@ -248,6 +324,14 @@ export function App(): React.JSX.Element {
         return;
       }
       const remaining = tabs.filter((tab) => tab.id !== id);
+      if (id === activeTabId) {
+        // Transcript identity is app-level for historical compatibility, so
+        // closing its tab must clear it before the replacement draft renders.
+        setClaudeThread(null);
+        setDshThread(null);
+        setCodexThread(null);
+        setAgent('pi');
+      }
       if (remaining.length === 0) {
         const fresh: ChatTab = { id: newTabId(), sessionFile: null, label: t('chat.tabs.new') };
         setTabs([fresh]);
@@ -265,17 +349,50 @@ export function App(): React.JSX.Element {
     [activeTabId, tabs, t],
   );
 
-  // New session from the sessions empty-state CTA (L008 C-3).
-  const handleNewSession = useCallback(async (): Promise<void> => {
-    try {
-      const response = await api.newSession();
-      if (response.success) {
-        await newDraftTab();
+  // New session from the sessions empty-state CTA (L008 C-3) — opens the
+  // targeting dialog (folder + agent) instead of creating directly.
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const handleNewSession = useCallback((): void => {
+    setNewSessionOpen(true);
+  }, []);
+
+  // Any new-session request (sidebar button etc.) opens the same dialog.
+  // Distributed mode: a remote-open URL may carry ?pair= — adopt it before
+  // any API call so the pairing code is presented everywhere.
+  useEffect(() => {
+    initPairFromUrl();
+  }, []);
+
+  useEffect(() => {
+    const onRequest = (): void => {
+      setNewSessionOpen(true);
+    };
+    window.addEventListener(NEW_SESSION_REQUEST_EVENT, onRequest);
+    return () => {
+      window.removeEventListener(NEW_SESSION_REQUEST_EVENT, onRequest);
+    };
+  }, []);
+
+  const handleNewSessionCreated = useCallback(
+    async (meta: SessionDraft): Promise<void> => {
+      const response = await api.newSession({ cwd: meta.cwd, agent: meta.agent, serviceTarget: meta.serviceTarget });
+      if (!response.success) {
+        throw new Error(response.error ?? 'failed to start new session');
       }
-    } catch {
-      // offline or idle; ignore
-    }
-  }, [newDraftTab]);
+      if (meta.agent === 'codex') {
+        setAgent('codex');
+      } else if (meta.agent === 'dsh') {
+        setAgent('dsh');
+      } else if (meta.agent === 'claude') {
+        setAgent('claude');
+      } else {
+        setAgent('pi');
+      }
+      setNewSessionOpen(false);
+      await newDraftTab();
+    },
+    [newDraftTab],
+  );
 
   // The RPC session may have changed under the active tab (fork/steer):
   // reload its chat and keep the tab binding + label fresh.
@@ -422,10 +539,11 @@ export function App(): React.JSX.Element {
             {/* key remounts the chat whenever the tab, its epoch or the
                 agent changes — each combination gets a clean message list. */}
             <ChatPage
-              key={`${active.id}:${String(epoch)}:${agent}:${codexThread ?? ''}:${claudeThread?.sessionId ?? ''}`}
+              key={`${active.id}:${String(epoch)}:${agent}:${codexThread ?? ''}:${claudeThread?.sessionId ?? ''}:${dshThread?.sessionId ?? ''}`}
               agent={agent}
               codexThread={codexThread}
               claudeThread={claudeThread}
+              dshThread={dshThread}
               pendingApprovals={extensionUi.dialogs.length}
               onSessionChanged={handleChatSessionChanged}
             />
@@ -436,7 +554,7 @@ export function App(): React.JSX.Element {
         return (
           <SessionsPage
             onNewSession={() => {
-              void handleNewSession();
+              handleNewSession();
             }}
           />
         );
@@ -494,6 +612,7 @@ export function App(): React.JSX.Element {
       }}
       onOpenCodexSession={handleOpenCodexSession}
       onOpenClaudeSession={handleOpenClaudeSession}
+      onOpenDshSession={handleOpenDshSession}
     >
       {/* P1-17 F: each view switch replays the 3D entry (perspective
           rotateY) + rise-from-below with fade. */}
@@ -517,6 +636,15 @@ export function App(): React.JSX.Element {
               // The chat page surfaces backend errors through its own state.
             }
           })();
+        }}
+      />
+      <NewSessionDialog
+        open={newSessionOpen}
+        onClose={() => {
+          setNewSessionOpen(false);
+        }}
+        onCreated={async (meta) => {
+          await handleNewSessionCreated(meta);
         }}
       />
     </AppShell>

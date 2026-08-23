@@ -8,6 +8,8 @@ import { SETTINGS_SECTIONS, type SettingsSectionId, type View } from './types/ap
  *   #/chat/pi/<sessionFile>      — pi session tab (URL-encoded file name)
  *   #/chat/codex/<threadId>      — codex thread (resume)
  *   #/chat/claude/<id>/<label>   — claude read-only transcript
+ *   #/chat/dsh                   — dsh agent chat (fresh draft tab)
+ *   #/chat/dsh/<id>/<label>      — dsh session transcript (read-only)
  *   #/sessions | #/stats | #/automation
  *   #/settings/<section>
  *
@@ -19,7 +21,8 @@ export type ChatRoute =
   | { view: 'chat'; kind: 'draft' }
   | { view: 'chat'; kind: 'pi'; sessionFile: string }
   | { view: 'chat'; kind: 'codex'; threadId: string }
-  | { view: 'chat'; kind: 'claude'; sessionId: string; label: string };
+  | { view: 'chat'; kind: 'claude'; sessionId: string; label: string }
+  | { view: 'chat'; kind: 'dsh'; sessionId: string | null; label: string };
 
 export type Route =
   | ChatRoute
@@ -33,18 +36,25 @@ const KNOWN_SECTIONS = new Set<string>(SETTINGS_SECTIONS.map((entry) => entry.id
 /** Current chat state as an addressable route. */
 export function serializeRoute(params: {
   view: View;
-  agent: 'pi' | 'codex';
+  agent: 'pi' | 'codex' | 'dsh' | 'claude';
   codexThread: string | null;
   claudeThread: { sessionId: string; label: string } | null;
+  dshThread: { sessionId: string; label: string } | null;
   sessionFile: string | null;
   settingsSection: SettingsSectionId;
 }): string {
   if (params.view === 'chat') {
+    if (params.dshThread !== null) {
+      return `#/chat/dsh/${encodeURIComponent(params.dshThread.sessionId)}/${encodeURIComponent(params.dshThread.label)}`;
+    }
     if (params.claudeThread !== null) {
       return `#/chat/claude/${encodeURIComponent(params.claudeThread.sessionId)}/${encodeURIComponent(params.claudeThread.label)}`;
     }
     if (params.agent === 'codex' && params.codexThread !== null) {
       return `#/chat/codex/${encodeURIComponent(params.codexThread)}`;
+    }
+    if (params.agent === 'dsh') {
+      return '#/chat/dsh';
     }
     if (params.sessionFile !== null) {
       return `#/chat/pi/${encodeURIComponent(params.sessionFile)}`;
@@ -96,6 +106,16 @@ export function parseRoute(hash: string): Route | null {
       if (sessionId !== undefined && sessionId.length > 0) {
         return { view: 'chat', kind: 'claude', sessionId, label };
       }
+    }
+    if (kind === 'dsh') {
+      if (segments.length >= 4) {
+        const sessionId = segments[2];
+        const label = segments.slice(3).join('/');
+        if (sessionId !== undefined && sessionId.length > 0) {
+          return { view: 'chat', kind: 'dsh', sessionId, label };
+        }
+      }
+      return { view: 'chat', kind: 'dsh', sessionId: null, label: '' };
     }
     return null;
   }

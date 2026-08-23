@@ -25,14 +25,8 @@ export function RightFilesPanel({ sessionFile }: { sessionFile: string | null })
     setError(null);
     setSelected(null);
     setDirCache({});
-    if (sessionFile === null) {
-      setEntries(null);
-      setRecent([]);
-      setRoot(null);
-      return;
-    }
     api
-      .listFiles('', sessionFile)
+      .listFiles('', sessionFile ?? undefined)
       .then((listing: FileListing) => {
         setRoot(listing.root);
         setEntries(listing.entries);
@@ -63,12 +57,9 @@ export function RightFilesPanel({ sessionFile }: { sessionFile: string | null })
         setDirCache(next);
         return;
       }
-      if (sessionFile === null) {
-        return;
-      }
       setLoadingDirs((prev) => new Set(prev).add(dirPath));
       api
-        .listFiles(dirPath, sessionFile)
+        .listFiles(dirPath, sessionFile ?? undefined)
         .then((listing: FileListing) => {
           setDirCache((prev) => ({ ...prev, [dirPath]: listing.entries }));
         })
@@ -146,6 +137,7 @@ export function RightFilesPanel({ sessionFile }: { sessionFile: string | null })
       {selected !== null ? (
         <FileContent
           path={selected}
+          sessionFile={sessionFile}
           onBack={() => {
             setSelected(null);
           }}
@@ -193,7 +185,15 @@ function formatSize(bytes: number): string {
 }
 
 /** Inline diff-aware file viewer (same rules as the preview overlay). */
-function FileContent({ path, onBack }: { path: string; onBack: () => void }): React.JSX.Element {
+function FileContent({
+  path,
+  sessionFile,
+  onBack,
+}: {
+  path: string;
+  sessionFile: string | null;
+  onBack: () => void;
+}): React.JSX.Element {
   const { t } = useI18n();
   const [state, setState] = useState<{
     status: 'loading' | 'ok' | 'error';
@@ -206,7 +206,7 @@ function FileContent({ path, onBack }: { path: string; onBack: () => void }): Re
     let cancelled = false;
     setState({ status: 'loading' });
     void api
-      .filePreview(path)
+      .filePreview(path, sessionFile ?? undefined)
       .then((response) => {
         if (!cancelled) {
           setState({ status: 'ok', content: response.content, size: response.size });
@@ -223,7 +223,7 @@ function FileContent({ path, onBack }: { path: string; onBack: () => void }): Re
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, sessionFile]);
 
   return (
     <div className="right-file-view">

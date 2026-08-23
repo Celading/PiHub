@@ -103,12 +103,24 @@ function runGit(root: string, args: string[], timeoutMs: number): Promise<string
   });
 }
 
+/** True only when the host has no Git executable. Other Git failures stay
+ *  visible instead of silently falling back to a different truth source. */
+export function isGitUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (((error as NodeJS.ErrnoException).code === 'ENOENT') || /spawn git ENOENT/iu.test(error.message))
+  );
+}
+
 /** Read-only git status; null when the root is not a git repository. */
 export async function gitStatus(root: string): Promise<GitChange[] | null> {
   try {
     const raw = await runGit(
       root,
-      ['status', '--porcelain=v1', '-z', '--no-ext-diff', '--no-textconv'],
+      // `--no-ext-diff` and `--no-textconv` belong to `git diff`, not
+      // `git status`. Status does not invoke diff drivers or textconv, so the
+      // hardened environment above is sufficient for this read-only probe.
+      ['status', '--porcelain=v1', '-z'],
       10_000,
     );
     return parseGitStatusZ(raw);

@@ -22,6 +22,8 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .header-mode-badge[data-mode='demo'] {
@@ -40,8 +42,8 @@
   justify-content: center;
   width: 2rem;
   height: 2rem;
-  background-color: var(--primary);
-  color: #ffffff;
+  background-color: transparent;
+  color: inherit;
   font-family: var(--font-serif);
   font-size: var(--text-base);
   font-weight: 600;
@@ -53,13 +55,14 @@
 .header-brand-mark-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .header-brand-text {
   display: flex;
   flex-direction: column;
   line-height: 1.2;
+  min-width: 0;
 }
 
 .header-brand-name {
@@ -75,12 +78,38 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+.header-status-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  padding-left: var(--space-3);
+  border-left: var(--border-thin) solid var(--border-subtle);
+}
+
+.header-engine-status {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.header-engine-status[data-status='ready'] {
+  color: var(--status-ok);
+}
+
+.header-engine-status[data-status='unavailable'] {
+  color: var(--status-warning);
 }
 
 /* L008-C6: hamburger is mobile-only (hidden on desktop) */
@@ -101,6 +130,48 @@
 @media (max-width: 760px) {
   .header-menu-toggle {
     display: inline-flex;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 0 var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .header-brand,
+  .header-actions {
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .header-brand-sub {
+    max-width: 6rem;
+  }
+
+  .header-status {
+    white-space: nowrap;
+    font-size: 0.6875rem;
+  }
+
+  .header-status-cluster {
+    gap: var(--space-1);
+    padding-left: var(--space-2);
+  }
+
+  .header-engine-status {
+    max-width: 5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-barcode {
+    display: none;
+  }
+
+  .header-theme-toggle {
+    padding-inline: var(--space-2);
+    white-space: nowrap;
   }
 }
 
@@ -156,4 +227,22 @@
 .header-brand-mark:hover {
   outline: 2px solid var(--primary-subtle);
   outline-offset: 1px;
+}
+
+/* Internal build barcode: compact char strip in the top bar (title = full
+   stamp like v0.3.0.260814.server). */
+.header-barcode {
+  font-size: 11px;
+  letter-spacing: 2px;
+  opacity: 0.55;
+  cursor: help;
+  user-select: none;
+}
+
+/* Brand mark: the svg carries a light background — round it and let the
+   header theme frame it instead of a hard white square. */
+.header-brand-mark-img {
+  border-radius: 6px;
+  background: transparent;
+  display: block;
 }

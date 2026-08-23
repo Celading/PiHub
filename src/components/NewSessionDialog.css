@@ -1,0 +1,156 @@
+/* New-session dialog (folder + agent targeting). Swiss minimal modal,
+   mirrors ConfirmDialog's overlay/dialog pattern. */
+.new-session-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.new-session-dialog {
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.new-session-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.new-session-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.new-session-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.new-session-folder-row {
+  display: flex;
+  gap: 8px;
+}
+
+.new-session-folder-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.new-session-folder-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.new-session-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: var(--border-thin) solid var(--border-subtle);
+}
+
+.new-session-browser-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-session-browser-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.new-session-dir-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.new-session-dir {
+  width: 100%;
+  text-align: left;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.new-session-dir:hover {
+  background: var(--surface-hover);
+}
+
+.new-session-empty {
+  font-size: var(--text-xs);
+  color: var(--text-placeholder);
+  padding: 4px 6px;
+}
+
+.new-session-agents {
+  display: flex;
+  gap: 16px;
+}
+
+.new-session-agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.new-session-target-note {
+  max-width: 12rem;
+  overflow: hidden;
+  color: var(--text-placeholder);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-session-hint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.new-session-error {
+  font-size: var(--text-xs);
+  color: #c0392b;
+  margin: 0;
+}
+
+.new-session-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

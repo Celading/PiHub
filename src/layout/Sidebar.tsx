@@ -3,8 +3,10 @@ import type { SessionSummary } from '../../shared/types.js';
 import { SETTINGS_SECTIONS, type SettingsSectionId, type View } from '../types/app.js';
 import type { SessionStatus } from '../chat/sessionWatch.js';
 import { api } from '../api/client.js';
+import { NEW_SESSION_REQUEST_EVENT } from '../components/NewSessionDialog.js';
 import type { CodexSessionMeta } from '../../server/adapters/codex-history.js';
 import type { ClaudeSessionMeta } from '../../server/adapters/claude-history.js';
+import type { DshSessionRow } from '../api/client.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { IconButton } from '../components/IconButton.js';
 import { ContextMenu } from '../components/ContextMenu.js';
@@ -38,12 +40,14 @@ interface SidebarProps {
   onOpenCodexSession: (threadId: string, label: string) => void;
   /** Open a claude transcript read-only in the chat. */
   onOpenClaudeSession: (sessionId: string, label: string) => void;
+  /** Open a dsh session in the dsh chat (switch agent + fresh tab). */
+  onOpenDshSession: (sessionId: string, label: string) => void;
 }
 
 type MessageKey = Parameters<ReturnType<typeof useI18n>['t']>[0];
 
 /** Agents whose sessions converge in the sidebar (default: all shown). */
-type SidebarAgent = 'pi' | 'codex' | 'atomcode' | 'zcode' | 'claude';
+type SidebarAgent = 'pi' | 'codex' | 'atomcode' | 'zcode' | 'claude' | 'dsh';
 
 const AGENT_GLYPHS: Record<SidebarAgent, string> = {
   pi: 'π',
@@ -51,6 +55,7 @@ const AGENT_GLYPHS: Record<SidebarAgent, string> = {
   atomcode: 'A',
   zcode: 'Z',
   claude: 'C',
+  dsh: 'D',
 };
 
 /** One unified sidebar row across every agent's session records. */
@@ -70,6 +75,7 @@ interface AgentSessionRow {
 const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
   general: 'settings.nav.general',
   personal: 'settings.nav.personal',
+  piAgent: 'settings.nav.piAgent',
   models: 'settings.nav.models',
   sessions: 'settings.nav.sessions',
   permissions: 'settings.nav.permissions',
@@ -270,6 +276,7 @@ export function Sidebar({
   onSessionChanged,
   onOpenCodexSession,
   onOpenClaudeSession,
+  onOpenDshSession,
 }: SidebarProps): React.JSX.Element {
   const { t, intlTag } = useI18n();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -434,12 +441,13 @@ export function Sidebar({
       try {
         // Multi-agent convergence: pi sessions + codex rollout records +
         // atomcode history + zcode model-I/O records, unified into rows.
-        const [pi, codex, atomcode, zcode, claude] = await Promise.all([
+        const [pi, codex, atomcode, zcode, claude, dsh] = await Promise.all([
           api.sessions().catch(() => null),
           api.codexSessions().catch(() => null),
           api.atomcodeSession().catch(() => null),
           api.zcodeSessions().catch(() => null),
           api.claudeSessions().catch(() => null),
+          api.dshSessions().catch(() => null),
         ]);
         if (cancelled) {
           return;
@@ -484,6 +492,19 @@ export function Sidebar({
             messageCount: meta.messageCount,
             lastActivityAt: meta.lastActivityAt,
             status: 'done',
+            target: meta,
+          });
+        }
+        for (const meta of dsh?.sessions ?? []) {
+          rows.push({
+            key: `dsh:${meta.sessionId}`,
+            agent: 'dsh',
+            cwd: meta.cwd,
+            label:
+              meta.cwd.length > 0 ? shortCwd(meta.cwd) : meta.sessionId.slice(0, 14),
+            messageCount: 0,
+            lastActivityAt: new Date(meta.updatedAt).toISOString(),
+            status: meta.running ? 'running' : 'done',
             target: meta,
           });
         }
@@ -633,20 +654,12 @@ export function Sidebar({
       }));
   }, [collections, byId, byFileName]);
 
-  const handleNewSession = useCallback(async (): Promise<void> => {
+  const handleNewSession = useCallback((): void => {
     setError(null);
-    try {
-      const response = await api.newSession();
-      if (!response.success) {
-        setError(response.error ?? 'failed to start new session');
-        return;
-      }
-      onSessionChanged(null);
-      onViewChange('chat');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [onSessionChanged, onViewChange]);
+    // The App-level NewSessionDialog owns folder + agent targeting; any
+    // new-session request opens the same dialog.
+    window.dispatchEvent(new Event(NEW_SESSION_REQUEST_EVENT));
+  }, []);
 
   const commitRename = useCallback(
     async (row: AgentSessionRow, name: string): Promise<void> => {
@@ -712,10 +725,15 @@ export function Sidebar({
         onOpenClaudeSession((row.target as ClaudeSessionMeta).sessionId, row.label);
         return;
       }
+      if (row.agent === 'dsh') {
+        const meta = row.target as DshSessionRow;
+        onOpenDshSession(meta.sessionId, row.label);
+        return;
+      }
       // atomcode / zcode are read-only records.
       onViewChange('sessions');
     },
-    [handleResume, onOpenCodexSession, onOpenClaudeSession, onViewChange],
+    [handleResume, onOpenCodexSession, onOpenClaudeSession, onOpenDshSession, onViewChange],
   );
 
   const handleArchive = useCallback((sessionId: string): void => {
@@ -970,7 +988,7 @@ export function Sidebar({
   return (
     <nav className="sidebar" aria-label="Primary">
       <div className="sidebar-top">
-        <button type="button" className="sidebar-new" onClick={() => { void handleNewSession(); }}>
+        <button type="button" className="sidebar-new" onClick={() => { handleNewSession(); }}>
           <span className="hico hico-plus-square-fill" aria-hidden="true" />
           <span>{t('sidebar.new')}</span>
         </button>
@@ -1031,6 +1049,7 @@ export function Sidebar({
                 { value: 'atomcode', glyph: AGENT_GLYPHS.atomcode },
                 { value: 'zcode', glyph: AGENT_GLYPHS.zcode },
                 { value: 'claude', glyph: AGENT_GLYPHS.claude },
+                { value: 'dsh', glyph: AGENT_GLYPHS.dsh },
               ] as ReadonlyArray<{ value: 'all' | SidebarAgent; glyph: string }>
             ).map((option) => (
               <button
@@ -1135,6 +1154,19 @@ export function Sidebar({
           const toggleFolder = (folder: string): void => {
             setFolded((prev) => {
               const base = new Set<string>(prev ?? []);
+              // First touch: freeze the default rule (only the active
+              // project expanded) into the explicit set BEFORE flipping
+              // the target — otherwise clicking a default-collapsed group
+              // would ADD it to the collapsed set (staying collapsed)
+              // instead of expanding it (owner-reported: groups would not
+              // open, dsh/pi rows unreachable).
+              if (prev === null) {
+                for (const [name] of groupEntries) {
+                  if (name !== activeFolder) {
+                    base.add(name);
+                  }
+                }
+              }
               if (base.has(folder)) {
                 base.delete(folder);
               } else {

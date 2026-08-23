@@ -422,6 +422,9 @@ export const pipelineUpsertBodySchema = z.object({
 export const pipelineRunBodySchema = z.object({
   pipelineId: z.string().min(1),
   input: z.string().optional(),
+  /** Run targeting: optional working directory + agent (pi/codex). */
+  cwd: z.string().optional(),
+  agent: z.enum(['pi', 'codex']).optional(),
 });
 
 export const pipelineApproveBodySchema = z.object({

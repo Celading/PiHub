@@ -18,7 +18,7 @@ interface RightSidebarProps {
   /** Active session file — the server resolves the workspace cwd from it. */
   sessionFile: string | null;
   /** Active agent: the tree tab is pi-only (get_tree RPC passthrough). */
-  agent: 'pi' | 'codex';
+  agent: 'pi' | 'codex' | 'dsh' | 'claude';
   /** Docked (edge-attached, grid column + resizer) or floating (top-right). */
   mode: 'docked' | 'float';
   /** Panel width (both modes share the persisted width). */
@@ -104,16 +104,8 @@ export function RightSidebar({
         </div>
       </div>
       <div className="right-sidebar-body scroll-area" role="tabpanel">
-        {tab === 'files' && sessionFile !== null ? <RightFilesPanel sessionFile={sessionFile} /> : null}
-        {tab === 'files' && sessionFile === null ? (
-          <p className="right-sidebar-empty mono">{t('rightSidebar.noSession')}</p>
-        ) : null}
-        {tab === 'changes' && sessionFile !== null ? (
-          <RightChangesPanel sessionFile={sessionFile} />
-        ) : null}
-        {tab === 'changes' && sessionFile === null ? (
-          <p className="right-sidebar-empty mono">{t('rightSidebar.noSession')}</p>
-        ) : null}
+        {tab === 'files' ? <RightFilesPanel sessionFile={sessionFile} /> : null}
+        {tab === 'changes' ? <RightChangesPanel sessionFile={sessionFile} /> : null}
         {tab === 'tree' && agent === 'pi' ? <RightTreePanel /> : null}
         {tab === 'tree' && agent !== 'pi' ? (
           <p className="right-sidebar-empty mono">{t('rightSidebar.treePiOnly')}</p>
