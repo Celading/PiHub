@@ -4,6 +4,31 @@ All notable changes to PiHub are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- DSH Web discovery, session continuity, streamed events, approvals and model
+  catalog support through the local PiHub server.
+- Persistent private workspaces with pre-session Files and Changes views, plus
+  a bounded snapshot fallback when Git is unavailable.
+- Dedicated Pi runtime settings, capability reporting, terminal result fallback
+  and remote-browser pairing/navigation.
+- Standard-input JSON-RPC access to the pipeline runtime through `pihub --mcp`.
+
+### Fixed
+
+- Git status no longer passes diff-only flags that make valid repositories fail.
+- Runtime restart waits for a real response and ignores output from retired
+  child processes.
+- Settings no longer mounts the chat-only right workbench or relies on a native
+  window bridge for remote navigation.
+
+### Security
+
+- Updated the transitive `nanoid` dependency to `3.3.18`; production and full
+  dependency audits report zero known vulnerabilities.
+
 ## [0.3.2] - 2026-08-17
 
 ### Added

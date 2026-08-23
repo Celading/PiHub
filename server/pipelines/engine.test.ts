@@ -16,9 +16,32 @@ class FakeBridge extends EventEmitter implements PipelineBridgeLike {
   public failPrompt = false;
   /** getSessionId() result (audit P1 correlation). */
   public sessionId: string | null = null;
+  /** Run targeting: cwd switching is recorded (no real process). */
+  public cwd = '/work/a';
+  public restartedWith: string[] = [];
+  public ready = true;
 
   getSessionId(): string | null {
     return this.sessionId;
+  }
+
+  getCwd(): string {
+    return this.cwd;
+  }
+
+  restart(cwd?: string): void {
+    if (cwd !== undefined) {
+      this.cwd = cwd;
+    }
+    this.restartedWith.push(cwd ?? '<same>');
+  }
+
+  isRunning(): boolean {
+    return this.ready;
+  }
+
+  waitReady(): Promise<void> {
+    return Promise.resolve();
   }
 
   send(command: RpcCommand): Promise<RpcResponse> {
@@ -694,5 +717,95 @@ describe('pipeline engine', () => {
     expect(receipt.entropy.toolVersions.node).toBe(process.version);
     expect(receipt.entropy.cwd).toBe('/work/a');
     expect(receipt.entropy.retryCount).toBe(0);
+  });
+});
+
+describe('run targeting (folder + agent)', () => {
+  it('restarts the bridge with the chosen cwd before a pi run', async () => {
+    const storePath = await mkdtemp(path.join(os.tmpdir(), 'pihub-target-'));
+    try {
+      const bridge = new FakeBridge();
+      const engine = new PipelineEngine(bridge, createPipelineStore(storePath));
+      const run = engine.start(samplePipeline(), 'go', {}, { cwd: '/work/b' });
+      expect(run.cwd).toBe('/work/b');
+      expect(bridge.restartedWith).toEqual(['/work/b']);
+      expect(bridge.cwd).toBe('/work/b');
+      await tick();
+      expect(bridge.sent.some((c) => c.type === 'prompt')).toBe(true);
+    } finally {
+      await rm(storePath, { recursive: true, force: true });
+    }
+  });
+
+  it('skips the bridge restart when the cwd already matches', async () => {
+    const storePath = await mkdtemp(path.join(os.tmpdir(), 'pihub-target-'));
+    try {
+      const bridge = new FakeBridge();
+      bridge.cwd = '/work/a';
+      const engine = new PipelineEngine(bridge, createPipelineStore(storePath));
+      engine.start(samplePipeline(), 'go', {}, { cwd: '/work/a' });
+      await tick();
+      expect(bridge.restartedWith).toEqual([]);
+    } finally {
+      await rm(storePath, { recursive: true, force: true });
+    }
+  });
+
+  it('routes prompt steps to the codex executor for agent=codex runs', async () => {
+    const storePath = await mkdtemp(path.join(os.tmpdir(), 'pihub-target-'));
+    try {
+      const bridge = new FakeBridge();
+      const codexPrompts: Array<{ message: string; cwd?: string }> = [];
+      const engine = new PipelineEngine(bridge, createPipelineStore(storePath), undefined, undefined, {
+        prompt: (message, opts) => {
+          codexPrompts.push(opts?.cwd !== undefined ? { message, cwd: opts.cwd } : { message });
+          return Promise.resolve({ success: true });
+        },
+        abort: () => Promise.resolve(),
+      });
+      const run = engine.start(
+        samplePipeline({
+          steps: [{ id: 's1', name: 'Plan', type: 'prompt', prompt: 'analyze {{input}}' }],
+        }),
+        'go',
+        {},
+        { agent: 'codex', cwd: '/work/c' },
+      );
+      expect(run.agent).toBe('codex');
+      await waitForStatus(engine, run.runId, (r) => r.status === 'completed');
+      // The bridge must NOT execute anything; the codex executor did.
+      expect(bridge.sent).toEqual([]);
+      expect(codexPrompts.length).toBeGreaterThan(0);
+      expect(codexPrompts[0]?.cwd).toBe('/work/c');
+    } finally {
+      await rm(storePath, { recursive: true, force: true });
+    }
+  });
+
+  it('fails setModel steps honestly on codex runs', async () => {
+    const storePath = await mkdtemp(path.join(os.tmpdir(), 'pihub-target-'));
+    try {
+      const bridge = new FakeBridge();
+      const engine = new PipelineEngine(bridge, createPipelineStore(storePath), undefined, undefined, {
+        prompt: () => Promise.resolve({ success: true }),
+        abort: () => Promise.resolve(),
+      });
+      const pipeline = samplePipeline({
+        steps: [
+          {
+            id: 's1',
+            name: 'Model',
+            type: 'setModel',
+            model: { provider: 'x', id: 'y' },
+          },
+        ],
+      });
+      const run = engine.start(pipeline, 'go', {}, { agent: 'codex' });
+      await waitForStatus(engine, run.runId, (r) => r.status === 'failed');
+      const record = engine.getRun(run.runId);
+      expect(record?.steps[0]?.error).toContain('setModel');
+    } finally {
+      await rm(storePath, { recursive: true, force: true });
+    }
   });
 });

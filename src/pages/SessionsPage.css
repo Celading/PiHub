@@ -14,6 +14,17 @@
   overflow-y: auto;
 }
 
+/* OWNER AUDIT (previously missed): .fog-loading ships height:100% +
+   min-height:0 — as a flex item in the sessions column that lets it
+   COLLAPSE to zero when the groups + adapter sections exceed the viewport,
+   hiding every section below (dsh/查看/录入 unreachable). In this page the
+   fog wrapper must size to its content and never shrink. */
+.sessions-page .fog-loading {
+  height: auto;
+  flex: none;
+  min-height: 0;
+}
+
 .sessions-head {
   display: flex;
   align-items: baseline;
@@ -173,6 +184,10 @@
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
+  /* OWNER REQUIREMENT (previously missed): cap the text column so long
+     cwd titles can never push the row actions (查看/录入) off the row. */
+  max-width: 68%;
+  flex: 1 1 auto;
 }
 
 .codex-session-cwd {

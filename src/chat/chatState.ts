@@ -2,11 +2,12 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { AgentMessage, RpcState, RpcStreamEvent } from '../../shared/types.js';
 import { api, type PromptImage } from '../api/client.js';
 import { eventsUrl } from '../api/controlToken.js';
+import { loadSessionDraft } from './sessionDraft.js';
 
 /** Which agent the chat view is talking to. Switching agents remounts the
  *  chat (clean message list); SSE events carry `kind` so each agent's stream
  *  only renders in its own view. */
-export type PanelAgent = 'pi' | 'codex';
+export type PanelAgent = 'pi' | 'codex' | 'dsh' | 'claude';
 
 export interface ChatMessage {
   key: string;
@@ -24,7 +25,7 @@ export interface RunSummary {
   aborted: boolean;
 }
 
-interface ChatState {
+export interface ChatState {
   messages: ChatMessage[];
   isAgentRunning: boolean;
   pendingSteer: string[];
@@ -43,8 +44,9 @@ interface ChatState {
   hasLoaded: boolean;
 }
 
-type ChatAction =
+export type ChatAction =
   | { type: 'reset'; messages: ChatMessage[]; rpcState: RpcState | null }
+  | { type: 'entryIds'; ids: string[] }
   | { type: 'push'; message: AgentMessage }
   | { type: 'updateLast'; message: AgentMessage; entryId?: string }
   | { type: 'markStreaming'; streaming: boolean }
@@ -65,7 +67,7 @@ const makeKey = (): string => {
   return key;
 };
 
-function initialState(): ChatState {
+export function initialState(): ChatState {
   return {
     messages: [],
     isAgentRunning: false,
@@ -81,7 +83,7 @@ function initialState(): ChatState {
   };
 }
 
-function chatReducer(state: ChatState, action: ChatAction): ChatState {
+export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'reset':
       return {
@@ -94,6 +96,18 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         runAbortedFlag: false,
         hasLoaded: true,
       };
+    case 'entryIds': {
+      let cursor = 0;
+      const messages = state.messages.map((message) => {
+        const id = action.ids[cursor];
+        if (id === undefined) {
+          return message;
+        }
+        cursor += 1;
+        return { ...message, entryId: id };
+      });
+      return { ...state, messages };
+    }
     case 'push': {
       const next: ChatMessage[] = [
         ...state.messages,
@@ -162,10 +176,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       return { ...state, isAgentRunning: false };
     }
-    case 'runSettled':
+    case 'runSettled': {
+      const messages = [...state.messages];
+      const last = messages[messages.length - 1];
+      if (last !== undefined && last.message.role === 'assistant' && last.isStreaming) {
+        messages[messages.length - 1] = { ...last, isStreaming: false };
+      }
       if (state.runStartedAt !== null) {
         return {
           ...state,
+          messages,
           isAgentRunning: false,
           runStartedAt: null,
           lastRun: {
@@ -175,7 +195,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           runAbortedFlag: false,
         };
       }
-      return { ...state, isAgentRunning: false };
+      return { ...state, messages, isAgentRunning: false };
+    }
     case 'runAborted':
       return { ...state, runAbortedFlag: true };
     case 'retrying':
@@ -204,6 +225,31 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
   }
+}
+
+
+/** Extract the plain text of an agent message for the offline cache. */
+function textOf(message: AgentMessage): string {
+  if (message.role === 'bashExecution') {
+    return message.output;
+  }
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (block !== null && typeof block === 'object') {
+        const record = block as Record<string, unknown>;
+        if (typeof record['text'] === 'string') {
+          parts.push(record['text']);
+        }
+      }
+    }
+    return parts.join('\n');
+  }
+  return '';
 }
 
 export function isAgentMessage(value: unknown): value is AgentMessage {
@@ -306,6 +352,14 @@ export function useChatSession(agent: PanelAgent): ChatSession {
   // reloads; only the newest request may dispatch, older ones drop their
   // result instead of blanking/replacing the freshly loaded conversation.
   const reloadSeq = useRef(0);
+  // dsh web chat (stage 3): when the server routes dsh prompts through a
+  // real web session, the answer streams in as dsh_web_event frames —
+  // accumulate text here and mirror it into the last assistant message.
+  const webRunRef = useRef<{ active: boolean; buffer: string; sessionId: string | null }>({
+    active: false,
+    buffer: '',
+    sessionId: null,
+  });
   const reload = useCallback(async (): Promise<void> => {
     const seq = reloadSeq.current + 1;
     reloadSeq.current = seq;
@@ -314,47 +368,87 @@ export function useChatSession(agent: PanelAgent): ChatSession {
       let stateRes: RpcState | null = null;
       if (agent === 'codex') {
         messagesRes = await api.codexMessages();
+      } else if (agent === 'dsh') {
+        messagesRes = await api.dshMessages();
+      } else if (agent === 'claude') {
+        messagesRes = await api.claudeMessages();
       } else {
         const [piMessages, piState] = await Promise.all([api.rpcMessages(), api.rpcState()]);
         messagesRes = piMessages;
         stateRes = piState;
       }
-      // Entry ids are best-effort: a transient failure must not blank the
-      // whole chat — messages and state still load, branch buttons just
-      // stay disabled until the next run provides ids.
-      const entriesRes = await api.rpcEntries().catch(() => null);
       const rawMessages = Array.isArray(messagesRes.messages) ? messagesRes.messages : [];
       const chatMessages: ChatMessage[] = rawMessages
         .filter(isAgentMessage)
         .map((message) => ({ key: makeKey(), message, isStreaming: false }));
-      // Align the session-tree entry ids (get_entries) with the message
-      // list by order — both sequences follow conversation order.
-      if (entriesRes !== null && Array.isArray(entriesRes.entries)) {
-        const messageEntryIds = entriesRes.entries
-          .filter((entry) => entry.message !== undefined)
-          .map((entry) => entry.id);
-        chatMessages.forEach((chatMessage, index) => {
-          const entryId = messageEntryIds[index];
-          if (entryId !== undefined) {
-            chatMessage.entryId = entryId;
-          }
-        });
-      }
       if (reloadSeq.current !== seq) {
         return; // a newer reload superseded this one — drop stale data
       }
       dispatch({
         type: 'reset',
         messages: chatMessages,
-        rpcState: agent === 'codex' ? null : stateRes,
+        rpcState: agent === 'codex' || agent === 'dsh' || agent === 'claude' ? null : stateRes,
       });
+      // Entry ids are optional branch metadata. Pi 0.73.1 may take the full
+      // RPC timeout before rejecting get_entries, so never hold the visible
+      // transcript or live reasoning behind this capability probe.
+      if (agent === 'pi') {
+        void api.rpcEntries().then((entriesRes) => {
+          if (reloadSeq.current !== seq || !Array.isArray(entriesRes.entries)) {
+            return;
+          }
+          dispatch({
+            type: 'entryIds',
+            ids: entriesRes.entries
+              .filter((entry) => entry.message !== undefined)
+              .map((entry) => entry.id),
+          });
+        }).catch(() => {
+          // Branch controls remain disabled when this optional RPC is absent.
+        });
+      }
+      // Offline cache: keep the last successful load per agent so a
+      // disconnected bridge still renders history instead of hanging.
+      try {
+        localStorage.setItem(
+          `pi-panel:chat-cache:${agent}`,
+          JSON.stringify(
+            chatMessages.map((m) => ({ role: m.message.role, text: textOf(m.message) })),
+          ),
+        );
+      } catch {
+        // cache best-effort
+      }
     } catch (error) {
       if (reloadSeq.current !== seq) {
         return;
       }
+      // Prefer the local cache over a blank hang (agent disconnected).
+      let cached: unknown = null;
+      try {
+        cached = JSON.parse(localStorage.getItem(`pi-panel:chat-cache:${agent}`) ?? 'null') as unknown;
+      } catch {
+        cached = null;
+      }
+      const cachedMessages: ChatMessage[] = Array.isArray(cached)
+        ? (cached as Array<{ role?: unknown; text?: unknown }>)
+            .filter((entry) => typeof entry.text === 'string')
+            .map((entry) => ({
+              key: makeKey(),
+              message: {
+                role: entry.role === 'assistant' ? 'assistant' : 'user',
+                content: [{ type: 'text', text: String(entry.text) }],
+                timestamp: Date.now(),
+              },
+              isStreaming: false,
+            }))
+        : [];
+      dispatch({ type: 'reset', messages: cachedMessages, rpcState: null });
       dispatch({
         type: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error:
+          (error instanceof Error ? error.message : String(error)) +
+          (cachedMessages.length > 0 ? ' — 显示本地缓存（agent 可能已断开）' : ''),
       });
     }
   }, [agent]);
@@ -378,8 +472,48 @@ export function useChatSession(agent: PanelAgent): ChatSession {
       // Route by agent kind: codex events carry kind:'codex', pi events do
       // not — an event only renders in the view of its own agent.
       const kind = (parsed as Record<string, unknown>)['kind'];
-      const isCodexEvent = kind === 'codex';
-      if (isCodexEvent !== (agent === 'codex')) {
+      // dsh web chat: real-time frames from a connected dsh web instance
+      // stream the assistant text into the active dsh conversation.
+      if (
+        agent === 'dsh' &&
+        (parsed as Record<string, unknown>)['type'] === 'dsh_web_event' &&
+        webRunRef.current.active
+      ) {
+        const record = parsed as Record<string, unknown>;
+        const frameType = typeof record['frameType'] === 'string' ? record['frameType'] : '';
+        if (frameType === 'session/event') {
+          const event = record['event'] as { data?: Record<string, unknown> } | undefined;
+          const data = event === undefined ? null : (event.data ?? null);
+          const text = data !== null && typeof data['text'] === 'string' ? data['text'] : null;
+          if (text !== null && text.length > 0) {
+            webRunRef.current.buffer += text;
+            dispatch({
+              type: 'updateLast',
+              message: {
+                role: 'assistant',
+                content: [{ type: 'text', text: webRunRef.current.buffer }],
+                timestamp: Date.now(),
+              },
+            });
+          }
+          return;
+        }
+        if (frameType === 'session/projection' && record['running'] === false) {
+          webRunRef.current.active = false;
+          dispatch({ type: 'runSettled', at: Date.now() });
+          return;
+        }
+        return;
+      }
+      // Route by agent kind: codex/dsh events carry their kind, pi events do
+      // not — an event only renders in the view of its own agent.
+      if (kind === 'codex') {
+        if (agent !== 'codex') return;
+      } else if (kind === 'dsh') {
+        if (agent !== 'dsh') return;
+      } else if (kind === 'claude') {
+        if (agent !== 'claude') return;
+      } else if (agent === 'codex' || agent === 'dsh' || agent === 'claude') {
         return;
       }
       const action = eventToAction(parsed as RpcStreamEvent);
@@ -394,6 +528,12 @@ export function useChatSession(agent: PanelAgent): ChatSession {
   }, [agent]);
 
   const refreshState = useCallback(async (): Promise<void> => {
+    // rpcState is a pi-only surface. DSH, Codex and Claude expose their own
+    // state/events; probing the pi bridge here turns a healthy non-pi chat
+    // into a misleading RPC timeout on devices without pi.
+    if (agent !== 'pi') {
+      return;
+    }
     try {
       const stateRes = await api.rpcState();
       dispatch({ type: 'rpcState', rpcState: stateRes });
@@ -403,13 +543,26 @@ export function useChatSession(agent: PanelAgent): ChatSession {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, []);
+  }, [agent]);
 
   const sendPrompt = useCallback(
     async (text: string, images?: PromptImage[]): Promise<void> => {
       try {
         if (agent === 'codex') {
-          await api.codexPrompt(text);
+          await api.codexPrompt(text, loadSessionDraft()?.cwd);
+        } else if (agent === 'dsh') {
+          const result = await api.dshPrompt(text, loadSessionDraft()?.cwd);
+          if (result.data?.mode === 'web' && typeof result.data.sessionId === 'string') {
+            // Web-routed: the answer streams in via dsh_web_event frames.
+            webRunRef.current = { active: true, buffer: '', sessionId: result.data.sessionId };
+            dispatch({ type: 'agentRunning', running: true });
+            dispatch({
+              type: 'push',
+              message: { role: 'user' as const, content: [{ type: 'text', text }], timestamp: Date.now() },
+            });
+          }
+        } else if (agent === 'claude') {
+          await api.claudePrompt(text, loadSessionDraft()?.cwd);
         } else {
           await api.prompt(text, undefined, images);
         }
@@ -429,7 +582,17 @@ export function useChatSession(agent: PanelAgent): ChatSession {
       try {
         if (agent === 'codex') {
           // codex has no steer command; a steer becomes a continuation.
-          await api.codexPrompt(text);
+          await api.codexPrompt(text, loadSessionDraft()?.cwd);
+        } else if (agent === 'dsh') {
+          if (webRunRef.current.active && webRunRef.current.sessionId !== null) {
+            await api.dshWebPrompt(webRunRef.current.sessionId, text, 'steer');
+          } else {
+            // Headless DSH has no persistent run to steer; continue as a new task.
+            await api.dshPrompt(text, loadSessionDraft()?.cwd);
+          }
+        } else if (agent === 'claude') {
+          // claude has no steer surface; a steer becomes a continuation.
+          await api.claudePrompt(text, loadSessionDraft()?.cwd);
         } else {
           await api.steer(text);
         }
@@ -451,6 +614,11 @@ export function useChatSession(agent: PanelAgent): ChatSession {
     try {
       if (agent === 'codex') {
         await api.codexAbort();
+      } else if (agent === 'claude') {
+        await api.claudeAbort();
+      } else if (agent === 'dsh' && webRunRef.current.active && webRunRef.current.sessionId !== null) {
+        await api.dshWebCancel(webRunRef.current.sessionId);
+        webRunRef.current = { active: false, buffer: '', sessionId: null };
       } else {
         await api.abort();
       }

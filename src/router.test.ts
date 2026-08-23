@@ -4,9 +4,10 @@ import type { SettingsSectionId, View } from './types/app.js';
 
 interface RouteState {
   view: View;
-  agent: 'pi' | 'codex';
+  agent: 'pi' | 'codex' | 'dsh' | 'claude';
   codexThread: string | null;
   claudeThread: { sessionId: string; label: string } | null;
+  dshThread: { sessionId: string; label: string } | null;
   sessionFile: string | null;
   settingsSection: SettingsSectionId;
 }
@@ -16,6 +17,7 @@ const STATE: RouteState = {
   agent: 'pi',
   codexThread: null,
   claudeThread: null,
+  dshThread: null,
   sessionFile: null,
   settingsSection: 'general',
 };
@@ -51,6 +53,13 @@ describe('hash router (refresh keeps the selected session)', () => {
       sessionId: 'proj/abc',
       label: 'My transcript',
     });
+    expect(parseRoute('#/chat/dsh')).toEqual({ view: 'chat', kind: 'dsh', sessionId: null, label: '' });
+    expect(parseRoute('#/chat/dsh/sess-abc/My%20run')).toEqual({
+      view: 'chat',
+      kind: 'dsh',
+      sessionId: 'sess-abc',
+      label: 'My run',
+    });
   });
 
   it('rejects unknown hashes', () => {
@@ -85,6 +94,14 @@ describe('hash router (refresh keeps the selected session)', () => {
         claudeThread: { sessionId: 'proj/abc', label: 'My transcript' },
       }),
     ).toBe('#/chat/claude/proj%2Fabc/My%20transcript');
+    expect(serializeRoute({ ...STATE, agent: 'dsh' })).toBe('#/chat/dsh');
+    expect(
+      serializeRoute({
+        ...STATE,
+        agent: 'dsh',
+        dshThread: { sessionId: 'sess-abc', label: 'My run' },
+      }),
+    ).toBe('#/chat/dsh/sess-abc/My%20run');
   });
 
   it('round-trips canonical routes', () => {
@@ -93,6 +110,8 @@ describe('hash router (refresh keeps the selected session)', () => {
       '#/chat/pi/a%2Fb.ses',
       '#/chat/codex/019ff46e-abc',
       '#/chat/claude/p%2Fq/My%20label',
+      '#/chat/dsh',
+      '#/chat/dsh/sess-abc/My%20run',
       '#/sessions',
       '#/settings/lab',
       '#/automation',
@@ -122,6 +141,14 @@ function hashToState(hash: string): RouteState {
     }
     if (route.kind === 'claude') {
       return { ...STATE, claudeThread: { sessionId: route.sessionId, label: route.label } };
+    }
+    if (route.kind === 'dsh') {
+      return {
+        ...STATE,
+        agent: 'dsh',
+        dshThread:
+          route.sessionId !== null ? { sessionId: route.sessionId, label: route.label } : null,
+      };
     }
     return { ...STATE };
   }

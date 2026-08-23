@@ -14,27 +14,24 @@ export function RightChangesPanel({ sessionFile }: { sessionFile: string | null 
   const { t } = useI18n();
   const [root, setRoot] = useState<string | null>(null);
   const [repo, setRepo] = useState<boolean | null>(null);
+  const [source, setSource] = useState<'git' | 'snapshot' | 'none' | null>(null);
   const [changes, setChanges] = useState<GitChange[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<GitChange | null>(null);
 
   const load = useCallback((): void => {
     setError(null);
-    if (sessionFile === null) {
-      setRepo(null);
-      setChanges([]);
-      setRoot(null);
-      return;
-    }
     api
-      .gitStatus(sessionFile)
+      .gitStatus(sessionFile ?? undefined)
       .then((response) => {
         setRoot(response.root);
         setRepo(response.repo);
+        setSource(response.source);
         setChanges(response.changes);
       })
       .catch((reason: unknown) => {
         setRepo(null);
+        setSource(null);
         setChanges([]);
         setError(reason instanceof Error ? reason.message : String(reason));
       });
@@ -83,13 +80,16 @@ export function RightChangesPanel({ sessionFile }: { sessionFile: string | null 
           {error}
         </p>
       ) : null}
-      {repo === false ? (
+      {source === 'snapshot' ? (
+        <p className="right-changes-source mono">{t('rightSidebar.changesSnapshot')}</p>
+      ) : null}
+      {repo === false && source === 'none' ? (
         <p className="right-changes-empty mono">{t('rightSidebar.changesNoRepo')}</p>
       ) : null}
-      {repo === true && changes.length === 0 ? (
+      {source !== null && source !== 'none' && changes.length === 0 ? (
         <p className="right-changes-empty mono">{t('rightSidebar.changesClean')}</p>
       ) : null}
-      {repo === true && changes.length > 0 && selected === null ? (
+      {source !== null && source !== 'none' && changes.length > 0 && selected === null ? (
         <>
           <ChangeGroup title={t('rightSidebar.changesStaged')} items={staged} onOpen={setSelected} />
           <ChangeGroup title={t('rightSidebar.changesUnstaged')} items={unstaged} onOpen={setSelected} />

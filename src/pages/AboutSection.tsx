@@ -6,6 +6,7 @@ interface HealthInfo {
   status: string;
   name: string;
   version: string;
+  build?: string;
   time: string;
   home?: string;
   configFile?: string | null;
@@ -44,7 +45,10 @@ export function AboutSection(): React.JSX.Element {
 
       <div className="about-block">
         <div className="about-label mono">{t('about.version')}</div>
-        <code className="about-code mono">v{info?.version ?? '—'}</code>
+        <code className="about-code mono">
+          v{info?.version ?? '—'}
+          {info?.build !== undefined && info.build.length > 0 ? ` · ${info.build}` : ''}
+        </code>
       </div>
 
       <div className="about-block">

@@ -378,8 +378,8 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
     this.stopped = false;
   }
 
-  private spawnOnce(): ChildProcessWithoutNullStreams | null {
-    const args = ['exec', '--json', '--skip-git-repo-check', '-C', this.cwd];
+  private spawnOnce(cwdOverride?: string): ChildProcessWithoutNullStreams | null {
+    const args = ['exec', '--json', '--skip-git-repo-check', '-C', cwdOverride ?? this.cwd];
     if (process.env.PIHUB_CODEX_EPHEMERAL === '1') {
       args.push('--ephemeral');
     }
@@ -437,7 +437,7 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
       return { type: 'response', command: 'abort', success: true };
     }
     if (command.type === 'prompt' || command.type === 'steer') {
-      return this.sendPrompt(command.message);
+      return this.sendPrompt(command.message, command.cwd);
     }
     if (command.type === 'switch_session') {
       // Remember the thread to resume on the next prompt — codex keeps its
@@ -482,7 +482,7 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
     return [...this.loadedMessages, ...this.liveMessages];
   }
 
-  private async sendPrompt(message: string): Promise<AgentResponse> {
+  private async sendPrompt(message: string, cwd?: string): Promise<AgentResponse> {
     if (this.stopped) {
       return Promise.resolve({
         type: 'response',
@@ -511,7 +511,7 @@ export class CodexAdapter extends EventEmitter implements AgentAdapter {
         });
       }
     }
-    const child = this.spawnOnce();
+    const child = this.spawnOnce(cwd);
     if (child === null) {
       return Promise.resolve({
         type: 'response',

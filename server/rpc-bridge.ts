@@ -89,17 +89,21 @@ export class RpcBridge extends EventEmitter {
 
   constructor(
     private readonly piBinary: string,
-    private readonly cwd: string,
-    options?: { systemPrompt?: () => string },
+    private cwd: string,
+    options?: { systemPrompt?: () => string; baseArgs?: string[] },
   ) {
     super();
     this.systemPrompt = options?.systemPrompt ?? null;
+    this.baseArgs = options?.baseArgs ?? [];
   }
 
   /** Settings system prompt, appended to pi's default coding assistant
    *  prompt at spawn time (owner spec: system prompt setting). Read lazily
    *  so a save followed by restart() picks up the new text. */
   private readonly systemPrompt: (() => string) | null;
+  /** Arguments placed before `--mode rpc`. Device builds use this to run
+   *  the vendored Pi CLI through the HNP Node executable. */
+  private readonly baseArgs: string[];
 
   override on<K extends keyof RpcBridgeEvents>(
     event: K,
@@ -119,17 +123,26 @@ export class RpcBridge extends EventEmitter {
     if (this.stopped || this.child !== null) {
       return;
     }
-    const args = ['--mode', 'rpc'];
+    // Framing state belongs to one child process. A deliberate restart must
+    // not let a partial line from the retired child prefix the replacement's
+    // first JSON frame.
+    this.buffer = '';
+    const args = [...this.baseArgs, '--mode', 'rpc'];
     const systemPromptText = this.systemPrompt?.() ?? '';
     if (systemPromptText.trim().length > 0) {
       args.push('--append-system-prompt', systemPromptText);
     }
     this.child = spawn(this.piBinary, args, {
       cwd: this.cwd,
+      env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    const exitedChild = this.child;
     this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', (chunk: string) => {
+      if (this.child !== exitedChild) {
+        return;
+      }
       this.buffer += chunk;
       // P2-2: a runaway pi (no newlines) must not grow the buffer unbounded.
       if (this.buffer.length > MAX_STDOUT_BUFFER_BYTES) {
@@ -150,18 +163,21 @@ export class RpcBridge extends EventEmitter {
     });
     this.child.stderr.setEncoding('utf8');
     this.child.stderr.on('data', (chunk: string) => {
+      if (this.child !== exitedChild) {
+        return;
+      }
       this.emit('error', new Error(`pi stderr: ${chunk.trimEnd()}`));
     });
-    const exitedChild = this.child;
     this.child.on('exit', (code) => {
       // SPRINT-2 A2: only clear the reference if this is still the current
       // child. A deliberate restart() kills the old process and spawns a new
       // one; if the old process's exit event fires AFTER the new child was
       // assigned, unconditionally nulling this.child would drop the new
       // process (orphan + duplicate pi).
-      if (this.child === exitedChild) {
-        this.child = null;
+      if (this.child !== exitedChild) {
+        return;
       }
+      this.child = null;
       this.emit('exit', code);
       for (const pending of this.pending.values()) {
         clearTimeout(pending.timer);
@@ -184,7 +200,9 @@ export class RpcBridge extends EventEmitter {
       }
     });
     this.child.on('error', (error) => {
-      this.emit('error', error);
+      if (this.child === exitedChild) {
+        this.emit('error', error);
+      }
     });
   }
 
@@ -201,9 +219,20 @@ export class RpcBridge extends EventEmitter {
    * compose updated providers. The panel is session-path-driven — every
    * prompt/steer re-switches to the current session file — so a restart does
    * not detach the active session.
+   *
+   * An optional cwd re-targets the process (new session in a chosen folder):
+   * the child is respawned with the new working directory.
    */
-  restart(): void {
-    if (this.stopped || this.child === null) {
+  restart(cwd?: string): void {
+    if (this.stopped) {
+      return;
+    }
+    if (cwd !== undefined && cwd.length > 0) {
+      this.cwd = cwd;
+    }
+    if (this.child === null) {
+      // Not running (crash loop / stopped) — just (re)start with the target.
+      this.start();
       return;
     }
     const child = this.child;
@@ -215,6 +244,33 @@ export class RpcBridge extends EventEmitter {
     this.pending.clear();
     child.kill('SIGTERM');
     this.start();
+  }
+
+  /** The pi child's working directory (spawn target). */
+  getCwd(): string {
+    return this.cwd;
+  }
+
+  /** Resolves after the child accepts a real RPC request, not merely spawn(). */
+  async waitReady(timeoutMs: number = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      if (this.child === null) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+      const remaining = Math.max(100, deadline - Date.now());
+      try {
+        await this.sendRaw(
+          { id: `pi-panel-ready-${String(this.nextId++)}`, type: 'get_state' },
+          Math.min(1000, remaining),
+        );
+        return;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    throw new Error('pi process did not become RPC-ready in time');
   }
 
   isRunning(): boolean {
@@ -239,7 +295,7 @@ export class RpcBridge extends EventEmitter {
     return this.sendRaw({ id, ...command });
   }
 
-  sendRaw(payload: Record<string, unknown>): Promise<RpcResponse> {
+  sendRaw(payload: Record<string, unknown>, timeoutMs: number = RESPONSE_TIMEOUT_MS): Promise<RpcResponse> {
     if (this.child === null) {
       return Promise.reject(new Error('pi process is not running'));
     }
@@ -250,7 +306,7 @@ export class RpcBridge extends EventEmitter {
         // No correlation possible; resolve once the next response arrives.
         const timer = setTimeout(() => {
           reject(new Error('RPC response timeout'));
-        }, RESPONSE_TIMEOUT_MS);
+        }, timeoutMs);
         this.once('response', (response: RpcResponse) => {
           clearTimeout(timer);
           resolve(response);
@@ -260,7 +316,7 @@ export class RpcBridge extends EventEmitter {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`RPC response timeout for ${id}`));
-      }, RESPONSE_TIMEOUT_MS);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
     this.child.stdin.write(`${JSON.stringify(payload)}\n`);

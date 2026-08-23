@@ -42,7 +42,7 @@ export function usePipelines(): {
   refresh: () => Promise<void>;
   save: (pipeline: Pipeline) => Promise<void>;
   remove: (id: string) => Promise<void>;
-  run: (pipelineId: string, input?: string) => Promise<void>;
+  run: (pipelineId: string, input?: string, targeting?: { cwd?: string; agent?: 'pi' | 'codex' }) => Promise<void>;
   abort: (runId: string) => Promise<void>;
   approve: (runId: string, approved: boolean) => Promise<void>;
 } {
@@ -57,6 +57,9 @@ export function usePipelines(): {
       setRuns(runList.runs);
       setError(null);
     } catch (err) {
+      // Keep the tab renderable after a failed first load; a null list is
+      // reserved for an in-flight request, not a settled error.
+      setPipelines([]);
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
@@ -118,8 +121,8 @@ export function usePipelines(): {
   );
 
   const run = useCallback(
-    async (pipelineId: string, input?: string): Promise<void> => {
-      const { run: record } = await api.runPipeline(pipelineId, input);
+    async (pipelineId: string, input?: string, targeting?: { cwd?: string; agent?: 'pi' | 'codex' }): Promise<void> => {
+      const { run: record } = await api.runPipeline(pipelineId, input, targeting);
       setRuns((prev) => [...prev.filter((r) => r.runId !== record.runId), record]);
     },
     [],

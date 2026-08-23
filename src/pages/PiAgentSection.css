@@ -1,0 +1,64 @@
+.pi-agent-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pi-agent-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-top: 3px solid var(--primary);
+}
+
+.pi-agent-runtime {
+  margin: var(--space-2) 0;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  word-break: break-all;
+}
+
+.pi-agent-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--status-ok);
+  background-color: var(--surface-subtle);
+  color: var(--status-ok);
+  font-size: var(--text-xs);
+}
+
+.pi-agent-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.pi-agent-json {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  resize: vertical;
+  border: var(--border-thin) solid var(--border-subtle);
+  background-color: var(--code-background);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.pi-agent-json:focus {
+  outline: var(--border-thick) solid var(--focus);
+  outline-offset: 0;
+}
+
+.pi-agent-security {
+  border-left: 3px solid var(--status-warning);
+}
+
+@media (max-width: 760px) {
+  .pi-agent-hero {
+    flex-direction: column;
+  }
+}

@@ -266,6 +266,15 @@ export type PipelineStepStatus =
 
 export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'aborted' | 'failed' | 'uncertain';
 
+/** Agent backends a session/task run may target (panel exec adapters). */
+export type RunAgent = 'pi' | 'codex';
+
+/** Run-level targeting: optional working directory + agent for a pipeline run. */
+export interface RunTargeting {
+  cwd?: string;
+  agent?: RunAgent;
+}
+
 export interface PipelineStepRecord {
   stepId: string;
   name: string;
@@ -289,6 +298,9 @@ export interface PipelineRunRecord {
   pipelineName: string;
   status: PipelineRunStatus;
   input: string;
+  /** Optional run targeting (chosen at start time, audit-visible). */
+  cwd?: string;
+  agent?: RunAgent;
   startedAt: number;
   finishedAt?: number;
   steps: PipelineStepRecord[];

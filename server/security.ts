@@ -126,6 +126,12 @@ const SENSITIVE_READ_EXACT = [
   '/api/rpc/entries',
   '/api/rpc/tree',
   '/api/events',
+  '/api/dirs',
+  '/api/dsh/settings',
+  '/api/dsh/sessions',
+  '/api/external/sessions',
+  '/api/capabilities',
+  '/api/pi-agent/settings',
 ] as const;
 
 /** Routes that must present the control token (writes + sensitive reads). */
@@ -391,4 +397,3 @@ export class LanGate {
     }
   }
 }
-

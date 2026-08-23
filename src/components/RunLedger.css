@@ -83,3 +83,17 @@
 .run-ledger-body {
   padding: var(--space-1) var(--space-2) var(--space-2) var(--space-2);
 }
+
+.run-ledger-collapse {
+  transition-duration: 280ms;
+}
+
+.run-ledger-row[data-open='true'] {
+  border-left-color: color-mix(in srgb, var(--primary) 45%, var(--border-subtle));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-ledger-collapse {
+    transition-duration: 1ms;
+  }
+}

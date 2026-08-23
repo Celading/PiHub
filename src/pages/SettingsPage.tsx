@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ModelInfo, SessionSummary } from '../../shared/types.js';
 import { THEMES, type SettingsSectionId, type Theme } from '../types/app.js';
-import { api } from '../api/client.js';
+import { api, type DshSettingsInfo } from '../api/client.js';
+import { DshWebSection } from '../components/DshWebSection.js';
+import { AgentsSection } from '../components/AgentsSection.js';
+import { getPairCode, setPairCode as storePairCode } from '../api/pairToken.js';
 import {
   loadAdapterColors,
   saveAdapterColor,
@@ -24,6 +27,7 @@ import { FavoritesSection } from './FavoritesSection.js';
 import { LabSection } from './LabSection.js';
 import { AboutSection } from './AboutSection.js';
 import { PermissionsSection } from './PermissionsSection.js';
+import { PiAgentSection } from './PiAgentSection.js';
 import './SettingsPage.css';
 
 const ARCHIVED_STORAGE_KEY = 'pi-panel:archived';
@@ -258,6 +262,68 @@ export function SettingsPage({
     remoteShell: false,
   });
   const [pairCode, setPairCode] = useState<string | null>(null);
+  // P2-02 remote side: the pairing code entered on THIS device (persisted via
+  // pairToken) — unlocks read-only supervision of a remote PiHub host.
+  const [enteredPair, setEnteredPair] = useState<string>(() => getPairCode());
+  const [pairTick, setPairTick] = useState(0);
+  // D2: embedded dsh kernel settings (provider/model surface).
+  const [dshInfo, setDshInfo] = useState<DshSettingsInfo | null>(null);
+  const [dshEnabled, setDshEnabled] = useState(true);
+  const [dshModelDraft, setDshModelDraft] = useState<string | null>(null);
+  const [dshSaving, setDshSaving] = useState(false);
+  const [dshError, setDshError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .dshSettings()
+      .then((info) => {
+        if (!cancelled) {
+          setDshInfo(info);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // 503 (demo mode) or unreachable — hide the card.
+          setDshEnabled(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const saveDshModel = useCallback(async (): Promise<void> => {
+    if (dshModelDraft === null) {
+      return;
+    }
+    setDshSaving(true);
+    setDshError(null);
+    try {
+      const result = await api.updateDshSettings(dshModelDraft);
+      setDshInfo((prev) => (prev === null ? prev : { ...prev, model: result.model }));
+      setDshModelDraft(null);
+    } catch (err) {
+      setDshError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDshSaving(false);
+    }
+  }, [dshModelDraft]);
+  // Distributed mode: navigate this browser to another PiHub host.
+  const [remoteUrl, setRemoteUrl] = useState('');
+  const [remotePair, setRemotePair] = useState('');
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+
+  const openRemote = useCallback((): void => {
+    const url = remoteUrl.trim();
+    if (url.length === 0) {
+      setRemoteError(t('settings.network.remoteUrlRequired'));
+      return;
+    }
+    setRemoteError(null);
+    const pair = remotePair.trim();
+    window.location.assign(
+      pair.length > 0 ? `${url}${url.includes('?') ? '&' : '?'}pair=${encodeURIComponent(pair)}` : url,
+    );
+  }, [remoteUrl, remotePair, t]);
 
   const generatePair = useCallback(async (): Promise<void> => {
     setError(null);
@@ -277,6 +343,19 @@ export function SettingsPage({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }, []);
+
+  const saveEnteredPair = useCallback((): void => {
+    setError(null);
+    storePairCode(enteredPair);
+    setPairTick((prev) => prev + 1);
+  }, [enteredPair]);
+
+  const clearEnteredPair = useCallback((): void => {
+    setError(null);
+    setEnteredPair('');
+    storePairCode('');
+    setPairTick((prev) => prev + 1);
   }, []);
 
   const setCap = useCallback(
@@ -397,7 +476,8 @@ export function SettingsPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+    // pairTick re-runs the load after the user saves/clears a pairing code.
+  }, [pairTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -501,6 +581,8 @@ export function SettingsPage({
       ? t('settings.nav.general')
       : section === 'personal'
         ? t('settings.nav.personal')
+        : section === 'piAgent'
+          ? t('settings.nav.piAgent')
         : section === 'models'
           ? t('settings.nav.models')
           : section === 'sessions'
@@ -762,6 +844,87 @@ export function SettingsPage({
               <p className="settings-hint">{t('settings.personal.keysHint')}</p>
             </section>
 
+            {/* D2: embedded DeepSeek Harness kernel settings */}
+            <AgentsSection />
+            <DshWebSection />
+            {dshEnabled ? (
+              <section className="settings-section">
+                <h2 className="settings-section-title mono">{t('settings.dsh.title')}</h2>
+                {dshInfo === null ? (
+                  <p className="settings-hint">{t('settings.dsh.unavailable')}</p>
+                ) : (
+                  <>
+                    <div className="setting-row">
+                      <span className="setting-label mono">{t('settings.dsh.runtime')}</span>
+                      <div className="setting-row-value">
+                        <span className="setting-value mono">
+                          dsh {dshInfo.dshVersion} · Node {dshInfo.nodeVersion}
+                        </span>
+                    </div>
+                  </div>
+                  <div className="setting-row">
+                    <span className="setting-label mono">{t('settings.dsh.provider')}</span>
+                    <div className="setting-row-value">
+                      <span className="setting-value mono">
+                        {dshInfo.provider ?? '—'} · {dshInfo.baseURL ?? '—'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="setting-row">
+                    <span className="setting-label mono">{t('settings.dsh.model')}</span>
+                    <div className="setting-row-value">
+                      {dshInfo.models.length > 0 ? (
+                        <select
+                          className="setting-select mono"
+                          value={dshModelDraft ?? dshInfo.model ?? ''}
+                          onChange={(event) => {
+                            setDshModelDraft(event.target.value);
+                          }}
+                        >
+                          {dshInfo.models.map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="setting-value mono">{dshInfo.model ?? '—'}</span>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={
+                          dshSaving ||
+                          dshModelDraft === null ||
+                          dshModelDraft === dshInfo.model
+                        }
+                        onClick={() => {
+                          void saveDshModel();
+                        }}
+                      >
+                        {dshSaving ? t('settings.dsh.saving') : t('settings.dsh.save')}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="setting-row">
+                    <span className="setting-label mono">{t('settings.dsh.key')}</span>
+                    <div className="setting-row-value">
+                      <span className="setting-value mono" data-status={dshInfo.hasKey ? 'ok' : 'warn'}>
+                        {dshInfo.hasKey ? t('settings.dsh.keyPresent') : t('settings.dsh.keyMissing')}
+                      </span>
+                    </div>
+                  </div>
+                  {dshError !== null ? (
+                    <p className="new-session-error mono" role="alert">
+                      {dshError}
+                    </p>
+                  ) : null}
+                  <p className="settings-hint">{t('settings.dsh.hint')}</p>
+                </>
+              )}
+              </section>
+            ) : null}
+
             {/* P2-02: access mode + pairing + remote capabilities */}
             <section className="settings-section">
               <h2 className="settings-section-title mono">{t('settings.network')}</h2>
@@ -808,6 +971,75 @@ export function SettingsPage({
                   )}
                 </div>
               </div>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.network.enterPair')}</span>
+                <div className="setting-row-value">
+                  <input
+                    type="text"
+                    className="pair-input mono"
+                    placeholder={t('settings.network.pairCode')}
+                    value={enteredPair}
+                    onChange={(event) => {
+                      setEnteredPair(event.target.value);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      saveEnteredPair();
+                    }}
+                  >
+                    {t('settings.network.savePair')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      clearEnteredPair();
+                    }}
+                  >
+                    {t('settings.network.clearPair')}
+                  </button>
+                </div>
+              </div>
+              <p className="settings-hint">{t('settings.network.enterHint')}</p>
+              <div className="setting-row">
+                <span className="setting-label mono">{t('settings.network.remote')}</span>
+                <div className="setting-row-value">
+                  <input
+                    type="text"
+                    className="pair-input mono"
+                    placeholder={t('settings.network.remoteUrl')}
+                    value={remoteUrl}
+                    onChange={(event) => {
+                      setRemoteUrl(event.target.value);
+                    }}
+                  />
+                  <input
+                    type="text"
+                    className="pair-input mono"
+                    placeholder={t('settings.network.remotePair')}
+                    value={remotePair}
+                    onChange={(event) => {
+                      setRemotePair(event.target.value);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      openRemote();
+                    }}
+                  >
+                    {t('settings.network.remoteOpen')}
+                  </button>
+                </div>
+              </div>
+              {remoteError !== null ? (
+                <p className="settings-hint settings-error mono">{remoteError}</p>
+              ) : null}
+              <p className="settings-hint">{t('settings.network.remoteHint')}</p>
               <p className="settings-hint">{t('settings.network.hint')}</p>
               <div className="network-caps">
                 <span className="setting-label mono">{t('settings.network.caps')}</span>
@@ -834,6 +1066,8 @@ export function SettingsPage({
             </section>
           </>
         ) : null}
+
+        {section === 'piAgent' ? <PiAgentSection /> : null}
 
         {section === 'models' ? (
           <>

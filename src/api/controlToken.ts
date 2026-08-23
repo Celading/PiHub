@@ -1,3 +1,5 @@
+import { pairQuery } from './pairToken.js';
+
 /**
  * SPRINT-2 A1: control-token plumbing for the SPA.
  *
@@ -6,6 +8,9 @@
  * (fetch header) and to the SSE EventSource (?token= query, since
  * EventSource cannot set headers). In dev/demo mode the token may be absent —
  * the server then skips token gating — so calls stay header-free.
+ *
+ * P2-02: remote peers additionally carry their pairing code (?pair=) on the
+ * SSE URL, mirroring the fetch-side handling in client.ts.
  */
 
 declare global {
@@ -33,5 +38,8 @@ export function controlTokenHeader(): Record<string, string> {
 /** SSE endpoint with the token attached as a query param when present. */
 export function eventsUrl(): string {
   const token = readToken();
-  return token === undefined ? '/api/events' : `/api/events?token=${encodeURIComponent(token)}`;
+  const tokenPart = token === undefined ? '' : `token=${encodeURIComponent(token)}`;
+  const pairPart = pairQuery();
+  const params = [tokenPart, pairPart].filter((part) => part.length > 0).join('&');
+  return params.length === 0 ? '/api/events' : `/api/events?${params}`;
 }

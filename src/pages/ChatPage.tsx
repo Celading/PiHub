@@ -10,6 +10,8 @@ import { ActiveRunHeader } from '../components/ActiveRunHeader.js';
 import { RunLedger } from '../components/RunLedger.js';
 import { FogLoading } from '../components/FogLoading.js';
 import { TerminalPanel } from '../components/TerminalPanel.js';
+import { WelcomeView } from '../components/WelcomeView.js';
+import { loadSessionDraft } from '../chat/sessionDraft.js';
 import { useI18n, type Locale } from '../i18n/I18nProvider.js';
 import { useLabFlag } from '../lab/labFlags.js';
 import { useMode } from '../kMode/useMode.js';
@@ -81,20 +83,6 @@ function extractAssistantMarkdown(message: AgentMessage): string {
     .trim();
 }
 
-/** Showcase sprint: the one-line final summary of a settled unit — the last
- *  assistant reply, whitespace-collapsed and capped for the settle line. */
-function finalReplySummary(unit: ChatUnit): string | null {
-  const last = [...unit.rest].reverse().find((item) => item.message.role === 'assistant');
-  if (last === undefined) {
-    return null;
-  }
-  const text = extractAssistantMarkdown(last.message).replace(/\s+/g, ' ').trim();
-  if (text.length === 0) {
-    return null;
-  }
-  return text.length > 96 ? `${text.slice(0, 96)}…` : text;
-}
-
 /** Extracts the user prompt text (copy + edit primitives, P1-13 D/E). */
 function extractUserPrompt(message: ChatMessage | null): string {
   if (message === null || message.message.role !== 'user') {
@@ -136,6 +124,8 @@ interface ChatPageProps {
   codexThread?: string | null;
   /** Claude transcript to render read-only (sidebar "open record"). */
   claudeThread?: { sessionId: string; label: string } | null;
+  /** dsh session transcript opened from the sidebar (read-only). */
+  dshThread?: { sessionId: string; label: string } | null;
   /** UX workbench: pending extension-UI dialogs (approval indicator). */
   pendingApprovals?: number;
 }
@@ -145,16 +135,18 @@ export function ChatPage({
   agent,
   codexThread = null,
   claudeThread = null,
+  dshThread = null,
   pendingApprovals = 0,
 }: ChatPageProps): React.JSX.Element {
   const chat = useChatSession(agent);
-  const transcriptMode = claudeThread != null;
+  const workspaceLabel =
+    loadSessionDraft()?.cwd.split('/').filter(Boolean).pop() ?? '当前工作区';
+  const transcriptMode = claudeThread != null || dshThread != null;
   const [transcript, setTranscript] = useState<ChatMessage[] | null>(null);
 
   // Claude transcript loader (read-only): turns → chat messages.
   useEffect(() => {
-    if (!transcriptMode) {
-      setTranscript(null);
+    if (claudeThread === null) {
       return;
     }
     let cancelled = false;
@@ -194,7 +186,60 @@ export function ChatPage({
     return () => {
       cancelled = true;
     };
-  }, [transcriptMode, claudeThread]);
+  }, [claudeThread]);
+
+  // dsh transcript loader (read-only): web history → chat messages. When no
+  // dsh web is connected the history endpoint fails and we honestly show
+  // the session metadata note instead of an empty hang.
+  useEffect(() => {
+    if (dshThread === null) {
+      return;
+    }
+    let cancelled = false;
+    setTranscript(null);
+    api
+      .dshWebHistory(dshThread.sessionId)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        const history = Array.isArray(response.history) ? response.history : [];
+        const messages: ChatMessage[] = [];
+        for (const item of history) {
+          if (item === null || typeof item !== 'object') {
+            continue;
+          }
+          const record = item as Record<string, unknown>;
+          const role = record['role'] === 'user' ? 'user' : 'assistant';
+          const text = (record as { text?: unknown })['text'];
+          if (typeof text === 'string' && text.length > 0) {
+            messages.push({
+              key: `dsh-${dshThread.sessionId}-${String(messages.length)}`,
+              message: {
+                role,
+                content:
+                  role === 'assistant'
+                    ? [{ type: 'text', text }]
+                    : text,
+                timestamp: Date.now(),
+              } as AgentMessage,
+              isStreaming: false,
+            });
+          }
+        }
+        setTranscript(messages);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // dsh web not connected — the transcript is empty; the read-only
+          // banner explains the situation honestly.
+          setTranscript([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dshThread]);
   const { t, locale } = useI18n();
   const mode = useMode();
   const settledNotify = useLabFlag('settledNotify');
@@ -246,9 +291,6 @@ export function ChatPage({
   const [composerForced, setComposerForced] = useState(false);
   // P1-03: read-only file preview + recent file operations.
   const [previewPath, setPreviewPath] = useState<string | null>(null);
-  const [collapsedUnits, setCollapsedUnits] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   // Large conversations render tail-first: only the last `visibleUnits`
   // units are mounted, older ones load on demand ("加载更早消息"). Combined
   // with content-visibility on .chat-unit this keeps huge sessions smooth.
@@ -256,11 +298,6 @@ export function ChatPage({
   const loadEarlierUnits = useCallback((): void => {
     setVisibleUnits((prev) => prev + 30);
   }, []);
-  // Simplified output: settled workflows auto-collapse; this set tracks the
-  // ones the user explicitly expanded.
-  const [userExpanded, setUserExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
 
   // Prompt timeline: jump the message stream to the clicked prompt unit.
   const jumpToPrompt = useCallback((key: string): void => {
@@ -372,32 +409,6 @@ export function ChatPage({
       : runSummary !== null && runSummary.aborted
         ? 'interrupted'
         : 'done';
-
-  const toggleCollapsed = (key: string): void => {
-    // Auto-collapse (simplified output or the showcase settle-collapse) is
-    // overridden through userExpanded; manual folds go through collapsedUnits.
-    if (simplifiedOutput || settledCollapse) {
-      setUserExpanded((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) {
-          next.delete(key);
-        } else {
-          next.add(key);
-        }
-        return next;
-      });
-      return;
-    }
-    setCollapsedUnits((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  };
 
   // Branch at the bottom of an agent reply (P1-10 B): pi's fork RPC splits
   // before a user message, so forking the *next* user message after this
@@ -521,11 +532,12 @@ export function ChatPage({
     return seen.size;
   }, [transcriptMode, transcript, chat.messages]);
 
-  // Active Run Header actions: rerun resends the last user prompt; branch
+  // Active Run Header actions: rerun resends the last user prompt for every
+  // agent (pi/codex/dsh — sendPrompt routes by the current agent); branch
   // forks at the last assistant reply's tree node (pi only). Both are null
   // when there is nothing to act on (or the view is read-only).
   const rerunAction =
-    !transcriptMode && agent === 'pi' && !chat.isAgentRunning
+    !transcriptMode && !chat.isAgentRunning
       ? (() => {
           const lastUser = [...viewMessages].reverse().find((item) => item.message.role === 'user');
           if (lastUser === undefined) {
@@ -622,10 +634,24 @@ export function ChatPage({
         {/* P1-09: fog skeleton while the switched session's messages load;
             the real content then condenses in (fog themes). */}
         <FogLoading loading={transcriptMode ? transcript === null : !chat.hasLoaded}>
-        {viewMessages.length === 0 ? (
+        {!transcriptMode && viewMessages.length === 0 && !chat.isAgentRunning ? (
+          <WelcomeView
+            workspaceLabel={workspaceLabel}
+            onSend={(text) => {
+              void chat.sendPrompt(text);
+            }}
+            onOpenFavorites={() => {
+              window.dispatchEvent(new Event('pihub:open-prompt-favorites'));
+            }}
+          />
+        ) : viewMessages.length === 0 ? (
           <div className="chatpage-empty">
             <h2 className="panel-title">{t('chat.empty.title')}</h2>
-            <p className="chatpage-empty-hint">{t('chat.empty.hint')}</p>
+            <p className="chatpage-empty-hint">
+              {dshThread !== null
+                ? t('chat.dshTranscriptUnavailable')
+                : t('chat.empty.hint')}
+            </p>
           </div>
         ) : (
           <div className="chatpage-stream">
@@ -644,25 +670,14 @@ export function ChatPage({
               const isSettledUnit = isLast && !chat.isAgentRunning && runSummary !== null && unit.user !== null;
               const showSummary =
                 (isRunningUnit || isSettledUnit) && unit.user !== null;
-              const finalSummary = isSettledUnit ? finalReplySummary(unit) : null;
-              // Simplified output / settle-collapse: settled workflows fold
-              // automatically; the "....." marker then hints that more
-              // content is folded, and a final summary line summarizes the
-              // last assistant reply.
-              const autoCollapsed =
-                (simplifiedOutput || settledCollapse) &&
-                isSettledUnit &&
-                !userExpanded.has(unit.key);
-              const collapsed =
-                autoCollapsed || collapsedUnits.has(unit.key);
               return (
                 <div
                   key={unit.key}
                   className="chat-unit"
-                  data-collapsed={collapsed}
+                  data-collapsed="false"
                   data-unit-key={unit.key}
                 >
-                  <div className="chat-unit-body" data-collapsed={collapsed}>
+                  <div className="chat-unit-body" data-collapsed="false">
                     <div className="chat-unit-body-inner">
                       {unit.user !== null ? (
                         editingUnitKey === unit.key ? (
@@ -790,7 +805,8 @@ export function ChatPage({
                             ))}
                             <RunLedger
                               items={processItems}
-                              streaming={chat.isAgentRunning}
+                              active={isRunningUnit}
+                              autoFold={simplifiedOutput || settledCollapse}
                               thinkingStatus={statusFor}
                               onOpenFile={openFile}
                             />
@@ -848,14 +864,8 @@ export function ChatPage({
                   })()}
                   {showSummary ? (
                     <div className="chat-unit-summary">
-                      <button
-                        type="button"
+                      <div
                         className="chat-unit-summary-line mono"
-                        onClick={() => {
-                          toggleCollapsed(unit.key);
-                        }}
-                        aria-expanded={!collapsed}
-                        aria-label={t('workflow.collapse')}
                       >
                         {isRunningUnit ? (
                           <>
@@ -881,24 +891,11 @@ export function ChatPage({
                             </span>
                           </>
                         )}
-                        <span className="chat-unit-chevron" aria-hidden="true">
-                          {collapsed ? '>' : '>'}
-                        </span>
-                      </button>
+                      </div>
                       {isSettledUnit || isRunningUnit ? (
                         <>
                           {/* Full-width divider line closing the workflow */}
                           <div className="chat-unit-divider" aria-hidden="true" />
-                          {collapsed ? (
-                            <div className="chat-unit-settle mono">
-                              {isSettledUnit && finalSummary !== null ? (
-                                <span className="chat-unit-final-summary">
-                                  {t('chat.finalSummary')}：{finalSummary}
-                                </span>
-                              ) : null}
-                              <span aria-hidden="true">.....</span>
-                            </div>
-                          ) : null}
                         </>
                       ) : null}
                     </div>
@@ -931,7 +928,12 @@ export function ChatPage({
         </button>
         {transcriptMode ? (
           <div className="chat-transcript-banner mono">
-            {t('chat.transcriptReadOnly', { label: (claudeThread as { label: string } | null)?.label ?? '' })}
+            {t('chat.transcriptReadOnly', {
+              label:
+                (claudeThread as { label: string } | null)?.label ??
+                (dshThread as { label: string } | null)?.label ??
+                '',
+            })}
           </div>
         ) : (
         <Composer
