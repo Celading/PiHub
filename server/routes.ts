@@ -2497,8 +2497,8 @@ export function createRouter(
     res.json({ success: pipelineEngine.approve(req.params.id, body.data.approve) });
   });
 
-  /* ---- skill → pipeline conversion (P1-10 A; HaomoKit generalized
-   * capability). Hard = algorithm, zero tokens. Soft = agent-assisted,
+  /* ---- skill → pipeline conversion (P1-10 A; PiHub-local
+   * orchestration). Hard = algorithm, zero tokens. Soft = runtime-assisted,
    * token cost — the frontend must confirm with the operator first. ---- */
 
   const resolveSkillCommand = async (commandName: string): Promise<PiCommand | null> => {

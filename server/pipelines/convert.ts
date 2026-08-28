@@ -1,6 +1,5 @@
 /**
- * Skill → Pipeline conversion (P1-10 A, PiHub-exclusive / HaomoKit
- * generalized capability).
+ * Skill → Pipeline conversion (P1-10 A, PiHub-local orchestration).
  *
  * Two intents, kept semantically distinct:
  * - HARD: pure algorithmic conversion, zero token cost. Generates a
