@@ -40,7 +40,7 @@ no external UI source is reused.
 ### Local-first by design
 
 Conversation history is stored on your machine. The panel binds to the loopback
-interface by default, never reads your agent credentials, and operates no cloud
+interface by default, never reads your runtime credentials, and operates no cloud
 service of its own — the only outbound requests are the ones you explicitly
 configure (model catalog lookups and prompts to your chosen provider). See
 [`SECURITY.md`](SECURITY.md) for the exact boundary.
