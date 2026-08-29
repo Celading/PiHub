@@ -129,16 +129,39 @@ function ThinkingBlock({
   text,
   status,
   animate,
+  reveal,
 }: {
   text: string;
   status: ThinkingStatus;
   animate: boolean;
+  reveal: boolean;
 }): React.JSX.Element {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const [settleVisible, setSettleVisible] = useState(status === 'active');
+  const wasActive = useRef(status === 'active');
   // L005 owner spec keeps the reasoning body collapsed while streaming; the
   // lab option reveals it live until the run settles.
   const showLive = useLabFlag('showThinkingLive');
+
+  useEffect(() => {
+    if (status === 'active') {
+      wasActive.current = true;
+      setSettleVisible(true);
+      return;
+    }
+    if (!wasActive.current) {
+      setSettleVisible(false);
+      return;
+    }
+    wasActive.current = false;
+    const timer = window.setTimeout(() => {
+      setSettleVisible(false);
+    }, 3500);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [status]);
 
   const label =
     status === 'active'
@@ -149,9 +172,11 @@ function ThinkingBlock({
   const iconClass =
     status === 'interrupted' ? 'hico-exclamationmark' : 'hico-waveform';
 
+  const visible = reveal || settleVisible || (status === 'active' && showLive) || expanded;
+
   if (status === 'active') {
     return (
-      <div className="thinking thinking-active" data-anim={animate} data-expanded={showLive}>
+      <div className="thinking thinking-active" data-anim={animate} data-expanded={visible}>
         <div className="thinking-toggle" aria-live="polite">
           <span className={`hico ${iconClass} thinking-icon`} aria-hidden="true" />
           <span className="thinking-label mono" aria-hidden="true">
@@ -167,28 +192,30 @@ function ThinkingBlock({
           </span>
           <span className="thinking-label mono thinking-sr">{label}</span>
         </div>
-        {showLive && text.trim().length > 0 ? (
-          <div className="thinking-body thinking-body-live">{text}</div>
-        ) : null}
+        <div className="collapse-region" data-collapsed={!visible || text.trim().length === 0}>
+          <div className="collapse-region-inner">
+            <div className="thinking-body thinking-body-live">{text}</div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="thinking" data-expanded={expanded} data-status={status}>
+    <div className="thinking" data-expanded={visible} data-status={status}>
       <button
         type="button"
         className="thinking-toggle"
         onClick={() => {
           setExpanded(!expanded);
         }}
-        aria-expanded={expanded}
+        aria-expanded={visible}
       >
         <span className={`hico ${iconClass} thinking-icon`} aria-hidden="true" />
         <span className="thinking-label mono">{label}</span>
         <span className="hico hico-chevron-down thinking-chevron" aria-hidden="true" />
       </button>
-      <div className="collapse-region" data-collapsed={!expanded}>
+      <div className="collapse-region" data-collapsed={!visible}>
         <div className="collapse-region-inner">
           <div className="thinking-body">{text}</div>
         </div>
@@ -218,6 +245,7 @@ function ContentBlocks({
   thinkingStatus,
   animate,
   typewriter,
+  revealThinking = false,
 }: {
   blocks: RenderBlock[];
   thinkingStatus: ThinkingStatus;
@@ -225,6 +253,7 @@ function ContentBlocks({
   /** Showcase sprint: render streaming text blocks with the typewriter
    *  reveal (markdown takes over once the reveal completes). */
   typewriter?: boolean;
+  revealThinking?: boolean;
 }): React.JSX.Element {
   const { t } = useI18n();
   return (
@@ -269,6 +298,7 @@ function ContentBlocks({
                 text={thinkingValue}
                 status={thinkingStatus}
                 animate={animate}
+                reveal={revealThinking}
               />
             ) : null;
           }
@@ -370,12 +400,14 @@ function AssistantMessageView({
   thinkingStatus,
   animate,
   typewriter,
+  revealThinking,
 }: {
   message: Extract<AgentMessage, { role: 'assistant' }>;
   isStreaming: boolean;
   thinkingStatus: ThinkingStatus;
   animate: boolean;
   typewriter: boolean;
+  revealThinking: boolean;
 }): React.JSX.Element {
   return (
     <div className="assistant-body" data-streaming={isStreaming}>
@@ -384,6 +416,7 @@ function AssistantMessageView({
         thinkingStatus={thinkingStatus}
         animate={animate}
         typewriter={typewriter && isStreaming}
+        revealThinking={revealThinking}
       />
       {isStreaming && animate ? <span className="stream-cursor" aria-hidden="true" /> : null}
     </div>
@@ -484,6 +517,8 @@ interface MessageItemProps {
   footer?: React.ReactNode;
   /** P1-03 B: clickable file paths in tool output open the preview. */
   onOpenFile?: ((path: string) => void) | undefined;
+  /** Keep reasoning visible while its containing process row is open. */
+  revealThinking?: boolean;
 }
 
 export function MessageItem({
@@ -492,6 +527,7 @@ export function MessageItem({
   thinkingStatus = 'done',
   footer,
   onOpenFile,
+  revealThinking = false,
 }: MessageItemProps): React.JSX.Element {
   const streamAnimation = useLabFlag('streamAnimation');
   const typewriter = useLabFlag('typewriter');
@@ -512,6 +548,7 @@ export function MessageItem({
             thinkingStatus={thinkingStatus}
             animate={streamAnimation}
             typewriter={typewriter}
+            revealThinking={revealThinking}
           />
         </div>
       );

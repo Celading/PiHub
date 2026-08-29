@@ -708,3 +708,48 @@
 .pipe-inspector-value[data-type='approval'] {
   color: var(--status-ok);
 }
+
+/* Run targeting: optional folder + agent (per run). */
+.pipe-run-targeting {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.pipe-run-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pipe-run-field-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.pipe-run-cwd {
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.pipe-run-cwd:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.pipe-run-agents {
+  display: flex;
+  gap: 16px;
+}
+
+.pipe-run-agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}

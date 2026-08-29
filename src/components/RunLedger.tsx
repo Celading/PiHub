@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentMessage } from '../../shared/types.js';
 import type { ChatMessage } from '../chat/chatState.js';
 import { MessageItem, type ThinkingStatus } from './MessageItem.js';
@@ -17,8 +17,10 @@ import './RunLedger.css';
 interface RunLedgerProps {
   /** Process items: tool calls, bash executions, thinking frames. */
   items: ChatMessage[];
-  /** Run active — rows show a live "…" state. */
-  streaming: boolean;
+  /** This prompt unit is the active run. */
+  active: boolean;
+  /** Fold process details after a short settle grace period. */
+  autoFold: boolean;
   thinkingStatus: ThinkingStatus;
   onOpenFile?: ((path: string) => void) | undefined;
 }
@@ -87,12 +89,41 @@ function summarize(
 
 export function RunLedger({
   items,
-  streaming,
+  active,
+  autoFold,
   thinkingStatus,
   onOpenFile,
 }: RunLedgerProps): React.JSX.Element | null {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [autoExpanded, setAutoExpanded] = useState(active);
+  const [manualState, setManualState] = useState<ReadonlyMap<string, boolean>>(
+    () => new Map(),
+  );
+  const wasActive = useRef(active);
+
+  useEffect(() => {
+    if (active) {
+      setAutoExpanded(true);
+      wasActive.current = true;
+      return;
+    }
+    if (!autoFold) {
+      setAutoExpanded(true);
+      wasActive.current = false;
+      return;
+    }
+    if (!wasActive.current) {
+      setAutoExpanded(false);
+      return;
+    }
+    wasActive.current = false;
+    const timer = window.setTimeout(() => {
+      setAutoExpanded(false);
+    }, 3500);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [active, autoFold]);
 
   if (items.length === 0) {
     return null;
@@ -102,8 +133,8 @@ export function RunLedger({
     <div className="run-ledger" data-shot="run-ledger">
       {items.map((item) => {
         const summary = summarize(item, t);
-        const open = expanded.has(item.key);
-        const live = streaming && item.isStreaming;
+        const open = manualState.get(item.key) ?? autoExpanded;
+        const live = active && item.isStreaming;
         return (
           <div key={item.key} className="run-ledger-row" data-open={open}>
             <button
@@ -111,13 +142,9 @@ export function RunLedger({
               className="run-ledger-line mono"
               aria-expanded={open}
               onClick={() => {
-                setExpanded((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(item.key)) {
-                    next.delete(item.key);
-                  } else {
-                    next.add(item.key);
-                  }
+                setManualState((prev) => {
+                  const next = new Map(prev);
+                  next.set(item.key, !open);
                   return next;
                 });
               }}
@@ -133,16 +160,21 @@ export function RunLedger({
                 {open ? '−' : '+'}
               </span>
             </button>
-            {open ? (
-              <div className="run-ledger-body">
+            <div
+              className="collapse-region run-ledger-collapse"
+              data-collapsed={!open}
+              aria-hidden={!open}
+            >
+              <div className="collapse-region-inner run-ledger-body">
                 <MessageItem
                   message={item.message}
                   isStreaming={live}
                   thinkingStatus={thinkingStatus}
+                  revealThinking={open}
                   onOpenFile={onOpenFile}
                 />
               </div>
-            ) : null}
+            </div>
           </div>
         );
       })}

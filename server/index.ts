@@ -7,18 +7,26 @@ import { createFileSessionProvider } from './providers/file-session-provider.js'
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
 import { CodexAdapter, resolveCodexBinary } from './adapters/codex-adapter.js';
+import { ClaudeExecAdapter, resolveClaudeBinary } from './adapters/claude-exec.js';
+import { DshAdapter, resolveDshBinary } from './adapters/dsh-adapter.js';
 import { backfillCodexSessions, listCodexSessionsFast } from './adapters/codex-history.js';
 import { findClaudeTranscript, listClaudeSessions, parseClaudeDetail } from './adapters/claude-history.js';
 import { DemoShowcase } from './demo/showcase.js';
 import { SseHub } from './sse.js';
+import { ExternalSessionWatcher } from './external-sessions.js';
+import { DEFAULT_DSH_WEB_URL, DshWebRuntime } from './dsh-web-runtime.js';
+import { listDshSessions } from './dsh-history.js';
+import { createAgentsManager } from './agents.js';
 import { PipelineEngine } from './pipelines/engine.js';
 import { createPipelineStore } from './pipelines/store.js';
 import { LeaseGate } from './pipelines/lease.js';
+import { McpServer } from './mcp.js';
 import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { createSecurityGate, LanGate, requiresToken } from './security.js';
+import type { AgentMessage, RpcStreamEvent } from '../shared/types.js';
 import { PiAdapter } from './adapters/pi-adapter.js';
 import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
 import { getAtomcodeSession } from './adapters/atomcode-history.js';
@@ -26,6 +34,9 @@ import { listZcodeSessions, parseZcodeRollout, type ZcodeSessionDetail } from '.
 import { effectiveServerConfig, loadPihubConfig } from './config.js';
 import { configFileOf, resolvePihubHome } from './pihub-home.js';
 import { createSystemPromptStore } from './system-prompt.js';
+import { buildRuntimeSurface, probeCapabilities } from './capabilities.js';
+import { createWorkspaceSnapshotStore } from './workspace-snapshot.js';
+import { gitStatus, isGitUnavailableError } from './git-status.js';
 
 // PIHUB_HOME → ~/.pihub (fallback ./itData when no permission); config.toml
 // inside it holds the server options. Env (PIHUB_PORT/PORT) wins over the
@@ -38,6 +49,18 @@ const PORT = effectiveConfig.port;
 const HOST = effectiveConfig.host;
 const PI_BINARY = process.env.PI_BINARY ?? 'pi';
 const AGENT_CWD = process.env.PI_CWD ?? process.cwd();
+/** Node binary used to spawn child runtime processes. */
+const NODE_BIN = process.env.PIHUB_NODE_BIN ?? process.execPath;
+/** A packaged Pi CLI may be a JavaScript entry rather than an executable.
+ *  Run that entry through Node in interpreter mode when explicitly selected. */
+const PI_BASE_ARGS =
+  process.env.PIHUB_PI_CLI === PI_BINARY
+    ? ['--jitless', PI_BINARY]
+    : [];
+const PI_EXECUTABLE = PI_BASE_ARGS.length > 0 ? NODE_BIN : PI_BINARY;
+/** MCP bridge mode (`pihub --mcp`): expose the pipeline substrate over
+ *  stdio (JSON-RPC) for hosts like dsh instead of serving HTTP. */
+const isMcpMode = process.argv.includes('--mcp');
 
 // kMode (KMODE-001 K2): runtime mode decided once at startup.
 type PanelMode = 'production' | 'debug' | 'demo';
@@ -86,7 +109,7 @@ app.use((req, res, next) => {
 const sessions =
   mode === 'demo' ? createMockSessionProvider() : createFileSessionProvider();
 const hub = new SseHub();
-const bridge = new RpcBridge(PI_BINARY, AGENT_CWD);
+const bridge = new RpcBridge(PI_EXECUTABLE, AGENT_CWD, { baseArgs: PI_BASE_ARGS });
 
 // P2-01: adapter surface — pi is the primary adapter (wraps the existing
 // bridge); codex is now ACTIVE as the second exec adapter (per-prompt
@@ -111,6 +134,75 @@ if (codexAdapter !== null) {
     hub.broadcast(event);
   });
 }
+// Claude exec adapter: headless per-prompt conversation in the chat view
+// (`claude -p --output-format json --continue`); transcripts stay read-only
+// in history. Tool approval is interactive (never auto-granted).
+const claudeAdapter = mode === 'demo' ? null : new ClaudeExecAdapter({ binaryPath: resolveClaudeBinary(), cwd: AGENT_CWD });
+if (claudeAdapter !== null) {
+  claudeAdapter.on('error', (error: Error) => {
+    console.error(`[adapter:claude] ${error.message}`);
+  });
+  claudeAdapter.on('event', (event: RpcStreamEvent) => {
+    hub.broadcast(event);
+  });
+}
+// D2: dsh (DeepSeek Harness) as the embedded harness kernel — one task per
+// `--profile headless` invocation with an isolated DSH_HOME.
+// dsh is a first-class agent on EVERY form, like codex/claude: the adapter
+// is always registered and availability follows the resolved binary
+// from a locally installed `dsh` CLI. Demo mode keeps it disabled.
+const dshBinary = resolveDshBinary();
+const dshAdapter = mode === 'demo' ? null : new DshAdapter({
+  binaryPath: dshBinary,
+  nodeBin: NODE_BIN,
+  ...(process.env.DSH_HOME !== undefined && process.env.DSH_HOME.length > 0
+    ? { home: process.env.DSH_HOME }
+    : {}),
+  ...(process.env.PIHUB_DSH_PRELOAD !== undefined && process.env.PIHUB_DSH_PRELOAD.length > 0
+    ? { preload: process.env.PIHUB_DSH_PRELOAD }
+    : {}),
+  cwd: AGENT_CWD,
+});
+if (dshAdapter !== null) {
+  dshAdapter.on('error', (error) => {
+    console.error(`[adapter:dsh] ${error.message}`);
+  });
+  // dsh events carry `kind: 'dsh'`; the SPA routes them to the dsh chat view.
+  dshAdapter.on('event', (event) => {
+    hub.broadcast(event);
+  });
+}
+// External session watcher: tails pi/codex session files so terminal-side
+// runs appear in the panel in near-real time (and the panel's own runs close
+// the loop the other way via the same files). Custom homes override via env.
+const externalWatcher = new ExternalSessionWatcher({
+  ...(process.env.PIHUB_EXT_PI_DIR !== undefined ? { piDir: process.env.PIHUB_EXT_PI_DIR } : {}),
+  ...(process.env.PIHUB_EXT_CODEX_DIR !== undefined ? { codexDir: process.env.PIHUB_EXT_CODEX_DIR } : {}),
+  ...(process.env.PIHUB_EXT_DSH_DIR !== undefined ? { dshDir: process.env.PIHUB_EXT_DSH_DIR } : {}),
+  onEvent: (event) => {
+    hub.broadcast({ type: 'external_event', ...event });
+  },
+});
+externalWatcher.start();
+// DSH is a first-class local runtime: auto-discover the current Web gateway on
+// 3080, retain manual/remote override support, and reconnect event sockets
+// after a transient host restart. Headless one-shots remain the honest
+// fallback while the gateway is unavailable.
+let dshChatSessionId: string | null = null;
+const dshWebRuntime = new DshWebRuntime({
+  onFrame: (frame, rpcId) => {
+    hub.broadcast({
+      ...frame,
+      frameType: (frame as { type?: unknown }).type,
+      rpcId,
+      type: 'dsh_web_event',
+    });
+  },
+  onError: (error) => {
+    console.error(`[dsh-web] events stream error: ${error.message}; reconnecting`);
+  },
+});
+dshWebRuntime.start(process.env.PIHUB_DSH_WEB_URL ?? DEFAULT_DSH_WEB_URL);
 const adapters = [
   piAdapter.meta,
   {
@@ -119,10 +211,19 @@ const adapters = [
     version: codexAdapter === null ? 'read-only' : 'exec (resume)',
     defaultColor: '#10a37f',
   },
+  // dsh is a first-class agent on every form; availability follows the
+  // resolved local binary and is reported by the capability route — the list never says
+  // 'missing' (same convention as codex/claude).
+  {
+    kind: 'dsh' as const,
+    label: 'DeepSeek Harness',
+    version: dshAdapter === null ? 'read-only' : 'headless (built-in)',
+    defaultColor: '#7c3aed',
+  },
   {
     kind: 'claude' as const,
     label: 'Claude',
-    version: 'read-only', // ~/.claude transcripts; never spawns claude
+    version: claudeAdapter === null ? 'read-only' : 'exec (per-prompt)',
     defaultColor: '#d97757',
   },
   {
@@ -224,6 +325,56 @@ const demoShowcase = mode === 'demo' ? new DemoShowcase(hub, sessions) : null;
 // never writes PiHub-owned state on this machine; demo seeds show the surface
 // (runs stay read-only via the 503 write guards).
 const pihubHome = await pihubHomePromise;
+const workspaceChanges = createWorkspaceSnapshotStore(
+  path.join(pihubHome.dir, 'workspace-baselines'),
+);
+// Freeze the default non-Git workspace baseline before the HTTP surface is
+// exposed. Git repositories keep Git as their sole source of truth.
+if (mode !== 'demo') {
+  try {
+    const changes = await gitStatus(AGENT_CWD);
+    if (changes === null) {
+      await workspaceChanges.ensureBaseline(AGENT_CWD);
+    }
+  } catch (error) {
+    if (isGitUnavailableError(error)) {
+      await workspaceChanges.ensureBaseline(AGENT_CWD);
+    } else {
+      console.warn(`[workspace] baseline preflight skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+// Agent management (panel-side startup/config): persists to agents.json in
+// the panel home; binary overrides apply from the next panel restart, the pi
+// bridge restart takes effect immediately.
+const agentsManager = createAgentsManager({
+  home: pihubHome.dir,
+  resolveBinary: (kind) =>
+    kind === 'pi'
+      ? PI_BINARY
+      : kind === 'codex'
+        ? resolveCodexBinary()
+        : kind === 'claude'
+          ? resolveClaudeBinary()
+          : resolveDshBinary(),
+  restartPi: async () => {
+    try {
+      if (bridge.isRunning()) {
+        bridge.restart();
+      } else {
+        bridge.start();
+      }
+      await bridge.waitReady(10_000);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+  isPiRunning: () => bridge.isRunning(),
+});
 const pipelineStore = createPipelineStore(
   mode === 'demo' ? mkdtempSync(path.join(os.tmpdir(), 'pihub-demo-')) : pihubHome.dir,
 );
@@ -233,13 +384,63 @@ if (mode === 'demo') {
 const pipelineEngine =
   mode === 'demo'
     ? null
-    : new PipelineEngine(bridge, pipelineStore, undefined, new LeaseGate(pihubHome.dir));
+    : new PipelineEngine(
+        bridge,
+        pipelineStore,
+        undefined,
+        new LeaseGate(pihubHome.dir),
+        // Optional codex executor for agent=codex pipeline runs (per-prompt
+        // `codex exec`; resolves when the turn settles).
+        codexAdapter === null
+          ? undefined
+          : {
+              prompt: async (message: string, opts?: { cwd?: string }) => {
+                const response = await codexAdapter.send({
+                  type: 'prompt',
+                  message,
+                  ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+                });
+                return { success: response.success, ...(typeof response.error === 'string' ? { error: response.error } : {}) };
+              },
+              abort: async () => {
+                const response = await codexAdapter.send({ type: 'abort' });
+                return response.success;
+              },
+            },
+      );
 if (pipelineEngine !== null) {
   pipelineEngine.on('run-change', (run) => {
     hub.broadcast({ type: 'pipeline_step', run });
   });
   // v1b: resume in-flight runs from the durable journal at boot.
   pipelineEngine.recover();
+}
+// MCP bridge mode: wire the pipeline substrate to stdio (JSON-RPC) for hosts
+// like dsh. The HTTP app below stays inert (never listens) in this mode.
+if (isMcpMode && pipelineEngine !== null) {
+  const mcp = new McpServer({
+    runPipeline: (pipelineId, input) => {
+      const pipeline = pipelineStore.get(pipelineId);
+      if (pipeline === undefined) {
+        return { ok: false, error: 'pipeline not found' };
+      }
+      try {
+        const run = pipelineEngine.start(pipeline, input, {});
+        return { ok: true, run };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    abortRun: (runId) => pipelineEngine.abort(runId),
+    approveRun: (runId, approve) => pipelineEngine.approve(runId, approve),
+    listPipelines: () =>
+      pipelineStore
+        .list()
+        .map((p) => ({ id: p.id, name: p.name, stepCount: p.steps.length })),
+    listReceipts: (pipelineId) => pipelineStore.listRunReceipts(pipelineId),
+  });
+  mcp.start();
+  console.error('[mcp] pihub MCP bridge listening on stdio');
 }
 
 // Settings system prompt: `<home>/system-prompt.md`; saving restarts the pi
@@ -261,6 +462,7 @@ app.use(
       get: () => systemPromptStore.get(),
       save: (prompt) => systemPromptStore.save(prompt),
     },
+    workspaceChanges,
     allowedRoot: AGENT_CWD,
     runtimeInfo: () => ({
       home: pihubHome.dir,
@@ -272,8 +474,12 @@ app.use(
       codexAdapter === null
         ? null
         : {
-            prompt: async (message: string) => {
-              const response = await codexAdapter.send({ type: 'prompt', message });
+            prompt: async (message: string, cwd?: string) => {
+              const response = await codexAdapter.send({
+                type: 'prompt',
+                message,
+                ...(cwd !== undefined ? { cwd } : {}),
+              });
               return {
                 success: response.success,
                 ...(typeof response.error === 'string' ? { error: response.error } : {}),
@@ -301,6 +507,226 @@ app.use(
             },
             messages: (threadId?: string) => codexAdapter.getMessages(threadId),
           },
+    claudeExec:
+      claudeAdapter === null
+        ? null
+        : {
+            prompt: async (message: string, cwd?: string) => {
+              const response = await claudeAdapter.send({
+                type: 'prompt',
+                message,
+                ...(cwd !== undefined ? { cwd } : {}),
+              });
+              return {
+                success: response.success,
+                ...(typeof response.error === 'string' ? { error: response.error } : {}),
+                ...(response.data !== undefined
+                  ? { data: response.data as { answer?: string } }
+                  : {}),
+              };
+            },
+            abort: async () => {
+              const response = await claudeAdapter.send({ type: 'abort' });
+              return { success: response.success };
+            },
+            state: async () => {
+              const response = await claudeAdapter.send({ type: 'get_state' });
+              return {
+                success: response.success,
+                ...(response.data !== undefined
+                  ? { data: response.data as { isStreaming: boolean } }
+                  : {}),
+              };
+            },
+            messages: () => Promise.resolve(claudeAdapter.getMessages() as unknown as AgentMessage[]),
+          },
+    dshExec:
+      dshAdapter === null
+        ? null
+        : {
+            prompt: async (message: string, cwd?: string) => {
+              // Web-first routing: with a dsh web instance connected, the
+              // chat drives a real session (continuity + streaming events
+              // over the panel SSE); headless one-shots remain the fallback.
+              const dshWebClient = dshWebRuntime.client();
+              if (dshWebClient !== null) {
+                let sessionId = dshChatSessionId;
+                if (sessionId === null) {
+                  const created = await dshWebClient.createSession(cwd);
+                  if (!created.ok || typeof created.value !== 'object' || created.value === null) {
+                    return {
+                      success: false,
+                      error: `dsh web session.create failed: ${created.error?.message ?? 'unknown'}`,
+                    };
+                  }
+                  const value = created.value as { sessionId?: unknown };
+                  if (typeof value.sessionId !== 'string') {
+                    return { success: false, error: 'dsh web session.create returned no sessionId' };
+                  }
+                  sessionId = value.sessionId;
+                  dshChatSessionId = sessionId;
+                }
+                const result = await dshWebClient.prompt(sessionId, message, 'queue');
+                if (!result.ok) {
+                  return { success: false, error: result.error?.message ?? 'dsh web prompt failed' };
+                }
+                return {
+                  success: true,
+                  data: { sessionId, mode: 'web' },
+                };
+              }
+              const response = await dshAdapter.send({
+                type: 'prompt',
+                message,
+                ...(cwd !== undefined ? { cwd } : {}),
+              });
+              return {
+                success: response.success,
+                ...(typeof response.error === 'string' ? { error: response.error } : {}),
+                ...(response.data !== undefined
+                  ? { data: response.data as { answer?: string } }
+                  : {}),
+              };
+            },
+            abort: async () => {
+              const dshWebClient = dshWebRuntime.client();
+              if (dshWebClient !== null && dshChatSessionId !== null) {
+                const result = await dshWebClient.cancel(dshChatSessionId);
+                return { success: result.ok };
+              }
+              const response = await dshAdapter.send({ type: 'abort' });
+              return { success: response.success };
+            },
+            state: async () => {
+              const dshWebClient = dshWebRuntime.client();
+              if (dshWebClient !== null && dshChatSessionId !== null) {
+                const sessions = await dshWebClient.listSessions();
+                if (sessions.ok && typeof sessions.value === 'object' && sessions.value !== null) {
+                  const items = (sessions.value as { items?: Array<{ sessionId?: unknown; running?: unknown }> }).items;
+                  const row = items?.find((item) => item.sessionId === dshChatSessionId);
+                  if (row !== undefined) {
+                    return { success: true, data: { isStreaming: row.running === true } };
+                  }
+                }
+              }
+              const response = await dshAdapter.send({ type: 'get_state' });
+              return {
+                success: response.success,
+                ...(response.data !== undefined
+                  ? { data: response.data as { isStreaming: boolean } }
+                  : {}),
+              };
+            },
+            messages: () => Promise.resolve(dshAdapter.getMessages() as unknown as AgentMessage[]),
+          },
+    externalSessions: externalWatcher,
+    dshSessions: () =>
+      listDshSessions({
+        webList: () => {
+          const client = dshWebRuntime.client();
+          if (client === null) {
+            return Promise.resolve({ ok: false } as const);
+          }
+          return client.listSessions();
+        },
+      }),
+    dshWeb: {
+            status: () => dshWebRuntime.status(),
+            connect: async (url: string) => {
+              dshChatSessionId = null;
+              const result = await dshWebRuntime.connect(url);
+              return result;
+            },
+            disconnect: () => {
+              dshChatSessionId = null;
+              dshWebRuntime.disconnect();
+            },
+            listSessions: async (cursor?: string) => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.listSessions(cursor);
+              if (!result.ok) {
+                return { ok: false, error: result.error?.message ?? 'session.list failed' };
+              }
+              return { ok: true, value: result.value };
+            },
+            history: async (sessionId: string) => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.sessionHistory(sessionId);
+              if (!result.ok) {
+                return { ok: false, error: result.error?.message ?? 'session.history failed' };
+              }
+              return { ok: true, value: result.value };
+            },
+            prompt: async (sessionId: string, text: string, mode: 'queue' | 'steer') => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.prompt(sessionId, text, mode);
+              if (!result.ok) {
+                return { ok: false, error: result.error?.message ?? 'session.prompt failed' };
+              }
+              return { ok: true, value: result.value };
+            },
+            cancel: async (sessionId: string) => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.cancel(sessionId);
+              if (!result.ok) {
+                return { ok: false, error: result.error?.message ?? 'session.cancel failed' };
+              }
+              return { ok: true, value: result.value };
+            },
+            approvals: () => dshWebRuntime.pendingApprovals(),
+            approve: async (
+              rpcId: string,
+              sessionId: string,
+              approvalId: string,
+              outcome: 'allowed-once' | 'rejected',
+            ) => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.respond(rpcId, sessionId, approvalId, outcome);
+              if (!result.accepted) {
+                return { ok: false, error: result.reason ?? 'approval not accepted' };
+              }
+              dshWebRuntime.resolveApproval(rpcId);
+              return { ok: true };
+            },
+            createSession: async (cwd?: string) => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.createSession(cwd);
+              if (!result.ok) {
+                return { ok: false, error: result.error?.message ?? 'session.create failed' };
+              }
+              return { ok: true, value: result.value };
+            },
+            models: async () => {
+              const client = dshWebRuntime.client();
+              if (client === null) {
+                return { ok: false, error: 'dsh web not connected' };
+              }
+              const result = await client.models();
+              if (!result.ok) {
+                return { ok: false, error: result.error?.message ?? 'llm.models failed' };
+              }
+              return { ok: true, value: result.value };
+            },
+          },
+    agents: agentsManager,
     adapters: {
       list: () => adapters,
       // Read-only integrations; demo keeps them empty (synthetic-only).
@@ -335,6 +761,26 @@ app.use(
           }),
         }
       : {}),
+    runtimeSurface: (): ReturnType<typeof buildRuntimeSurface> => {
+      const runtime = probeCapabilities();
+      const piRuntime = runtime.agents.find((entry) => entry.kind === 'pi');
+      const dshRuntime = runtime.agents.find((entry) => entry.kind === 'dsh');
+      const debug = {
+        bridgeRunning: bridge.isRunning(),
+        pendingRpcRequests: bridge.pendingRequestCount(),
+        pendingUiRequests: bridge.getPendingUiRequests().map((request) => request.id),
+        sseClients: hub.clientCount(),
+        dshWebConnected: dshWebRuntime.status().connected,
+      };
+      return buildRuntimeSurface({
+        mode,
+        piBinary: piRuntime?.binary ?? '',
+        piRunning: bridge.isRunning(),
+        dshBinary: dshRuntime?.binary ?? '',
+        dshRunning: dshAdapter?.isRunning() ?? false,
+        debug,
+      });
+    },
   }),
 );
 
@@ -409,6 +855,7 @@ app.use(
 
 const shutdown = (): void => {
   console.log('shutting down…');
+  dshWebRuntime.close();
   bridge.stop();
   hub.close();
   setTimeout(() => {
@@ -419,7 +866,9 @@ const shutdown = (): void => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-app.listen(PORT, HOST, () => {
-  console.log(`pi-panel server listening on http://${HOST}:${String(PORT)}`);
-  console.log(`pi binary: ${PI_BINARY}`);
-});
+if (!isMcpMode) {
+  app.listen(PORT, HOST, () => {
+    console.log(`pi-panel server listening on http://${HOST}:${String(PORT)}`);
+    console.log(`pi binary: ${PI_BINARY}`);
+  });
+}

@@ -6,6 +6,11 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { z } from 'zod';
+import * as dshSettings from './dsh-settings.js';
+import type { ExternalSessionEntry } from './external-sessions.js';
+import type { DshSessionRow } from './dsh-history.js';
+import type { AgentKind, AgentManageRow } from './agents.js';
+import { probeCapabilities, type RuntimeSurface } from './capabilities.js';
 
 // Published version, read once from package.json. The module sits at
 // different depths between dev (server/) and the compiled npm package
@@ -33,6 +38,20 @@ function loadPackageVersion(): string {
   return '0.0.0';
 }
 const PKG_VERSION = loadPackageVersion();
+/** Build identity: YYMMDD + deployment channel. */
+export function buildStamp(now = new Date()): string {
+  const y = String(now.getFullYear()).slice(2);
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+export function buildChannel(): string {
+  const fromEnv = process.env.PIHUB_CHANNEL;
+  if (fromEnv !== undefined && fromEnv.length > 0) {
+    return fromEnv;
+  }
+  return 'server';
+}
 import {
   modelStoreFileSchema,
   pipelineApproveBodySchema,
@@ -52,7 +71,13 @@ import type { PipelineRunRecord, RpcResponse, PiCommand } from '../shared/types.
 import type { SessionStore } from './sessions.js';
 import { parseSessionFile } from './sessions.js';
 import { recentFileActions } from './recent-files.js';
-import { gitDiff, gitStatus } from './git-status.js';
+import { gitDiff, gitStatus, isGitUnavailableError } from './git-status.js';
+import {
+  PiSettingsValidationError,
+  readPiSettings,
+  savePiSettings,
+} from './pi-settings.js';
+import type { WorkspaceSnapshotStore } from './workspace-snapshot.js';
 import type { SseHub } from './sse.js';
 import type { PipelineEngine } from './pipelines/engine.js';
 import type { CodexSessionDetail } from './adapters/codex-history.js';
@@ -235,13 +260,87 @@ export interface RouterModeOptions {
   /** Codex exec adapter (ACTIVE 2026-08-12): per-prompt `codex exec` with
    *  resume; null in demo mode (synthetic-only). */
   codexExec?: {
-    prompt: (message: string) => Promise<{ success: boolean; error?: string }>;
+    prompt: (message: string, cwd?: string) => Promise<{ success: boolean; error?: string }>;
     abort: () => Promise<{ success: boolean }>;
     state: () => Promise<{ success: boolean; data?: { isStreaming: boolean; sessionId?: string | null } }>;
     switchSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
     messages: (threadId?: string) => Promise<AgentMessage[]>;
   } | null;
+  /** dsh (DeepSeek Harness) embedded kernel (D2): one task per headless run,
+   *  or a real web session when a dsh web instance is connected. */
+  dshExec?: {
+    prompt: (
+      message: string,
+      cwd?: string,
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      data?: { answer?: string; sessionId?: string; mode?: string };
+    }>;
+    abort: () => Promise<{ success: boolean }>;
+    state: () => Promise<{ success: boolean; data?: { isStreaming: boolean } }>;
+    messages: () => Promise<AgentMessage[]>;
+  } | null;
+  /** Claude exec adapter (headless per-prompt conversation). */
+  claudeExec?: {
+    prompt: (message: string, cwd?: string) => Promise<{ success: boolean; error?: string; data?: { answer?: string } }>;
+    abort: () => Promise<{ success: boolean }>;
+    state: () => Promise<{ success: boolean; data?: { isStreaming: boolean } }>;
+    messages: () => Promise<AgentMessage[]>;
+  } | null;
+  /** External session watcher (terminal pi/codex/dsh ↔ panel shared stream). */
+  externalSessions?: {
+    list: (limit?: number) => ExternalSessionEntry[];
+  };
+  /** dsh web integration (stage 3): real-time dsh sessions over /api RPC. */
+  dshWeb?: {
+    status: () => {
+      connected: boolean;
+      state: 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
+      url: string | null;
+      protocol: 'dsh-web-rpc-v1';
+      describe: unknown;
+      lastError: string | null;
+    };
+    connect: (url: string) => Promise<{ ok: boolean; error?: string }>;
+    disconnect: () => void;
+    listSessions: (cursor?: string) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    history: (sessionId: string) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    prompt: (
+      sessionId: string,
+      text: string,
+      mode: 'queue' | 'steer',
+    ) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    cancel: (sessionId: string) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    approvals: () => unknown[];
+    approve: (
+      rpcId: string,
+      sessionId: string,
+      approvalId: string,
+      outcome: 'allowed-once' | 'rejected',
+    ) => Promise<{ ok: boolean; error?: string }>;
+    createSession: (cwd?: string) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    models: () => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+  };
+  /** dsh session history (auto-discovered in the sessions view). */
+  dshSessions?: () => Promise<DshSessionRow[]>;
+  /** Panel-side agent management (startup/config). */
+  agents?: {
+    list: () => AgentManageRow[];
+    configure: (kind: AgentKind, patch: { binary?: string; enabled?: boolean }) => { success: boolean; error?: string };
+    restartPi: () => Promise<{ success: boolean; error?: string }>;
+    installPlan: (kind: AgentKind) => { command: string[]; label: string } | null;
+    install: (kind: AgentKind) => Promise<{ success: boolean; error?: string }>;
+    installStatus: (kind: AgentKind) => {
+      plan: { command: string[]; label: string } | null;
+      running: boolean;
+      exit: number | null;
+      output: string;
+    };
+  };
   debugState?: () => Record<string, unknown>;
+  /** Sanitized engine/service readiness used by the dashboard and session gate. */
+  runtimeSurface?: () => RuntimeSurface;
   /** Pipelines surface (P1-02-C). Engine may be absent (demo seeds only). */
   pipelines?: {
     store: PipelineStore;
@@ -264,6 +363,8 @@ export interface RouterModeOptions {
     get: () => Promise<string>;
     save: (prompt: string) => Promise<{ success: boolean; error?: string }>;
   };
+  /** Read-only workspace change fallback for hosts without a Git binary. */
+  workspaceChanges?: WorkspaceSnapshotStore;
   /**
    * P2-01: registered agent adapters (metadata + codex history surface).
    * `codexHistory` is the read-only integration (rollout parse); it is
@@ -400,11 +501,26 @@ export function createRouter(
     });
   }
 
+  router.get('/api/runtime/capabilities', (_req, res) => {
+    res.json(options?.runtimeSurface?.() ?? {
+      mode,
+      checkedAt: new Date().toISOString(),
+      engines: [],
+      services: [],
+      defaultEngine: 'pi',
+      fallbackEngine: 'dsh',
+      debug: null,
+    });
+  });
+
   router.get('/api/health', (_req, res) => {
     res.json({
       status: 'ok',
       name: 'pihub',
       version: PKG_VERSION,
+      // Internal build identity for the version barcode + About (no public
+      // versioning impact): e.g. 0.3.0 · 260814.server
+      build: `${buildStamp()}.${buildChannel()}`,
       time: new Date().toISOString(),
       ...(options?.runtimeInfo !== undefined ? options.runtimeInfo() : {}),
     });
@@ -468,6 +584,43 @@ export function createRouter(
     const raw = await readJson(path.join(AGENT_DIR, 'settings.json'));
     const parsed = settingsFileSchema.safeParse(raw);
     res.json(parsed.success ? parsed.data : {});
+  });
+
+  // Dedicated Pi Agent settings surface. It reads/writes settings.json only;
+  // auth.json is neither opened nor represented by this contract.
+  router.get('/api/pi-agent/settings', async (_req, res) => {
+    try {
+      const capabilities = probeCapabilities();
+      const runtime = capabilities.agents.find((entry) => entry.kind === 'pi') ?? null;
+      res.json({
+        settings: await readPiSettings(AGENT_DIR),
+        workspace: options?.allowedRoot ?? null,
+        agentHome: AGENT_DIR,
+        settingsFile: path.join(AGENT_DIR, 'settings.json'),
+        nodeVersion: capabilities.nodeVersion,
+        privateSpace: capabilities.privateSpace,
+        runtime,
+        managed: options?.agents?.list().find((entry) => entry.kind === 'pi') ?? null,
+      });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.put('/api/pi-agent/settings', async (req, res) => {
+    if (writeDenied(res)) {
+      return;
+    }
+    const body = req.body as { settings?: unknown } | null;
+    const value = typeof body === 'object' && body !== null ? body.settings : undefined;
+    try {
+      const settings = await savePiSettings(AGENT_DIR, value);
+      const reload = options?.reloadModels?.() ?? 'reloaded';
+      res.json({ success: true, settings, reload });
+    } catch (error) {
+      const status = error instanceof PiSettingsValidationError ? 400 : 502;
+      res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   // Settings system prompt: preview + edit + save (owner spec). The store
@@ -641,7 +794,19 @@ export function createRouter(
       res.status(400).json({ error: 'message is required' });
       return;
     }
-    const response = await codexExec.prompt(message.trim());
+    // Optional per-prompt working directory (chosen folder for the session).
+    let cwd: string | undefined;
+    const rawCwd = (req.body as { cwd?: unknown }).cwd;
+    if (typeof rawCwd === 'string' && rawCwd.trim().length > 0) {
+      const target = path.resolve(rawCwd.trim());
+      const statResult = await stat(target).catch(() => null);
+      if (statResult === null || !statResult.isDirectory()) {
+        res.status(400).json({ error: `directory not found: ${target}` });
+        return;
+      }
+      cwd = target;
+    }
+    const response = await codexExec.prompt(message.trim(), cwd);
     if (!response.success) {
       res.status(409).json({ error: response.error ?? 'codex rejected the prompt' });
       return;
@@ -685,6 +850,499 @@ export function createRouter(
     }
     res.json({ success: true });
   });
+  /* ---- dsh (DeepSeek Harness) embedded kernel (D2) ---- */
+  const dshExec = options?.dshExec ?? null;
+
+  router.post('/api/dsh/prompt', async (req, res) => {
+    if (dshExec === null) {
+      res.status(503).json({ error: 'dsh kernel disabled (demo mode)' });
+      return;
+    }
+    const message = (req.body as { message?: unknown }).message;
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    let cwd: string | undefined;
+    const rawCwd = (req.body as { cwd?: unknown }).cwd;
+    if (typeof rawCwd === 'string' && rawCwd.trim().length > 0) {
+      const target = path.resolve(rawCwd.trim());
+      const statResult = await stat(target).catch(() => null);
+      if (statResult === null || !statResult.isDirectory()) {
+        res.status(400).json({ error: `directory not found: ${target}` });
+        return;
+      }
+      cwd = target;
+    }
+    const response = await dshExec.prompt(message.trim(), cwd);
+    if (!response.success) {
+      res.status(409).json({ error: response.error ?? 'dsh rejected the task' });
+      return;
+    }
+    res.json({ success: true, ...(response.data !== undefined ? { data: response.data } : {}) });
+  });
+
+  router.post('/api/dsh/abort', async (_req, res) => {
+    if (dshExec === null) {
+      res.status(503).json({ error: 'dsh kernel disabled (demo mode)' });
+      return;
+    }
+    await dshExec.abort();
+    res.json({ success: true });
+  });
+
+  router.get('/api/dsh/state', async (_req, res) => {
+    if (dshExec === null) {
+      res.status(503).json({ error: 'dsh kernel disabled (demo mode)' });
+      return;
+    }
+    const response = await dshExec.state();
+    res.json({ running: response.data?.isStreaming ?? false });
+  });
+
+  router.get('/api/dsh/messages', async (_req, res) => {
+    if (dshExec === null) {
+      res.status(503).json({ error: 'dsh kernel disabled (demo mode)' });
+      return;
+    }
+    const messages = await dshExec.messages();
+    res.json({ messages });
+  });
+
+  /* ---- dsh embedded kernel settings (D2) ---- */
+  // The gateway provider rides the user-patch layer (dsh --patch); these
+  // endpoints read/write that file so the settings page can switch models
+  // without touching credentials (the key stays an env reference).
+  router.get('/api/dsh/settings', (_req, res) => {
+    if (dshExec === null) {
+      res.status(503).json({ error: 'dsh kernel disabled (demo mode)' });
+      return;
+    }
+    const patch = dshSettings.readDshPatch();
+    res.json({
+      available: patch !== null,
+      dshVersion: dshSettings.dshVersion(),
+      nodeVersion: process.versions.node,
+      home: process.env.DSH_HOME ?? null,
+      provider: patch?.provider ?? null,
+      model: patch?.model ?? null,
+      models: patch?.models ?? [],
+      baseURL: patch?.baseURL ?? null,
+      apiKeyEnv: patch?.apiKeyEnv ?? null,
+      hasKey:
+        process.env.PIHUB_LLM_KEY !== undefined && process.env.PIHUB_LLM_KEY.length > 0,
+      patchPath: patch?.patchPath ?? null,
+    });
+  });
+
+  /* ---- dsh session history (auto-discovered in the sessions view) ---- */
+  router.get('/api/dsh/sessions', async (_req, res) => {
+    const listFn = options?.dshSessions;
+    if (listFn === undefined) {
+      res.status(503).json({ error: 'dsh unavailable (demo mode)' });
+      return;
+    }
+    try {
+      res.json({ sessions: await listFn() });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.put('/api/dsh/settings', async (req, res) => {
+    if (dshExec === null) {
+      res.status(503).json({ error: 'dsh kernel disabled (demo mode)' });
+      return;
+    }
+    const model = (req.body as { model?: unknown }).model;
+    if (typeof model !== 'string' || model.trim().length === 0) {
+      res.status(400).json({ error: 'model is required' });
+      return;
+    }
+    const patch = dshSettings.readDshPatch();
+    if (patch === null) {
+      res.status(404).json({ error: 'gateway patch not found' });
+      return;
+    }
+    if (!patch.models.includes(model)) {
+      res.status(400).json({ error: `model not in gateway list: ${model}`, models: patch.models });
+      return;
+    }
+    const result = await dshSettings.updateDshPatchModel(model);
+    if (result === null) {
+      res.status(500).json({ error: 'failed to update gateway patch' });
+      return;
+    }
+    res.json({ success: true, model });
+  });
+
+  /* ---- external sessions (terminal pi/codex/dsh shared stream) ---- */
+  router.get('/api/external/sessions', (_req, res) => {
+    const watcher = options?.externalSessions;
+    if (watcher === undefined) {
+      res.json({ sessions: [] });
+      return;
+    }
+    res.json({ sessions: watcher.list() });
+  });
+
+  /* ---- runtime capabilities (agent binaries/session homes/private space) ---- */
+  router.get('/api/capabilities', (_req, res) => {
+    res.json(probeCapabilities());
+  });
+
+  /* ---- agent management (panel-side startup/config) ---- */
+  router.get('/api/agents', (_req, res) => {
+    if (options?.agents === undefined) {
+      res.json({ agents: [] });
+      return;
+    }
+    res.json({ agents: options.agents.list() });
+  });
+
+  router.post('/api/agents/:kind/configure', (req, res) => {
+    if (options?.agents === undefined) {
+      res.status(503).json({ error: 'agent management unavailable' });
+      return;
+    }
+    const rawKind = req.params['kind'];
+    if (rawKind !== 'pi' && rawKind !== 'codex' && rawKind !== 'dsh') {
+      res.status(400).json({ error: 'kind must be pi, codex or dsh' });
+      return;
+    }
+    const kind: AgentKind = rawKind;
+    const body = req.body as { binary?: unknown; enabled?: unknown };
+    const patch: { binary?: string; enabled?: boolean } = {};
+    if (body.binary !== undefined) {
+      if (typeof body.binary !== 'string') {
+        res.status(400).json({ error: 'binary must be a string' });
+        return;
+      }
+      patch.binary = body.binary;
+    }
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== 'boolean') {
+        res.status(400).json({ error: 'enabled must be a boolean' });
+        return;
+      }
+      patch.enabled = body.enabled;
+    }
+    const result = options.agents.configure(kind, patch);
+    if (!result.success) {
+      res.status(502).json({ error: result.error ?? 'configure failed' });
+      return;
+    }
+    res.json({ success: true, agents: options.agents.list() });
+  });
+
+  router.post('/api/agents/pi/restart', async (_req, res) => {
+    if (options?.agents === undefined) {
+      res.status(503).json({ error: 'agent management unavailable' });
+      return;
+    }
+    const result = await options.agents.restartPi();
+    if (!result.success) {
+      res.status(502).json({ error: result.error ?? 'pi restart failed' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  router.post('/api/agents/:kind/install', async (req, res) => {
+    if (options?.agents === undefined) {
+      res.status(503).json({ error: 'agent management unavailable' });
+      return;
+    }
+    const rawKind = req.params['kind'];
+    if (rawKind !== 'pi' && rawKind !== 'codex' && rawKind !== 'dsh' && rawKind !== 'claude') {
+      res.status(400).json({ error: 'kind must be pi, codex, dsh or claude' });
+      return;
+    }
+    const kind: AgentKind = rawKind;
+    const result = await options.agents.install(kind);
+    if (!result.success) {
+      res.status(400).json({ error: result.error ?? 'install not available' });
+      return;
+    }
+    res.json({ success: true, status: options.agents.installStatus(kind) });
+  });
+
+  router.get('/api/agents/:kind/install', (req, res) => {
+    if (options?.agents === undefined) {
+      res.status(503).json({ error: 'agent management unavailable' });
+      return;
+    }
+    const rawKind = req.params['kind'];
+    if (rawKind !== 'pi' && rawKind !== 'codex' && rawKind !== 'dsh' && rawKind !== 'claude') {
+      res.status(400).json({ error: 'kind must be pi, codex, dsh or claude' });
+      return;
+    }
+    res.json({ status: options.agents.installStatus(rawKind) });
+  });
+
+  /* ---- dsh web integration (stage 3) ---- */
+  router.get('/api/dsh/web/status', (_req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.json({
+        connected: false,
+        state: 'disconnected',
+        url: null,
+        protocol: 'dsh-web-rpc-v1',
+        describe: null,
+        lastError: null,
+      });
+      return;
+    }
+    res.json(options.dshWeb.status());
+  });
+
+  router.post('/api/dsh/web/connect', async (req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const url = (req.body as { url?: unknown }).url;
+    if (typeof url !== 'string' || url.trim().length === 0) {
+      res.status(400).json({ error: 'url is required' });
+      return;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url.trim());
+    } catch {
+      res.status(400).json({ error: 'invalid url' });
+      return;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      res.status(400).json({ error: 'only http(s) urls are accepted' });
+      return;
+    }
+    const result = await options.dshWeb.connect(parsed.toString().replace(/\/+$/, ''));
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web unreachable' });
+      return;
+    }
+    res.json({ success: true, status: options.dshWeb.status() });
+  });
+
+  router.post('/api/dsh/web/disconnect', (_req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    options.dshWeb.disconnect();
+    res.json({ success: true, status: options.dshWeb.status() });
+  });
+
+  router.get('/api/dsh/web/sessions', async (_req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const result = await options.dshWeb.listSessions();
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web session.list failed' });
+      return;
+    }
+    res.json({ sessions: result.value ?? [] });
+  });
+
+  router.get('/api/dsh/web/history', async (req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const sessionId = typeof req.query['sessionId'] === 'string' ? req.query['sessionId'] : '';
+    if (sessionId.length === 0) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+    const result = await options.dshWeb.history(sessionId);
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web session.history failed' });
+      return;
+    }
+    res.json({ history: result.value ?? [] });
+  });
+
+  router.post('/api/dsh/web/prompt', async (req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const sessionId = (req.body as { sessionId?: unknown }).sessionId;
+    const text = (req.body as { text?: unknown }).text;
+    const mode = (req.body as { mode?: unknown }).mode ?? 'queue';
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      res.status(400).json({ error: 'text is required' });
+      return;
+    }
+    if (mode !== 'queue' && mode !== 'steer') {
+      res.status(400).json({ error: "mode must be 'queue' or 'steer'" });
+      return;
+    }
+    const result = await options.dshWeb.prompt(sessionId, text.trim(), mode);
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web session.prompt failed' });
+      return;
+    }
+    res.json({ success: true, value: result.value ?? null });
+  });
+
+  router.post('/api/dsh/web/cancel', async (req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const sessionId = (req.body as { sessionId?: unknown }).sessionId;
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+    const result = await options.dshWeb.cancel(sessionId);
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web session.cancel failed' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  router.post('/api/dsh/web/session', async (req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const cwd = (req.body as { cwd?: unknown }).cwd;
+    if (cwd !== undefined && (typeof cwd !== 'string' || cwd.trim().length === 0)) {
+      res.status(400).json({ error: 'cwd must be a non-empty string when provided' });
+      return;
+    }
+    const result = await options.dshWeb.createSession(
+      typeof cwd === 'string' ? cwd.trim() : undefined,
+    );
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web session.create failed' });
+      return;
+    }
+    res.json({ success: true, session: result.value ?? null });
+  });
+
+  router.get('/api/dsh/web/models', async (_req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const result = await options.dshWeb.models();
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web llm.models failed' });
+      return;
+    }
+    res.json({ models: result.value ?? [] });
+  });
+
+  router.get('/api/dsh/web/approvals', (_req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    res.json({ approvals: options.dshWeb.approvals() });
+  });
+
+  router.post('/api/dsh/web/approve', async (req, res) => {
+    if (options?.dshWeb === undefined) {
+      res.status(503).json({ error: 'dsh web integration unavailable' });
+      return;
+    }
+    const rpcId = (req.body as { rpcId?: unknown }).rpcId;
+    const sessionId = (req.body as { sessionId?: unknown }).sessionId;
+    const approvalId = (req.body as { approvalId?: unknown }).approvalId;
+    const outcome = (req.body as { outcome?: unknown }).outcome;
+    if (typeof rpcId !== 'string' || rpcId.length === 0) {
+      res.status(400).json({ error: 'rpcId is required' });
+      return;
+    }
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      res.status(400).json({ error: 'sessionId is required' });
+      return;
+    }
+    if (typeof approvalId !== 'string' || approvalId.length === 0) {
+      res.status(400).json({ error: 'approvalId is required' });
+      return;
+    }
+    if (outcome !== 'allowed-once' && outcome !== 'rejected') {
+      res.status(400).json({ error: "outcome must be 'allowed-once' or 'rejected'" });
+      return;
+    }
+    const result = await options.dshWeb.approve(rpcId, sessionId, approvalId, outcome);
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? 'dsh web approval rejected' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  /* ---- claude exec adapter (headless per-prompt conversation) ---- */
+  const claudeExec = options?.claudeExec ?? null;
+
+  router.post('/api/claude/prompt', async (req, res) => {
+    if (claudeExec === null) {
+      res.status(503).json({ error: 'claude adapter disabled (demo mode)' });
+      return;
+    }
+    const message = (req.body as { message?: unknown }).message;
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    let cwd: string | undefined;
+    const rawCwd = (req.body as { cwd?: unknown }).cwd;
+    if (typeof rawCwd === 'string' && rawCwd.trim().length > 0) {
+      const target = path.resolve(rawCwd.trim());
+      const statResult = await stat(target).catch(() => null);
+      if (statResult === null || !statResult.isDirectory()) {
+        res.status(400).json({ error: `directory not found: ${target}` });
+        return;
+      }
+      cwd = target;
+    }
+    const response = await claudeExec.prompt(message.trim(), cwd);
+    if (!response.success) {
+      res.status(409).json({ error: response.error ?? 'claude rejected the prompt' });
+      return;
+    }
+    res.json({ success: true, ...(response.data !== undefined ? { data: response.data } : {}) });
+  });
+
+  router.post('/api/claude/abort', async (_req, res) => {
+    if (claudeExec === null) {
+      res.status(503).json({ error: 'claude adapter disabled (demo mode)' });
+      return;
+    }
+    await claudeExec.abort();
+    res.json({ success: true });
+  });
+
+  router.get('/api/claude/state', async (_req, res) => {
+    if (claudeExec === null) {
+      res.status(503).json({ error: 'claude adapter disabled (demo mode)' });
+      return;
+    }
+    const response = await claudeExec.state();
+    res.json({ running: response.data?.isStreaming ?? false });
+  });
+
+  router.get('/api/claude/messages', async (_req, res) => {
+    if (claudeExec === null) {
+      res.status(503).json({ error: 'claude adapter disabled (demo mode)' });
+      return;
+    }
+    res.json({ messages: await claudeExec.messages() });
+  });
+
   router.get('/api/codex/sessions', async (_req, res) => {
     const fn = options?.adapters?.codexSessions;
     if (fn === undefined) {
@@ -972,13 +1630,73 @@ export function createRouter(
     }
   });
 
-  router.post('/api/rpc/new_session', async (_req, res) => {
+  router.post('/api/rpc/new_session', async (req, res) => {
     if (writeDenied(res)) {
       return;
     }
+    // Run targeting: an optional chosen working directory re-targets the pi
+    // bridge (spawn cwd) before the new session is created; the agent choice
+    // is echoed back for the SPA's session routing.
+    const body = (req.body ?? {}) as { cwd?: unknown; agent?: unknown; serviceTarget?: unknown };
+    const rawAgent = body.agent;
+    const agent = rawAgent === 'codex' || rawAgent === 'dsh' || rawAgent === 'claude' ? rawAgent : 'pi';
+    const serviceTarget =
+      body.serviceTarget === 'local-service' || body.serviceTarget === 'remote-pihub' || body.serviceTarget === 'nearby-pihub'
+        ? body.serviceTarget
+        : 'builtin-pihub';
     try {
+      const surface = options?.runtimeSurface?.();
+      const target = surface?.services.find((entry) => entry.id === serviceTarget);
+      if (target !== undefined && !target.canCreateSession) {
+        res.status(409).json({
+          error: target.reason ?? `service target unavailable: ${serviceTarget}`,
+          serviceTarget,
+          sessionCreation: target.sessionCreation,
+        });
+        return;
+      }
+      const engine = surface?.engines.find((entry) => entry.engine === (agent === 'dsh' ? 'dsh' : 'pi'));
+      if (engine !== undefined && !engine.canCreateSession) {
+        res.status(503).json({ error: engine.reason ?? `engine unavailable: ${agent}`, engine: engine.engine });
+        return;
+      }
+      // Non-pi agents (codex/dsh/claude) do not own the pi RPC bridge — a
+      // new session for them must NOT touch it (on devices without pi this
+      // used to hang every new session with an RPC timeout).
+      if (agent !== 'pi') {
+        res.json({
+          success: true,
+          agent,
+          serviceTarget,
+          cwd: typeof body.cwd === 'string' ? body.cwd : null,
+          note: `session created for ${agent} (no pi bridge involved)`,
+        });
+        return;
+      }
+      if (typeof body.cwd === 'string' && body.cwd.trim().length > 0) {
+        const target = path.resolve(body.cwd.trim());
+        const statResult = await stat(target).catch(() => null);
+        if (statResult === null || !statResult.isDirectory()) {
+          res.status(400).json({ error: `directory not found: ${target}` });
+          return;
+        }
+        if (bridge.getCwd() !== target) {
+          bridge.restart(target);
+        }
+      }
+      // A restart can leave a spawned child before its RPC loop has loaded.
+      // Always await a real get_state round-trip before creating the session;
+      // this also covers a same-cwd restart from the Pi Agent settings page.
+      await bridge.waitReady(10_000);
       const response = await bridge.send({ type: 'new_session' });
-      res.json(response);
+      res.json({
+        ...response,
+        ...(typeof body.cwd === 'string' && body.cwd.trim().length > 0
+          ? { cwd: path.resolve(body.cwd.trim()) }
+          : {}),
+        agent,
+        serviceTarget,
+      });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -1187,10 +1905,37 @@ export function createRouter(
       // keep the previous root — preview stays conservative
     }
   };
+  const resolveWorkspaceRoot = async (sessionPath: string | undefined): Promise<string | null> => {
+    if (sessionPath !== undefined && sessionPath.length > 0) {
+      // A freshly-created Pi session may not have written its JSONL header
+      // yet (the file is often created only after the first prompt).  The
+      // RPC bridge still knows the exact active session file from
+      // `get_state`; use its current cwd for that one exact identity so
+      // Files/Changes/preview work during the pre-prompt window.  Do not
+      // apply this fallback to arbitrary/old session paths.
+      if (bridge.getSessionId() === sessionPath) {
+        const activeCwd = bridge.getCwd();
+        if (activeCwd.length > 0) {
+          return activeCwd;
+        }
+      }
+      try {
+        const all = await sessions.list();
+        const match = all.find((session) => session.fileName === sessionPath);
+        if (match !== undefined && match.cwd.length > 0) {
+          return match.cwd;
+        }
+      } catch {
+        // fall through to the default workspace
+      }
+    }
+    return options?.allowedRoot ?? previewRoot ?? null;
+  };
   const MAX_PREVIEW_BYTES = 512 * 1024;
   router.get('/api/file/preview', async (req, res) => {
-    const root = previewRoot;
-    if (root === undefined || root.length === 0) {
+    const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
+    const root = await resolveWorkspaceRoot(sessionParam);
+    if (root === null || root.length === 0) {
       res.status(503).json({ error: 'file preview unavailable' });
       return;
     }
@@ -1246,6 +1991,54 @@ export function createRouter(
   const IGNORED_LISTING = new Set(['.git', 'node_modules', '.DS_Store']);
   const MAX_LISTING_ENTRIES = 500;
 
+  /* ---- session/task targeting: directory browser (token-gated) ----
+   * Lists the subdirectories of any absolute path so a new session or run
+   * can choose its working folder. The SPA fetches with the control token
+   * (SENSITIVE_READ_EXACT) and walks up/down one level at a time. */
+  router.get('/api/dirs', async (req, res) => {
+    const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+    // Some managed Node hosts report a home the process cannot read; walk a
+    // fallback chain of reachable roots so
+    // the folder browser always opens on a readable path.
+    let target = rawPath.length === 0 ? os.homedir() : path.resolve(rawPath);
+    if (rawPath.length === 0) {
+      const candidates = [os.homedir(), process.cwd(), process.env.PIHUB_HOME].filter(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' && candidate.length > 0 && path.isAbsolute(candidate),
+      );
+      for (const candidate of candidates) {
+        const info = await stat(candidate).catch(() => null);
+        const readable =
+          info !== null && info.isDirectory() && (await readdir(candidate).catch(() => null)) !== null;
+        if (readable) {
+          target = candidate;
+          break;
+        }
+      }
+    }
+    if (!path.isAbsolute(target)) {
+      res.status(400).json({ error: 'path must be absolute' });
+      return;
+    }
+    const statResult = await stat(target).catch(() => null);
+    if (statResult === null || !statResult.isDirectory()) {
+      res.status(404).json({ error: `directory not found: ${target}` });
+      return;
+    }
+    let entries: string[] = [];
+    try {
+      const dirents = await readdir(target, { withFileTypes: true });
+      entries = dirents
+        .filter((entry) => entry.isDirectory() && !IGNORED_LISTING.has(entry.name) && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .sort((a, b) => a.localeCompare(b));
+    } catch {
+      res.status(403).json({ error: `cannot read directory: ${target}` });
+      return;
+    }
+    res.json({ path: target, dirs: entries });
+  });
+
   router.get('/api/files', async (req, res) => {
     const sessionParam = typeof req.query['session'] === 'string' ? req.query['session'] : undefined;
     const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
@@ -1253,21 +2046,9 @@ export function createRouter(
       res.status(400).json({ error: 'invalid path' });
       return;
     }
-    // Resolve the workspace root: prefer the session's own cwd, else the
-    // tracked preview root (last switched session / panel workspace).
-    let root = previewRoot;
-    if (sessionParam !== undefined && sessionParam.length > 0) {
-      try {
-        const all = await sessions.list();
-        const match = all.find((session) => session.fileName === sessionParam);
-        if (match !== undefined && match.cwd.length > 0) {
-          root = match.cwd;
-        }
-      } catch {
-        // keep the tracked root — listing stays conservative
-      }
-    }
-    if (root === undefined || root.length === 0) {
+    // Session cwd when named; the persistent default workspace otherwise.
+    const root = await resolveWorkspaceRoot(sessionParam);
+    if (root === null || root.length === 0) {
       res.status(503).json({ error: 'file listing unavailable' });
       return;
     }
@@ -1346,18 +2127,7 @@ export function createRouter(
    * `git status --porcelain=v1 -z` + `git diff` only — no write commands, no
    * shell, paths resolved inside the session cwd. */
   const resolveGitRoot = async (sessionParam: string | undefined): Promise<string | null> => {
-    if (sessionParam !== undefined && sessionParam.length > 0) {
-      try {
-        const all = await sessions.list();
-        const match = all.find((session) => session.fileName === sessionParam);
-        if (match !== undefined && match.cwd.length > 0) {
-          return match.cwd;
-        }
-      } catch {
-        // fall through to the tracked root
-      }
-    }
-    return previewRoot ?? null;
+    return resolveWorkspaceRoot(sessionParam);
   };
 
   router.get('/api/git/status', async (req, res) => {
@@ -1369,8 +2139,23 @@ export function createRouter(
     }
     try {
       const realRoot = await realpath(path.resolve(root));
-      const changes = await gitStatus(realRoot);
-      res.json({ root: realRoot, repo: changes !== null, changes: changes ?? [] });
+      try {
+        const changes = await gitStatus(realRoot);
+        if (changes !== null) {
+          res.json({ root: realRoot, repo: true, source: 'git', changes });
+          return;
+        }
+      } catch (error) {
+        if (!isGitUnavailableError(error)) {
+          throw error;
+        }
+      }
+      if (options?.workspaceChanges !== undefined) {
+        const changes = await options.workspaceChanges.status(realRoot);
+        res.json({ root: realRoot, repo: false, source: 'snapshot', changes });
+        return;
+      }
+      res.json({ root: realRoot, repo: false, source: 'none', changes: [] });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -1399,8 +2184,22 @@ export function createRouter(
     }
     try {
       const realRoot = await realpath(rootResolved);
-      const diff = await gitDiff(realRoot, rawPath, staged);
-      res.json({ diff: diff ?? '' });
+      try {
+        const diff = await gitDiff(realRoot, rawPath, staged);
+        if (diff !== null) {
+          res.json({ source: 'git', diff });
+          return;
+        }
+      } catch (error) {
+        if (!isGitUnavailableError(error)) {
+          throw error;
+        }
+      }
+      if (options?.workspaceChanges !== undefined) {
+        res.json({ source: 'snapshot', diff: await options.workspaceChanges.diff(realRoot, rawPath) });
+        return;
+      }
+      res.json({ source: 'none', diff: '' });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -1647,7 +2446,21 @@ export function createRouter(
     }
     let run: PipelineRunRecord;
     try {
-      run = pipelineEngine.start(pipeline, body.data.input ?? '', context);
+      // Run targeting: optional chosen folder + agent (validated below).
+      let targeting: { cwd?: string; agent?: 'pi' | 'codex' } | undefined;
+      if (typeof body.data.cwd === 'string' && body.data.cwd.trim().length > 0) {
+        const target = path.resolve(body.data.cwd.trim());
+        const statResult = await stat(target).catch(() => null);
+        if (statResult === null || !statResult.isDirectory()) {
+          res.status(400).json({ error: `directory not found: ${target}` });
+          return;
+        }
+        targeting = { ...targeting, cwd: target };
+      }
+      if (body.data.agent !== undefined) {
+        targeting = { ...targeting, agent: body.data.agent };
+      }
+      run = pipelineEngine.start(pipeline, body.data.input ?? '', context, targeting);
     } catch {
       // v1a serialization: the engine drives one pi session and refuses a
       // second concurrent run.
@@ -1684,8 +2497,8 @@ export function createRouter(
     res.json({ success: pipelineEngine.approve(req.params.id, body.data.approve) });
   });
 
-  /* ---- skill → pipeline conversion (P1-10 A; HaomoKit generalized
-   * capability). Hard = algorithm, zero tokens. Soft = agent-assisted,
+  /* ---- skill → pipeline conversion (P1-10 A; PiHub-local
+   * orchestration). Hard = algorithm, zero tokens. Soft = runtime-assisted,
    * token cost — the frontend must confirm with the operator first. ---- */
 
   const resolveSkillCommand = async (commandName: string): Promise<PiCommand | null> => {

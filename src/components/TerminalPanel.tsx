@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { eventsUrl } from '../api/controlToken.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import { fallbackBashOutput } from './terminalOutput.js';
 import './TerminalPanel.css';
 
 interface TerminalLine {
@@ -22,6 +23,8 @@ export function TerminalPanel(): React.JSX.Element {
   const [command, setCommand] = useState('');
   const [running, setRunning] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const streamRevisionRef = useRef(0);
+  const ignoreLateStreamRef = useRef(false);
 
   useEffect(() => {
     const source = new EventSource(eventsUrl());
@@ -39,6 +42,10 @@ export function TerminalPanel(): React.JSX.Element {
       if (record['type'] === 'bash_execution_update') {
         const delta = record['delta'];
         if (typeof delta === 'string') {
+          streamRevisionRef.current += 1;
+          if (ignoreLateStreamRef.current) {
+            return;
+          }
           setLines((prev) => [
             ...prev,
             { key: `l${String(terminalKey++)}`, text: delta, isError: false },
@@ -66,6 +73,8 @@ export function TerminalPanel(): React.JSX.Element {
     }
     setCommand('');
     setRunning(true);
+    ignoreLateStreamRef.current = false;
+    const streamRevisionBefore = streamRevisionRef.current;
     setLines((prev) => [
       ...prev,
       { key: `l${String(terminalKey++)}`, text: `$ ${trimmed}`, isError: false },
@@ -77,6 +86,19 @@ export function TerminalPanel(): React.JSX.Element {
           ...prev,
           { key: `l${String(terminalKey++)}`, text: response.error ?? 'bash failed', isError: true },
         ]);
+      } else {
+        const fallback = fallbackBashOutput(
+          response,
+          streamRevisionBefore,
+          streamRevisionRef.current,
+        );
+        if (fallback !== null) {
+          ignoreLateStreamRef.current = true;
+          setLines((prev) => [
+            ...prev,
+            { key: `l${String(terminalKey++)}`, text: fallback, isError: false },
+          ]);
+        }
       }
     } catch (err) {
       setLines((prev) => [

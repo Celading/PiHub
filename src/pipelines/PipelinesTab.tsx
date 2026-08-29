@@ -32,6 +32,9 @@ export function PipelinesTab(): React.JSX.Element {
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
   const [runTarget, setRunTarget] = useState<Pipeline | null>(null);
   const [runInput, setRunInput] = useState('');
+  // Run targeting: optional working folder + agent (per run, not in the DSL).
+  const [runCwd, setRunCwd] = useState('');
+  const [runAgent, setRunAgent] = useState<'pi' | 'codex'>('pi');
   const [skills, setSkills] = useState<PiCommand[]>([]);
   const [selectedSkill, setSelectedSkill] = useState('');
   const [softConfirm, setSoftConfirm] = useState<string | null>(null);
@@ -360,13 +363,47 @@ export function PipelinesTab(): React.JSX.Element {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   // runTarget is narrowed to Pipeline inside this branch.
-                  void run(runTarget.id, runInput).catch((err: unknown) => {
+                  void run(runTarget.id, runInput, {
+                    ...(runCwd.trim().length > 0 ? { cwd: runCwd.trim() } : {}),
+                    agent: runAgent,
+                  }).catch((err: unknown) => {
                     setEditorError(err instanceof Error ? err.message : String(err));
                   });
                   setRunTarget(null);
                 }
               }}
             />
+            <div className="pipe-run-targeting">
+              <div className="pipe-run-field">
+                <span className="pipe-run-field-label mono">{t('pipelines.runInput.folder')}</span>
+                <input
+                  className="pipe-run-cwd mono"
+                  value={runCwd}
+                  placeholder={t('pipelines.runInput.folderPlaceholder')}
+                  onChange={(event) => {
+                    setRunCwd(event.target.value);
+                  }}
+                />
+              </div>
+              <div className="pipe-run-field">
+                <span className="pipe-run-field-label mono">{t('pipelines.runInput.agent')}</span>
+                <div className="pipe-run-agents">
+                  {(['pi', 'codex'] as const).map((value) => (
+                    <label key={value} className="pipe-run-agent mono">
+                      <input
+                        type="radio"
+                        name="pipe-run-agent"
+                        checked={runAgent === value}
+                        onChange={() => {
+                          setRunAgent(value);
+                        }}
+                      />
+                      {value === 'pi' ? t('pipelines.runInput.agentPi') : t('pipelines.runInput.agentCodex')}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
             <div className="pipe-editor-foot">
               <span className="pipe-editor-hint mono">{runTarget.steps.length} {t('pipelines.steps')}</span>
               <button
@@ -374,7 +411,10 @@ export function PipelinesTab(): React.JSX.Element {
                 className="btn-primary mono"
                 onClick={() => {
                   // runTarget is narrowed to Pipeline inside this branch.
-                  void run(runTarget.id, runInput).catch((err: unknown) => {
+                  void run(runTarget.id, runInput, {
+                    ...(runCwd.trim().length > 0 ? { cwd: runCwd.trim() } : {}),
+                    agent: runAgent,
+                  }).catch((err: unknown) => {
                     setEditorError(err instanceof Error ? err.message : String(err));
                   });
                   setRunTarget(null);

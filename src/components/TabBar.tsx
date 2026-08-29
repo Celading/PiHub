@@ -38,7 +38,7 @@ export function TabBar({
             onSelect(tab.id);
           }}
         >
-          <span className="tabbar-label mono">{tab.label}</span>
+          <span className="tabbar-label mono">{tab.label || t('chat.tabs.new')}</span>
           <button
             type="button"
             className="tabbar-close"

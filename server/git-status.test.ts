@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { parseGitStatusZ } from './git-status.js';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { afterEach, describe, expect, it } from 'vitest';
+import { gitStatus, parseGitStatusZ } from './git-status.js';
+
+const execFileAsync = promisify(execFile);
+let tempDir: string | undefined;
+
+afterEach(async () => {
+  if (tempDir !== undefined) {
+    await rm(tempDir, { recursive: true, force: true });
+    tempDir = undefined;
+  }
+});
 
 describe('P1-08b git status parsing', () => {
   it('parses modified/added/deleted/untracked entries with -z framing', () => {
@@ -23,5 +38,14 @@ describe('P1-08b git status parsing', () => {
   it('flags conflicted entries and drops empty frames', () => {
     const out = parseGitStatusZ('UU conflict.ts\u0000\u0000');
     expect(out).toEqual([{ path: 'conflict.ts', index: 'U', worktree: 'U', kind: 'conflicted', staged: true }]);
+  });
+
+  it('runs against a real repository without passing diff-only flags to status', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pihub-git-status-'));
+    await execFileAsync('git', ['init', '--quiet'], { cwd: tempDir });
+    await writeFile(path.join(tempDir, 'new.txt'), 'new\n', 'utf8');
+    expect(await gitStatus(tempDir)).toEqual([
+      { path: 'new.txt', index: '?', worktree: '?', kind: 'untracked', staged: false },
+    ]);
   });
 });

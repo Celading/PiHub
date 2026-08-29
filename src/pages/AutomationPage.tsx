@@ -30,6 +30,7 @@ const EVENT_LABELS: Record<string, MessageKey> = {
 };
 const WATCHED_EVENTS = new Set(Object.keys(EVENT_LABELS));
 const MAX_EVENTS = 8;
+const COMMAND_LOAD_TIMEOUT_MS = 8_000;
 
 interface AutomationEventEntry {
   key: number;
@@ -66,6 +67,24 @@ function formatEventTime(epochMs: number, intlTag: string): string {
   }).format(new Date(epochMs));
 }
 
+function loadWithTimeout<T>(promise: Promise<T>, timeoutMessage: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, COMMAND_LOAD_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        window.clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
 /**
  * Automation · Skills · Pipelines center (P1-02). Skills and automation
  * surface pi-native capabilities; the pipelines tab is the PiHub-exclusive
@@ -94,12 +113,14 @@ export function AutomationPage(): React.JSX.Element {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
-        const list = await api.commands();
+        const list = await loadWithTimeout(api.commands(), t('automation.skills.timeout'));
         if (!cancelled) {
           setCommands(list);
         }
       } catch (err) {
         if (!cancelled) {
+          // A settled failure must leave the catalog out of loading state.
+          setCommands([]);
           setError(err instanceof Error ? err.message : String(err));
         }
       }
@@ -108,7 +129,7 @@ export function AutomationPage(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   // Live state + event feed (P1-02 S2).
   useEffect(() => {

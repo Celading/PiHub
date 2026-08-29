@@ -11,7 +11,7 @@ const SKILL: PiCommand = {
   name: 'skill:github-roast',
   description: 'GitHub 账号评测：只用官方公开 API 采集证据，公式 {{input}} 不适用{{x}}。',
   source: 'skill',
-  sourceInfo: { path: '/Users/x/.agents/skills/github-roast/SKILL.md', source: 'auto' },
+  sourceInfo: { path: '/workspace/skills/github-roast/SKILL.md', source: 'auto' },
 };
 
 describe('sanitizeTemplate', () => {
@@ -42,7 +42,7 @@ describe('hardConvert', () => {
     const withoutDescription: PiCommand = {
       name: 'skill:github-roast',
       source: 'skill',
-      sourceInfo: { path: '/Users/x/.agents/skills/github-roast/SKILL.md' },
+      sourceInfo: { path: '/workspace/skills/github-roast/SKILL.md' },
     };
     const pipeline = hardConvert(withoutDescription);
     expect(pipeline.description).toContain('纳入工程流');
