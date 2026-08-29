@@ -353,11 +353,6 @@ export function SettingsPage({
       setRemoteError(t('settings.network.remoteUrlRequired'));
       return;
     }
-    const bridge = window.pihubWindow;
-    if (bridge === undefined) {
-      setRemoteError(t('settings.network.remoteUnavailable'));
-      return;
-    }
     let target: string;
     try {
       target = normalizeRemoteUrl(url);
@@ -367,6 +362,16 @@ export function SettingsPage({
     }
     if (bootstrap.length > 0 && !isRemoteBootstrap(bootstrap)) {
       setRemoteError(t('settings.network.bootstrapInvalid'));
+      return;
+    }
+    const bridge = window.pihubWindow;
+    if (bridge === undefined) {
+      if (bootstrap.length > 0) {
+        setRemoteError(t('settings.network.remoteUnavailable'));
+        return;
+      }
+      setRemoteError(null);
+      window.location.assign(target);
       return;
     }
     setRemoteError(null);

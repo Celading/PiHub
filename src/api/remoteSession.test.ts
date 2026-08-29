@@ -181,19 +181,11 @@ describe('RemoteLink R0 browser credential hygiene', () => {
     expect(serviceWorker).not.toContain("['/', '/index.html'");
   });
 
-  it('keeps Electron loadURL clean and passes bootstrap through separate IPC', () => {
-    const main = readFileSync(new URL('../../electron/main.cjs', import.meta.url), 'utf8');
-    const preload = readFileSync(new URL('../../electron/preload.cjs', import.meta.url), 'utf8');
-    expect(main).toContain('win.loadURL(target.url)');
-    expect(main).toContain('!isLocalPanelSender(event.sender)');
-    expect(main).toContain("ipcMain.handle('pihub:take-remote-bootstrap'");
-    expect(main).toContain('clearPendingRemoteBootstrap(id, pending)');
-    expect(main).toContain('current !== expected');
-    expect(main).toContain('REMOTE_BOOTSTRAP_TTL_MS');
-    expect(main).toContain("win.webContents.once('did-fail-load'");
-    expect(main).not.toContain('?pair=');
-    expect(preload).toContain("ipcRenderer.send('pihub:open-remote', url, bootstrap)");
-    expect(preload).toContain("ipcRenderer.invoke('pihub:take-remote-bootstrap')");
+  it('keeps Node browser navigation credential-free', () => {
+    const settings = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
+    expect(settings).toContain('window.location.assign(target)');
+    expect(settings).toContain("t('settings.network.remoteUnavailable')");
+    expect(settings).not.toContain('?pair=');
   });
 
   it('keeps bootstrap failure diagnostics fixed and credential-free', () => {

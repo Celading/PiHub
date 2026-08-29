@@ -266,6 +266,14 @@ describe('RemoteLink R0 cookie gate, expiry and revocation', () => {
     );
     expect(allowed).toHaveBeenCalledOnce();
 
+    const abortAllowed = vi.fn();
+    gate.middleware(
+      remoteRequest('POST', '/api/rpc/abort', { cookie: issued.cookie }),
+      response(),
+      abortAllowed as NextFunction,
+    );
+    expect(abortAllowed).toHaveBeenCalledOnce();
+
     gate.caps.remoteShell = true;
     gate.caps.remoteApprove = true;
     for (const [method, path] of [

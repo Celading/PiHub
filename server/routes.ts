@@ -1554,8 +1554,8 @@ export function createRouter(
     await withBridge(res, () => bridge.send({ type: 'steer', message: body.data.message }));
   });
 
-  router.post('/api/rpc/abort', async (_req, res) => {
-    if (writeDenied(res)) {
+  router.post('/api/rpc/abort', async (req, res) => {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
     await withBridge(res, () => bridge.send({ type: 'abort' }));
