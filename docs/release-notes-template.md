@@ -55,7 +55,7 @@ your agent credentials, and has no cloud service of its own.
 
 ```bash
 # pull the new release, then:
-npm install && npm run build && npm start   # open http://127.0.0.1:3001
+npm install && npm run build && npm start   # open http://127.0.0.1:18384
 # (npm distribution, when published, replaces the clone step)
 ```
 

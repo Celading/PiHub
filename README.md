@@ -113,12 +113,14 @@ npm install -g @celading/pihub
 pihub
 ```
 
-Then open **http://127.0.0.1:3001** in your browser. `pihub` spawns
+Then open **http://127.0.0.1:18384** in your browser. `pihub` spawns
 `pi --mode rpc` itself — no terminal window needed afterwards. The panel
 binds to the loopback interface by default.
 
 - To keep it always available, run `pihub` in a terminal tab or as a
   background service (e.g. `pihub &` / launchd).
+- Production defaults to port `18384`; port `3001` is reserved for the explicit
+  debug backend used by `npm run dev`.
 - Change the port with `PIHUB_PORT=4000 pihub` (the generic `PORT` env var
   also works). The panel binds to the loopback interface by default.
 - The published bin serves its own frontend build from the package — you

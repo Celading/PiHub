@@ -34,10 +34,9 @@ npm run dev
 生产构建：`npm run build` → 由 Node 服务托管 `dist/`（`npm start`）。
 测试：`npm test`。
 
-> **为什么是 18384 而不是 3001？** 18384 只是 Vite 开发服务器端口（第 14 章：
-> `npm run dev` 时界面在 http://localhost:18384，`/api` 代理到后端
-> 127.0.0.1:3001）。打包后的 `pihub`/`npm start` 是单进程：Node 服务自行
-> 托管界面，默认端口 **3001**。
+> **为什么是 18384 而不是 3001？** 打包后的 `pihub`/`npm start` 产品默认
+> 监听 **18384**。执行 `npm run dev` 时，Vite 占用 18384，并把 `/api` 代理到
+> 127.0.0.1:3001 的显式调试后端。
 
 ### 端口
 

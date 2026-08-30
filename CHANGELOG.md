@@ -6,8 +6,17 @@ All notable changes to PiHub are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
 ### Added
 
+- Added a versioned host manifest with persistent random host identity,
+  independent capability grants and explicit session-target receipts.
+- Added bounded event replay for SSE and cursor-based clients, including
+  stream epochs and explicit resynchronization when a cursor is invalid,
+  stale or outside the replay window.
+- Added an independently controlled, default-off capability for continuing a
+  confirmed session from another device.
 - DSH Web discovery, session continuity, streamed events, approvals and model
   catalog support through the local PiHub server.
 - Persistent private workspaces with pre-session Files and Changes views, plus
@@ -15,6 +24,12 @@ All notable changes to PiHub are documented here. The format follows
 - Dedicated Pi runtime settings, capability reporting, terminal result fallback
   and remote-browser pairing/navigation.
 - Standard-input JSON-RPC access to the pipeline runtime through `pihub --mcp`.
+
+### Changed
+
+- Installed production mode now listens on `127.0.0.1:18384` by default.
+  Port `3001` is reserved for the explicit debug backend; environment and
+  configuration-file overrides keep their existing precedence.
 
 ### Fixed
 
@@ -26,6 +41,10 @@ All notable changes to PiHub are documented here. The format follows
 
 ### Security
 
+- Remote state-changing requests now carry and validate the same host,
+  session, stream epoch, revision and grant generation before execution.
+- Capability revocation or re-granting invalidates previously issued action
+  targets, while historical browsing remains available without write access.
 - Updated the transitive `nanoid` dependency to `3.3.18`; production and full
   dependency audits report zero known vulnerabilities.
 - Replaced reusable LAN pairing credentials with a 256-bit one-use bootstrap

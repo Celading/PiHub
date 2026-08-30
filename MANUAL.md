@@ -35,11 +35,9 @@ The panel spawns `pi --mode rpc` itself — you do not need a terminal open.
 Production build: `npm run build` → serve `dist/` from the Node server
 (`npm start`). Tests: `npm test`.
 
-> **Why 18384 vs 3001?** 18384 is the Vite dev-server port only (chapter 14:
-> `npm run dev` shows the UI at http://localhost:18384, proxying `/api` to
-> the backend on 127.0.0.1:3001). The packaged `pihub`/`npm start` build is
-> a single process: the Node server hosts the UI itself, defaulting to port
-> **3001**.
+> **Why 18384 vs 3001?** The packaged `pihub`/`npm start` product listens on
+> **18384**. During `npm run dev`, Vite owns 18384 and proxies `/api` to the
+> explicit debug backend on 127.0.0.1:3001.
 
 ### Port
 
