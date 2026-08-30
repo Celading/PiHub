@@ -2,7 +2,7 @@
 import express from 'express';
 import path from 'node:path';
 import { RpcBridge } from './rpc-bridge.js';
-import { createRouter } from './routes.js';
+import { createRouter, publishedVersion } from './routes.js';
 import { createFileSessionProvider } from './providers/file-session-provider.js';
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
@@ -42,6 +42,7 @@ import { createSystemPromptStore } from './system-prompt.js';
 import { buildRuntimeSurface, probeCapabilities } from './capabilities.js';
 import { createWorkspaceSnapshotStore } from './workspace-snapshot.js';
 import { gitStatus, isGitUnavailableError } from './git-status.js';
+import { HostContinuity } from './continuity.js';
 
 // PIHUB_HOME → ~/.pihub (fallback ./itData when no permission); config.toml
 // inside it holds the server options. Env (PIHUB_PORT/PORT) wins over the
@@ -343,6 +344,18 @@ const demoShowcase = mode === 'demo' ? new DemoShowcase(hub, sessions) : null;
 // never writes PiHub-owned state on this machine; demo seeds show the surface
 // (runs stay read-only via the 503 write guards).
 const pihubHome = await pihubHomePromise;
+const continuity = await HostContinuity.create({
+  home: pihubHome.dir,
+  productVersion: publishedVersion(),
+  ...(process.env.PIHUB_HOST_LABEL === undefined
+    ? {}
+    : { displayLabel: process.env.PIHUB_HOST_LABEL }),
+});
+hub.configureContinuity({
+  hostId: continuity.hostId,
+  streamEpoch: continuity.streamEpoch,
+  targetRef: () => continuity.currentTarget(),
+});
 const workspaceChanges = createWorkspaceSnapshotStore(
   path.join(pihubHome.dir, 'workspace-baselines'),
 );
@@ -488,6 +501,7 @@ app.use(
       url: effectiveConfig.url,
     }),
     lanGate,
+    continuity,
     codexExec:
       codexAdapter === null
         ? null

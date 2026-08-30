@@ -193,4 +193,54 @@ describe('SseHub remote-session lifecycle', () => {
     expect(local.chunks.join('')).not.toContain('"remote":true');
     hub.close();
   });
+
+  it('assigns ordered ids and replays a bounded cursor window', () => {
+    const hub = new SseHub({ replayLimit: 2, hostId: 'host-a', streamEpoch: 'epoch-a' });
+    hub.broadcast({ type: 'one' });
+    hub.broadcast({ type: 'two' });
+    hub.broadcast({ type: 'three' });
+
+    expect(hub.currentCursor()).toBe('epoch-a:3');
+    expect(hub.replayAfter('epoch-a:1')).toMatchObject({
+      resyncRequired: false,
+      events: [{ sequence: 2 }, { sequence: 3 }],
+    });
+    expect(hub.replayAfter('epoch-a:0')).toMatchObject({
+      resyncRequired: true,
+      reason: 'cursor-too-old',
+      events: [],
+    });
+    expect(hub.replayAfter('old:2')).toMatchObject({
+      resyncRequired: true,
+      reason: 'epoch-changed',
+    });
+    expect(hub.replayAfter('broken')).toMatchObject({
+      resyncRequired: true,
+      reason: 'invalid-cursor',
+    });
+  });
+
+  it('replays Last-Event-ID and emits an explicit resync event on a gap', () => {
+    const hub = new SseHub({ replayLimit: 2, hostId: 'host-a', streamEpoch: 'epoch-a' });
+    hub.broadcast({ type: 'one' });
+    hub.broadcast({ type: 'two' });
+    hub.broadcast({ type: 'three' });
+
+    const replayed = new MockResponse();
+    hub.addClient(
+      request(false, undefined, { 'last-event-id': 'epoch-a:1' }),
+      replayed as unknown as Response,
+    );
+    expect(replayed.chunks.join('')).toContain('id: epoch-a:2');
+    expect(replayed.chunks.join('')).toContain('id: epoch-a:3');
+
+    const gap = new MockResponse();
+    hub.addClient(
+      request(false, undefined, { 'last-event-id': 'epoch-a:0' }),
+      gap as unknown as Response,
+    );
+    expect(gap.chunks.join('')).toContain('event: resync');
+    expect(gap.chunks.join('')).toContain('cursor-too-old');
+    hub.close();
+  });
 });

@@ -264,6 +264,7 @@ export function SettingsPage({
     remoteApprove: false,
     remotePrompt: false,
     remoteShell: false,
+    remoteContinue: false,
   });
   const [issuedBootstrap, setIssuedBootstrap] = useState<{
     id: string;
@@ -438,7 +439,10 @@ export function SettingsPage({
   }, []);
 
   const setCap = useCallback(
-    async (key: 'remoteApprove' | 'remotePrompt' | 'remoteShell', value: boolean): Promise<void> => {
+    async (
+      key: 'remoteApprove' | 'remotePrompt' | 'remoteShell' | 'remoteContinue',
+      value: boolean,
+    ): Promise<void> => {
       setError(null);
       try {
         const result = await api.netSetCap(key, value);
@@ -446,6 +450,7 @@ export function SettingsPage({
           remoteApprove: boolean;
           remotePrompt: boolean;
           remoteShell: boolean;
+          remoteContinue: boolean;
         };
         setCaps(next);
       } catch (err) {
@@ -1181,7 +1186,11 @@ export function SettingsPage({
                     { key: 'remoteApprove', label: t('settings.network.capApprove') },
                     { key: 'remotePrompt', label: t('settings.network.capPrompt') },
                     { key: 'remoteShell', label: t('settings.network.capShell') },
-                  ] as ReadonlyArray<{ key: 'remoteApprove' | 'remotePrompt' | 'remoteShell'; label: string }>
+                    { key: 'remoteContinue', label: t('settings.network.capContinue') },
+                  ] as ReadonlyArray<{
+                    key: 'remoteApprove' | 'remotePrompt' | 'remoteShell' | 'remoteContinue';
+                    label: string;
+                  }>
                 ).map((cap) => (
                   <label key={cap.key} className="network-cap mono">
                     <input

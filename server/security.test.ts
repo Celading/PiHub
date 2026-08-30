@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import {
   LOCAL_CONTROL_COOKIE,
+  LanGate,
   createSecurityGate,
   isRemoteRequest,
   requiresToken,
@@ -225,6 +226,9 @@ describe('writeFamilyOf remote capability classification', () => {
     expect(writeFamilyOf('POST', '/api/rpc/steer')).toBe('prompt');
     expect(writeFamilyOf('POST', '/api/rpc/abort')).toBe('prompt');
     expect(writeFamilyOf('POST', '/api/codex/prompt')).toBe('prompt');
+    expect(writeFamilyOf('POST', '/api/pipelines/run')).toBe('prompt');
+    expect(writeFamilyOf('POST', '/api/pipelines/runs/run-1/abort')).toBe('prompt');
+    expect(writeFamilyOf('POST', '/api/continuity/target/confirm')).toBe('continue');
     expect(writeFamilyOf('POST', '/api/rpc/bash')).toBe('shell');
     expect(writeFamilyOf('POST', '/api/rpc/abort-bash')).toBe('shell');
     expect(writeFamilyOf('POST', '/api/pipelines/runs/run-1/approve')).toBe('approve');
@@ -233,7 +237,6 @@ describe('writeFamilyOf remote capability classification', () => {
   it('denies every other non-read API route by default', () => {
     for (const [method, path] of [
       ['POST', '/api/rpc/switch_session'],
-      ['POST', '/api/pipelines/run'],
       ['POST', '/api/net/caps'],
       ['POST', '/api/net/session/revoke'],
       ['POST', '/api/unknown/future-route'],
@@ -264,6 +267,9 @@ describe('requiresToken sensitive reads', () => {
       '/api/rpc/messages',
       '/api/events',
       '/api/net',
+      '/api/continuity/manifest',
+      '/api/continuity/target',
+      '/api/continuity/events',
     ]) {
       expect(requiresToken(request('GET', path)), `GET ${path}`).toBe(true);
     }
@@ -278,5 +284,20 @@ describe('requiresToken sensitive reads', () => {
   it('requires authorization on every non-GET API route', () => {
     expect(requiresToken(request('POST', '/api/net/session'))).toBe(true);
     expect(requiresToken(request('POST', '/api/rpc/prompt'))).toBe(true);
+  });
+});
+
+describe('continuity capability generation', () => {
+  it('advances only when an independent grant actually changes', () => {
+    const gate = new LanGate();
+    expect(gate.grantGeneration()).toBe(0);
+    gate.setCap('remoteContinue', true);
+    expect(gate.grantGeneration()).toBe(1);
+    gate.setCap('remoteContinue', true);
+    expect(gate.grantGeneration()).toBe(1);
+    gate.setCap('remotePrompt', true);
+    expect(gate.grantGeneration()).toBe(2);
+    gate.setCap('remoteContinue', false);
+    expect(gate.grantGeneration()).toBe(3);
   });
 });

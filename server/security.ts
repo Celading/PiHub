@@ -170,6 +170,9 @@ const SENSITIVE_READ_EXACT = [
   '/api/capabilities',
   '/api/pi-agent/settings',
   '/api/net',
+  '/api/continuity/manifest',
+  '/api/continuity/target',
+  '/api/continuity/events',
 ] as const;
 
 /** Routes that must present the control token (writes + sensitive reads). */
@@ -247,7 +250,7 @@ export function isRemoteRequest(req: Request): boolean {
 }
 
 /** Capability families a remote peer may unlock explicitly. */
-export type WriteFamily = 'prompt' | 'shell' | 'approve';
+export type WriteFamily = 'prompt' | 'shell' | 'approve' | 'continue';
 
 const DEMO_CONTROL_ROUTES = new Set([
   'POST /api/demo/start',
@@ -267,7 +270,7 @@ export function isDemoControlRoute(method: string, path: string): boolean {
  *  - 'prompt' / 'shell' / 'approve' — allowed for remote peers only when
  *    the matching capability switch is on;
  *  - 'never' — every OTHER non-read /api route (session switch/new/fork/
- *    model/thinking, codex abort/session, pipelines run/abort/save,
+ *    model/thinking, codex abort/session, pipelines save,
  *    sessions/delete, models-config, system-prompt PUT, net management…):
  *    remote peers are ALWAYS denied. Fail-closed: a future write route
  *    that forgets to classify is denied by default;
@@ -286,9 +289,14 @@ export function writeFamilyOf(method: string, p: string): WriteFamily | 'never' 
     (p === '/api/rpc/prompt' ||
       p === '/api/rpc/steer' ||
       p === '/api/rpc/abort' ||
-      p === '/api/codex/prompt')
+      p === '/api/codex/prompt' ||
+      p === '/api/pipelines/run' ||
+      /^\/api\/pipelines\/runs\/[^/]+\/abort$/u.test(p))
   ) {
     return 'prompt';
+  }
+  if (method === 'POST' && p === '/api/continuity/target/confirm') {
+    return 'continue';
   }
   if (method === 'POST' && (p === '/api/rpc/bash' || p === '/api/rpc/abort-bash')) {
     return 'shell';
@@ -303,6 +311,7 @@ export interface CapabilitySwitches {
   remoteApprove: boolean;
   remotePrompt: boolean;
   remoteShell: boolean;
+  remoteContinue: boolean;
 }
 
 /**
@@ -439,6 +448,7 @@ export class LanGate {
   private readonly lockMs = 60_000;
   /** Runtime-adjustable capability switches (local settings page). */
   caps: CapabilitySwitches;
+  private capabilityGeneration = 0;
   private readonly bootstrapTtlMs: number;
   private readonly sessionTtlMs: number;
   private readonly now: () => number;
@@ -461,12 +471,20 @@ export class LanGate {
       remoteApprove: process.env.PIHUB_CAP_REMOTE_APPROVE === '1',
       remotePrompt: process.env.PIHUB_CAP_REMOTE_PROMPT === '1',
       remoteShell: process.env.PIHUB_CAP_REMOTE_SHELL === '1',
+      remoteContinue: process.env.PIHUB_CAP_REMOTE_CONTINUE === '1',
     };
   }
 
   /** Updates a capability switch (called from the local settings page). */
   setCap(key: keyof CapabilitySwitches, value: boolean): void {
-    this.caps[key] = value;
+    if (this.caps[key] !== value) {
+      this.caps[key] = value;
+      this.capabilityGeneration += 1;
+    }
+  }
+
+  grantGeneration(): number {
+    return this.capabilityGeneration;
   }
 
   /** Shared remote truth blocks forged loopback Host and proxy-loopback
@@ -761,7 +779,7 @@ export class LanGate {
   }
 
   /** Capability check for remote peers: writes require the matching switch. */
-  remoteCan(req: Request, route: 'approve' | 'prompt' | 'shell'): boolean {
+  remoteCan(req: Request, route: WriteFamily): boolean {
     if (!this.isRemote(req)) {
       return true; // local always allowed
     }
@@ -772,6 +790,8 @@ export class LanGate {
         return this.caps.remotePrompt;
       case 'shell':
         return this.caps.remoteShell;
+      case 'continue':
+        return this.caps.remoteContinue;
       default:
         return false;
     }

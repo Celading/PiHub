@@ -24,6 +24,8 @@ describe('ExternalSessionWatcher', () => {
     const emitted: ExternalEvent[] = [];
     const watcher = new ExternalSessionWatcher({
       piDir: root,
+      codexDir: path.join(root, 'disabled-codex'),
+      dshDir: path.join(root, 'disabled-dsh'),
       pollMs: 1000,
       onEvent: (event) => emitted.push(event),
     });
@@ -62,7 +64,9 @@ describe('ExternalSessionWatcher', () => {
 
     const emitted: ExternalEvent[] = [];
     const watcher = new ExternalSessionWatcher({
+      piDir: path.join(root, 'disabled-pi'),
       codexDir: root,
+      dshDir: path.join(root, 'disabled-dsh'),
       pollMs: 1000,
       onEvent: (event) => emitted.push(event),
     });

@@ -237,7 +237,12 @@ export const api = {
   // are present only on loopback responses; remote responses are filtered.
   net(): Promise<{
     mode: 'local' | 'pair' | 'lan';
-    caps: { remoteApprove: boolean; remotePrompt: boolean; remoteShell: boolean };
+    caps: {
+      remoteApprove: boolean;
+      remotePrompt: boolean;
+      remoteShell: boolean;
+      remoteContinue: boolean;
+    };
     remote: boolean;
     bootstraps?: Array<{ id: string; expiresAt: number }>;
     sessions?: Array<{ id: string; createdAt: number; expiresAt: number }>;
