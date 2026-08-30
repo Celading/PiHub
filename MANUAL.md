@@ -35,11 +35,9 @@ The panel spawns `pi --mode rpc` itself — you do not need a terminal open.
 Production build: `npm run build` → serve `dist/` from the Node server
 (`npm start`). Tests: `npm test`.
 
-> **Why 18384 vs 3001?** 18384 is the Vite dev-server port only (chapter 14:
-> `npm run dev` shows the UI at http://localhost:18384, proxying `/api` to
-> the backend on 127.0.0.1:3001). The packaged `pihub`/`npm start` build is
-> a single process: the Node server hosts the UI itself, defaulting to port
-> **3001**.
+> **Why 18384 vs 3001?** The packaged `pihub`/`npm start` product listens on
+> **18384**. During `npm run dev`, Vite owns 18384 and proxies `/api` to the
+> explicit debug backend on 127.0.0.1:3001.
 
 ### Port
 
@@ -379,7 +377,7 @@ The settings view swaps the sidebar into a navigation tree — the bottom
 | **Permissions** | browser notification state/request, local-boundary notes |
 | **Prompt Favorites** | manage saved prompts; run them as new prompts |
 | **Appearance** | per-adapter accent colors (pi / Codex / AtomCode / ZCode) |
-| **Access** | network mode display, pairing code generation/revocation, remote capability switches (§12) |
+| **Access** | network mode display, one-use bootstrap/session management, remote capability switches (§12) |
 | **Lab** | streaming animation, compact tool cards, notify on settle, simplified output |
 
 ### Favorites
@@ -392,7 +390,7 @@ switches to chat and sends immediately).
 ## 12. Privacy, access & permissions
 
 ### Defaults
-- The panel binds loopback addresses only and refuses other Host headers.
+- The panel binds loopback addresses by default and refuses non-allowlisted Host headers.
 - `~/.pi/agent/auth.json` is never read or exposed.
 - Writes are limited to: conversations via pi RPC, `models.json` when you
   save channels, and panel preferences in browser localStorage.
@@ -403,21 +401,35 @@ switches to chat and sends immediately).
 Every write route and every sensitive read route (model config, file
 preview, session state, the SSE event stream) requires a random per-process
 **control token**. The served page receives the token automatically and
-sends it as `X-PiHub-Token`; the event stream carries it as `?token=`. The
-token is never persisted or logged. API responses are never cached by the
-service worker (`Cache-Control: no-store`).
+sends it as `X-PiHub-Token`; the event stream uses a same-origin HttpOnly
+control cookie. The token is never put in a URL or application storage, and
+the server never logs it. API responses and HTML/navigation responses are
+never cached by the service worker. Dynamic HTML may contain the token;
+`Cache-Control: no-store` remains an additional server-side safeguard.
 
 ### LAN access (off by default)
 Access from other devices is **disabled by default**. When you explicitly
 enable it (`PIHUB_NET=pair` or `lan`):
 
-- **Pairing codes**: a one-time code with a short time-to-live; the peer
-  presents it once and receives a session token. Codes can be revoked or
-  rotated at any time from **Settings → Access**.
-- **Capability switches**: each remote write class — prompts/steer,
-  deletions, shell, approvals — has an **independent switch, all off by
-  default**. Remote requests without the paired token are rejected (403).
+- **Bootstrap**: the local operator generates a 64-hex value that is shown
+  once, valid for at most 60 seconds, and consumed at most once. The remote
+  browser submits it only in the `/api/net/session` POST body.
+- **Session**: successful exchange creates a different 256-bit credential in
+  a `HttpOnly; SameSite=Strict; Path=/api` cookie, valid for at most 15
+  minutes. The bootstrap appears only once in the local creation response;
+  the remote exchange never returns it, and the session credential never
+  enters JSON. Neither credential enters URLs, EventSource queries,
+  JavaScript-readable Web Storage or referrers.
+- **Capability switches**: prompts/steer, shell and approvals have
+  **independent switches, all off by default**. Every other remote write is
+  denied even when all three switches are enabled.
+- **Revocation**: logout or local session revocation blocks later requests
+  and closes SSE streams tied to that session. Already accepted operations
+  are not retroactively cancelled.
 - Loopback access is never affected by these switches.
+- Direct HTTP LAN access is compatibility-only and is not E2E. Reverse
+  proxies that obscure the peer/Host identity are not a supported trusted
+  boundary. One-use consumption assumes the current single server process.
 
 ### File preview containment
 The preview path is re-verified with `realpath` against the real workspace
@@ -435,7 +447,7 @@ rejected.
 | "Agent is already processing" | the shared pi session is busy (another tool may be using it); wait or send as steer/follow-up |
 | "This session has not been saved yet" | pi requires the session to have an assistant response before cloning |
 | Model dropdown empty | check `models.json` / provider configuration in pi |
-| Remote device gets 403 | the pairing code is missing/expired, or the capability switch for that action is off — check **Settings → Access** |
+| Remote device gets 403 | the bootstrap/session is missing, expired or revoked, or the capability switch for that action is off — check **Settings → Access** |
 | Dev changes not visible | run the dev server with polling watchers (see `scripts/dev.mjs`, `CHOKIDAR_USEPOLLING`) |
 | A tab shows an old conversation | the session was switched by another tab — activate the tab again; each tab reloads its own session on activation |
 

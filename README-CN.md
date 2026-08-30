@@ -38,8 +38,8 @@ PiHub 是为 [`pi`](https://pi.dev)（`@earendil-works/pi-coding-agent`）打造
 
 ### 本地优先设计
 
-你的对话始终留在你的机器上。面板仅监听回环接口、绝不读取你的 agent
-凭证、不运营任何自有云服务——唯一的外发请求是你显式配置的那些（模型
+会话历史存储在你的机器上。面板默认仅监听回环接口、绝不读取你的运行凭据、
+不运营任何自有云服务——唯一的外发请求是你显式配置的那些（模型
 目录查询、发给你所选提供商的提示词）。精确边界见
 [`SECURITY.md`](SECURITY.md)。
 
@@ -106,12 +106,13 @@ npm install -g @celading/pihub
 pihub
 ```
 
-然后浏览器打开 **http://127.0.0.1:3001**。`pihub` 会自行拉起
-`pi --mode rpc`——之后无需再开终端。面板仅监听回环接口。
+然后浏览器打开 **http://127.0.0.1:18384**。`pihub` 会自行拉起
+`pi --mode rpc`——之后无需再开终端。面板默认仅监听回环接口。
 
 - 常驻运行：让 `pihub` 在终端标签页/后台服务中运行（如 `pihub &` 或
   launchd 配置）。
-- 更换端口：`PIHUB_PORT=4000 pihub`（通用 `PORT` 环境变量同样生效）。面板仅监听回环接口。
+- 生产模式默认使用 `18384`；`3001` 仅供 `npm run dev` 显式启动的调试后端使用。
+- 更换端口：`PIHUB_PORT=4000 pihub`（通用 `PORT` 环境变量同样生效）。面板默认仅监听回环接口。
 - 发布版 bin 自带前端构建产物（按包内相对路径定位），**可从任意目录运行**
   （`npx @celading/pihub` 随处可用，无需 cd 进包目录）。
 
@@ -125,8 +126,14 @@ PIHUB_NET=lan PIHUB_ALLOWED_HOSTS=192.168.1.20 pihub   # 放行局域网 IP
 
 监听所有网卡还需在 `~/.pihub/config.toml` 的 `[server]` 节写
 `host = "0.0.0.0"`（TOML 解析只认节内选项，节外会被忽略）。远程 peer
-默认**只读**，需先在「设置 → 访问」开启能力开关并完成配对；
-完整矩阵见[使用手册](MANUAL.zh-CN.md) §12。
+默认**只读**。本机操作者先在「设置 → 访问」生成一次性 64 位十六进制
+引导码；远端浏览器只在 POST body 中提交一次，随后获得独立的短时
+HttpOnly session cookie。局域网凭据不会进入 URL、EventSource query 或
+Web Storage。prompt/steer、shell、审批能力分别开启，其他远程写操作始终拒绝。
+
+该直连 HTTP 局域网模式只是兼容路径，**不是端到端加密**。不要暴露到公网，
+也不要放到会隐藏客户端地址或改写 Host 身份的代理后面。完整矩阵与限制见
+[使用手册](MANUAL.zh-CN.md) §12。
 
 ### 配置与数据目录
 
@@ -221,12 +228,13 @@ public/    PWA manifest、图标、Service Worker
 
 ## 边界
 
-- **仅本机访问**：面板只监听 `127.0.0.1` / `localhost`，并拒绝其他 Host 头。
-  可选的局域网访问（`PIHUB_NET=pair` / `lan`）**默认关闭**；开启后每个
-  远端需一次性配对码，且每类远程能力（prompt / steer / 删除 / shell /
-  审批）各有独立开关，全部默认关闭。
+- **回环优先**：面板默认只监听 `127.0.0.1` / `localhost`，并拒绝未列入
+  allowlist 的 Host。可选局域网访问（`PIHUB_NET=pair` / `lan`）**默认关闭**；
+  60 秒内有效的一次性引导码会换取独立 HttpOnly session（最长 15 分钟）。
+  prompt/steer、shell、审批能力分别控制且默认关闭；其他远程写操作始终拒绝。
 - **控制令牌**：所有写接口与敏感读接口（模型配置 / 文件预览 / 会话状态 /
-  SSE）都需要随进程生成的随机令牌——页面会自动获得并在请求中携带。
+  SSE）都需要随进程生成的随机令牌——本机页面会自动获得并在请求中携带；
+  EventSource 使用 HttpOnly cookie，不再把令牌放入 query。
 - **绝不读取凭据**：面板从不读取或暴露 `~/.pi/agent/auth.json`。自定义渠道
   的 API Key 只存于本地 `~/.pi/agent/models.json`，且只发送给你配置的提供商。
 - **外发流量明确化**：不使用任何云服务；对 pi.dev 公共模型目录与所配置

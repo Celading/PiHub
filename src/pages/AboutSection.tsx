@@ -19,7 +19,7 @@ export function AboutSection(): React.JSX.Element {
   const { t } = useI18n();
   const [info, setInfo] = useState<HealthInfo | null>(null);
   // The actual serving port (a custom PIHUB_PORT/PORT shows up here too).
-  const port = typeof window !== 'undefined' && window.location.port.length > 0 ? window.location.port : '3001';
+  const port = typeof window !== 'undefined' && window.location.port.length > 0 ? window.location.port : '18384';
 
   useEffect(() => {
     let cancelled = false;

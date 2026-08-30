@@ -38,6 +38,9 @@ function loadPackageVersion(): string {
   return '0.0.0';
 }
 const PKG_VERSION = loadPackageVersion();
+export function publishedVersion(): string {
+  return PKG_VERSION;
+}
 /** Build identity: YYMMDD + deployment channel. */
 export function buildStamp(now = new Date()): string {
   const y = String(now.getFullYear()).slice(2);
@@ -86,6 +89,7 @@ import type { ZcodeSessionDetail, ZcodeSessionMeta } from './adapters/zcode-hist
 import type { LanGate } from './security.js';
 import type { PipelineStore } from './pipelines/store.js';
 import { hardConvert, softConvert } from './pipelines/convert.js';
+import type { ActionTarget, HostContinuity, SessionTargetRef } from './continuity.js';
 
 const AGENT_DIR = path.join(os.homedir(), '.pi', 'agent');
 
@@ -157,10 +161,30 @@ const promptBodySchema = z.object({
   message: z.string().min(1).max(32_000),
   streamingBehavior: z.enum(['steer', 'followUp']).optional(),
   images: z.array(promptImageSchema).max(8).optional(),
+  actionTarget: z.object({
+    actionId: z.string().min(1).max(128),
+    target: z.object({
+      hostId: z.string().min(1).max(128),
+      sessionRef: z.string().min(1).max(512),
+      streamEpoch: z.string().min(1).max(128),
+      revision: z.number().int().nonnegative(),
+      generation: z.number().int().nonnegative(),
+    }),
+  }).optional(),
 });
 
 const steerBodySchema = z.object({
   message: z.string().min(1).max(32_000),
+  actionTarget: promptBodySchema.shape.actionTarget,
+});
+
+const targetedActionBodySchema = z.object({
+  actionTarget: promptBodySchema.shape.actionTarget,
+});
+
+const confirmTargetBodySchema = z.object({
+  sessionRef: z.string().min(1).max(512),
+  actionId: z.string().min(1).max(128),
 });
 
 const modelBodySchema = z.object({
@@ -186,6 +210,15 @@ const renameBodySchema = z.object({
 
 const bashBodySchema = z.object({
   command: z.string().min(1).max(4096),
+  actionTarget: promptBodySchema.shape.actionTarget,
+});
+
+const pipelineRunTargetedBodySchema = pipelineRunBodySchema.extend({
+  actionTarget: promptBodySchema.shape.actionTarget,
+});
+
+const pipelineApproveTargetedBodySchema = pipelineApproveBodySchema.extend({
+  actionTarget: promptBodySchema.shape.actionTarget,
 });
 
 const autoCompactionBodySchema = z.object({
@@ -383,6 +416,7 @@ export interface RouterModeOptions {
   };
   /** P2-02: LAN access modes + capability scope. */
   lanGate?: LanGate;
+  continuity?: HostContinuity;
 }
 
 /** P1-17 C: normalize provider `/models` responses (OpenAI `data[]`,
@@ -447,7 +481,7 @@ export function createRouter(
   const remoteWriteDenied = (
     req: express.Request,
     res: express.Response,
-    route: 'approve' | 'prompt' | 'shell',
+    route: 'approve' | 'prompt' | 'shell' | 'continue',
   ): boolean => {
     if (lanGate === undefined || !lanGate.isRemote(req)) {
       return false;
@@ -457,6 +491,41 @@ export function createRouter(
     }
     res.status(403).json({ error: 'remote write requires capability: enable it in settings' });
     return true;
+  };
+
+  const continuity = options?.continuity;
+
+  const resolveCurrentTarget = async (): Promise<SessionTargetRef | null> => {
+    if (continuity === undefined) return null;
+    continuity.syncGrantGeneration(lanGate?.grantGeneration() ?? 0);
+    const sessionFile = bridge.getSessionId() ?? '';
+    if (sessionFile.length === 0) return continuity.observeSession('', '');
+    const all = await sessions.list();
+    const matched = all.find((session) => session.fileName === sessionFile);
+    return continuity.observeSession(matched?.id ?? sessionFile, sessionFile);
+  };
+
+  const remoteTargetDenied = async (
+    req: express.Request,
+    res: express.Response,
+    actionTarget: ActionTarget | undefined,
+  ): Promise<boolean> => {
+    if (lanGate === undefined || !lanGate.isRemote(req)) return false;
+    if (continuity === undefined) {
+      res.status(503).json({ error: 'target authority unavailable' });
+      return true;
+    }
+    await resolveCurrentTarget();
+    const validation = continuity.validate(actionTarget);
+    if (!validation.ok) {
+      res.status(409).json({
+        error: 'target mismatch',
+        reason: validation.reason,
+        currentTarget: validation.target,
+      });
+      return true;
+    }
+    return false;
   };
 
   router.get('/api/mode', (_req, res) => {
@@ -511,6 +580,70 @@ export function createRouter(
       fallbackEngine: 'dsh',
       debug: null,
     });
+  });
+
+  router.get('/api/continuity/manifest', (req, res) => {
+    if (continuity === undefined) {
+      res.status(503).json({ error: 'continuity contract unavailable' });
+      return;
+    }
+    const caps = lanGate?.caps ?? {
+      remoteApprove: false,
+      remotePrompt: false,
+      remoteShell: false,
+      remoteContinue: false,
+    };
+    const authorization = lanGate?.sessionAuthorization(req);
+    res.json(continuity.manifest({
+      ...caps,
+      grantGeneration: lanGate?.grantGeneration() ?? 0,
+      expiresAt:
+        authorization === undefined ? null : new Date(authorization.expiresAt).toISOString(),
+    }));
+  });
+
+  router.get('/api/continuity/target', async (_req, res) => {
+    const target = await resolveCurrentTarget();
+    if (target === null) {
+      res.status(503).json({ error: 'target authority unavailable' });
+      return;
+    }
+    res.json({ target });
+  });
+
+  router.post('/api/continuity/target/confirm', async (req, res) => {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'continue')) return;
+    if (continuity === undefined) {
+      res.status(503).json({ error: 'target authority unavailable' });
+      return;
+    }
+    const body = confirmTargetBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'invalid target confirmation' });
+      return;
+    }
+    const detail = await sessions.get(body.data.sessionRef);
+    if (detail === null) {
+      res.status(404).json({ error: 'session target not found' });
+      return;
+    }
+    try {
+      const response = await bridge.send({ type: 'switch_session', sessionPath: detail.fileName });
+      if (!response.success) {
+        res.status(409).json({ error: response.error ?? 'session target rejected' });
+        return;
+      }
+      continuity.syncGrantGeneration(lanGate?.grantGeneration() ?? 0);
+      continuity.observeSession(detail.id, detail.fileName);
+      res.json({ success: true, receipt: continuity.receipt(body.data.actionId) });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/api/continuity/events', (req, res) => {
+    const cursor = typeof req.query['cursor'] === 'string' ? req.query['cursor'] : undefined;
+    res.json(hub.replayAfter(cursor));
   });
 
   router.get('/api/health', (_req, res) => {
@@ -670,38 +803,84 @@ export function createRouter(
     res.json({ providers });
   });
 
-  /* ---- P2-02: LAN access + capability scope ----
-   * Pairing codes and capability switches are managed locally; remote peers
-   * (non-loopback Host) are gated by the LanGate middleware and can only use
-   * capabilities the operator enabled. */
+  /* ---- P2-02/R0: LAN compatibility sessions + capability scope ----
+   * Bootstrap/session management is local-only. Remote peers receive only
+   * filtered mode/capability state and authenticate through an HttpOnly
+   * cookie; no credential is accepted from or returned to a URL. */
   const lanGate = options?.lanGate;
-  router.get('/api/net', (_req, res) => {
+  router.get('/api/net', (req, res) => {
     res.json(
       lanGate === undefined
-        ? { mode: 'local', caps: { remoteApprove: false, remotePrompt: false, remoteShell: false } }
-        : { mode: lanGate.mode, caps: lanGate.caps, pairs: lanGate.listPairs() },
+        ? {
+            mode: 'local',
+            caps: {
+              remoteApprove: false,
+              remotePrompt: false,
+              remoteShell: false,
+              remoteContinue: false,
+            },
+            remote: false,
+            bootstraps: [],
+            sessions: [],
+          }
+        : lanGate.netState(req),
     );
   });
-  router.post('/api/net/pair', (_req, res) => {
+  router.post('/api/net/bootstrap', (_req, res) => {
     if (lanGate === undefined || lanGate.mode === 'local') {
-      res.status(503).json({ error: 'pairing disabled in local mode' });
+      res.status(503).json({ error: 'remote sessions are disabled in local mode' });
       return;
     }
-    res.json({ code: lanGate.createPairCode() });
+    res.json({ bootstrap: lanGate.createBootstrap() });
   });
-  router.post('/api/net/pair/revoke', (req, res) => {
+  router.post('/api/net/bootstrap/revoke', (req, res) => {
     if (lanGate === undefined) {
-      res.status(503).json({ error: 'pairing disabled' });
+      res.status(503).json({ error: 'remote sessions are disabled' });
       return;
     }
     const body = req.body as Record<string, unknown> | null;
-    const code = typeof body === 'object' && body !== null ? body['code'] : undefined;
-    if (typeof code !== 'string' || code.length === 0) {
-      res.status(400).json({ error: 'invalid pair code' });
+    const id = typeof body === 'object' && body !== null ? body['id'] : undefined;
+    if (typeof id !== 'string' || id.length === 0) {
+      res.status(400).json({ error: 'invalid bootstrap id' });
       return;
     }
-    lanGate.revoke(code);
+    res.json({ success: lanGate.revokeBootstrap(id) });
+  });
+  router.post('/api/net/session', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'remote sessions are disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const bootstrap = typeof body === 'object' && body !== null ? body['bootstrap'] : undefined;
+    const exchange = lanGate.exchangeBootstrap(req, bootstrap);
+    if (!exchange.ok) {
+      res.status(exchange.status).json({ error: exchange.error });
+      return;
+    }
+    res.setHeader('Set-Cookie', exchange.setCookie);
+    res.json({ success: true, session: exchange.session });
+  });
+  router.post('/api/net/session/logout', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'remote sessions are disabled' });
+      return;
+    }
+    res.setHeader('Set-Cookie', lanGate.endSession(req));
     res.json({ success: true });
+  });
+  router.post('/api/net/session/revoke', (req, res) => {
+    if (lanGate === undefined) {
+      res.status(503).json({ error: 'remote sessions are disabled' });
+      return;
+    }
+    const body = req.body as Record<string, unknown> | null;
+    const id = typeof body === 'object' && body !== null ? body['id'] : undefined;
+    if (typeof id !== 'string' || id.length === 0) {
+      res.status(400).json({ error: 'invalid session id' });
+      return;
+    }
+    res.json({ success: lanGate.revokeSession(id) });
   });
   router.post('/api/net/caps', (req, res) => {
     if (lanGate === undefined) {
@@ -712,7 +891,8 @@ export function createRouter(
     const key = typeof body === 'object' && body !== null ? body['key'] : undefined;
     const value = typeof body === 'object' && body !== null ? body['value'] : undefined;
     if (
-      (key !== 'remoteApprove' && key !== 'remotePrompt' && key !== 'remoteShell') ||
+      (key !== 'remoteApprove' && key !== 'remotePrompt' && key !== 'remoteShell' &&
+        key !== 'remoteContinue') ||
       typeof value !== 'boolean'
     ) {
       res.status(400).json({ error: 'invalid capability switch' });
@@ -1489,16 +1669,25 @@ export function createRouter(
       res.status(400).json({ error: 'invalid prompt body' });
       return;
     }
-    await withBridge(res, () =>
-      bridge.send({
+    if (await remoteTargetDenied(req, res, body.data.actionTarget)) return;
+    try {
+      const response = await bridge.send({
         type: 'prompt',
         message: body.data.message,
         ...(body.data.streamingBehavior !== undefined
           ? { streamingBehavior: body.data.streamingBehavior }
           : {}),
         ...(body.data.images !== undefined ? { images: body.data.images } : {}),
-      }),
-    );
+      });
+      res.json({
+        ...response,
+        ...(continuity === undefined || body.data.actionTarget === undefined
+          ? {}
+          : { actionReceipt: continuity.receipt(body.data.actionTarget.actionId) }),
+      });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.post('/api/rpc/steer', async (req, res) => {
@@ -1510,14 +1699,38 @@ export function createRouter(
       res.status(400).json({ error: 'invalid steer body' });
       return;
     }
-    await withBridge(res, () => bridge.send({ type: 'steer', message: body.data.message }));
+    if (await remoteTargetDenied(req, res, body.data.actionTarget)) return;
+    try {
+      const response = await bridge.send({ type: 'steer', message: body.data.message });
+      res.json({
+        ...response,
+        ...(continuity === undefined || body.data.actionTarget === undefined
+          ? {}
+          : { actionReceipt: continuity.receipt(body.data.actionTarget.actionId) }),
+      });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
-  router.post('/api/rpc/abort', async (_req, res) => {
-    if (writeDenied(res)) {
+  router.post('/api/rpc/abort', async (req, res) => {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
-    await withBridge(res, () => bridge.send({ type: 'abort' }));
+    const body = targetedActionBodySchema.safeParse(req.body ?? {});
+    const actionTarget = body.success ? body.data.actionTarget : undefined;
+    if (await remoteTargetDenied(req, res, actionTarget)) return;
+    try {
+      const response = await bridge.send({ type: 'abort' });
+      res.json({
+        ...response,
+        ...(continuity === undefined || actionTarget === undefined
+          ? {}
+          : { actionReceipt: continuity.receipt(actionTarget.actionId) }),
+      });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.post('/api/rpc/model', async (req, res) => {
@@ -1812,21 +2025,35 @@ export function createRouter(
       res.status(400).json({ error: 'invalid bash command' });
       return;
     }
+    if (await remoteTargetDenied(req, res, body.data.actionTarget)) return;
     try {
       const response = await bridge.send({ type: 'bash', command: body.data.command });
-      res.json(response);
+      res.json({
+        ...response,
+        ...(continuity === undefined || body.data.actionTarget === undefined
+          ? {}
+          : { actionReceipt: continuity.receipt(body.data.actionTarget.actionId) }),
+      });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  router.post('/api/rpc/abort-bash', async (_req, res) => {
-    if (writeDenied(res)) {
+  router.post('/api/rpc/abort-bash', async (req, res) => {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'shell')) {
       return;
     }
+    const body = targetedActionBodySchema.safeParse(req.body ?? {});
+    const actionTarget = body.success ? body.data.actionTarget : undefined;
+    if (await remoteTargetDenied(req, res, actionTarget)) return;
     try {
       const response = await bridge.send({ type: 'abort_bash' });
-      res.json(response);
+      res.json({
+        ...response,
+        ...(continuity === undefined || actionTarget === undefined
+          ? {}
+          : { actionReceipt: continuity.receipt(actionTarget.actionId) }),
+      });
     } catch (error) {
       res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -2340,7 +2567,7 @@ export function createRouter(
   });
 
   router.get('/api/events', (req, res) => {
-    hub.addClient(req, res);
+    hub.addClient(req, res, lanGate?.sessionAuthorization(req));
     req.on('close', () => {
       // Client disconnect is handled inside the hub via res 'close'.
     });
@@ -2413,14 +2640,15 @@ export function createRouter(
       res.status(503).json({ error: 'pipelines unavailable' });
       return;
     }
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
-    const body = pipelineRunBodySchema.safeParse(req.body);
+    const body = pipelineRunTargetedBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid run body' });
       return;
     }
+    if (await remoteTargetDenied(req, res, body.data.actionTarget)) return;
     const pipeline = pipelineStore.get(body.data.pipelineId);
     if (pipeline === undefined) {
       res.status(404).json({ error: 'pipeline not found' });
@@ -2467,34 +2695,53 @@ export function createRouter(
       res.status(409).json({ error: 'another pipeline run is active' });
       return;
     }
-    res.json({ run });
+    res.json({
+      run,
+      ...(continuity === undefined || body.data.actionTarget === undefined
+        ? {}
+        : { actionReceipt: continuity.receipt(body.data.actionTarget.actionId) }),
+    });
   });
 
-  router.post('/api/pipelines/runs/:id/abort', (req, res) => {
+  router.post('/api/pipelines/runs/:id/abort', async (req, res) => {
     if (pipelineEngine === null) {
       res.status(503).json({ error: 'pipelines unavailable' });
       return;
     }
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'prompt')) {
       return;
     }
-    res.json({ success: pipelineEngine.abort(req.params.id) });
+    const body = targetedActionBodySchema.safeParse(req.body ?? {});
+    const actionTarget = body.success ? body.data.actionTarget : undefined;
+    if (await remoteTargetDenied(req, res, actionTarget)) return;
+    res.json({
+      success: pipelineEngine.abort(req.params.id),
+      ...(continuity === undefined || actionTarget === undefined
+        ? {}
+        : { actionReceipt: continuity.receipt(actionTarget.actionId) }),
+    });
   });
 
-  router.post('/api/pipelines/runs/:id/approve', (req, res) => {
+  router.post('/api/pipelines/runs/:id/approve', async (req, res) => {
     if (pipelineEngine === null) {
       res.status(503).json({ error: 'pipelines unavailable' });
       return;
     }
-    if (writeDenied(res)) {
+    if (writeDenied(res) || remoteWriteDenied(req, res, 'approve')) {
       return;
     }
-    const body = pipelineApproveBodySchema.safeParse(req.body);
+    const body = pipelineApproveTargetedBodySchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: 'invalid approve body' });
       return;
     }
-    res.json({ success: pipelineEngine.approve(req.params.id, body.data.approve) });
+    if (await remoteTargetDenied(req, res, body.data.actionTarget)) return;
+    res.json({
+      success: pipelineEngine.approve(req.params.id, body.data.approve),
+      ...(continuity === undefined || body.data.actionTarget === undefined
+        ? {}
+        : { actionReceipt: continuity.receipt(body.data.actionTarget.actionId) }),
+    });
   });
 
   /* ---- skill → pipeline conversion (P1-10 A; PiHub-local

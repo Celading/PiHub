@@ -22,7 +22,6 @@ import type { PromptRecord } from '../../server/prompts.js';
 import type { AtomcodeSessionDetail } from '../../server/adapters/atomcode-history.js';
 import type { ZcodeSessionDetail, ZcodeSessionMeta } from '../../server/adapters/zcode-history.js';
 import { controlTokenHeader } from './controlToken.js';
-import { withPair } from './pairToken.js';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -31,8 +30,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   for (const [name, value] of Object.entries(controlTokenHeader())) {
     headers.set(name, value);
   }
-  // P2-02: remote peers present their pairing code as a query param.
-  const response = await fetch(withPair(path), { ...init, headers });
+  // R0: remote authentication is an HttpOnly same-origin cookie. Fetch must
+  // never append bootstrap/session material to the URL or expose it to JS.
+  const response = await fetch(path, { ...init, headers, credentials: 'same-origin' });
   const raw = await response.text();
   const parsed = (raw.length === 0 ? null : (JSON.parse(raw) as unknown)) as
     | T
@@ -233,24 +233,43 @@ export const api = {
     });
   },
 
-  // P2-02: LAN access modes + capability scope.
+  // P2-02/R0: LAN compatibility session management. Management identifiers
+  // are present only on loopback responses; remote responses are filtered.
   net(): Promise<{
     mode: 'local' | 'pair' | 'lan';
-    caps: { remoteApprove: boolean; remotePrompt: boolean; remoteShell: boolean };
-    pairs: Array<{ code: string; expiresAt: number }>;
+    caps: {
+      remoteApprove: boolean;
+      remotePrompt: boolean;
+      remoteShell: boolean;
+      remoteContinue: boolean;
+    };
+    remote: boolean;
+    bootstraps?: Array<{ id: string; expiresAt: number }>;
+    sessions?: Array<{ id: string; createdAt: number; expiresAt: number }>;
   }> {
     return request('/api/net');
   },
 
-  netPair(): Promise<{ code: string }> {
-    return request('/api/net/pair', { method: 'POST' });
+  netBootstrap(): Promise<{ bootstrap: { id: string; code: string; expiresAt: number } }> {
+    return request('/api/net/bootstrap', { method: 'POST' });
   },
 
-  netRevokePair(code: string): Promise<{ success: boolean }> {
-    return request('/api/net/pair/revoke', {
+  netRevokeBootstrap(id: string): Promise<{ success: boolean }> {
+    return request('/api/net/bootstrap/revoke', {
       method: 'POST',
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ id }),
     });
+  },
+
+  netRevokeSession(id: string): Promise<{ success: boolean }> {
+    return request('/api/net/session/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  },
+
+  netLogout(): Promise<{ success: boolean }> {
+    return request('/api/net/session/logout', { method: 'POST' });
   },
 
   netSetCap(key: string, value: boolean): Promise<{ success: boolean; caps: unknown }> {

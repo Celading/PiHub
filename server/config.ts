@@ -94,16 +94,36 @@ export async function loadPihubConfig(): Promise<PihubConfig> {
   }
 }
 
-/** Effective server options: PIHUB_PORT → PORT → config.port → 3001. */
-export function effectiveServerConfig(config: PihubConfig): {
+export const PRODUCTION_DEFAULT_PORT = 18_384;
+export const DEBUG_DEFAULT_PORT = 3_001;
+
+export type ServerRuntimeMode = 'production' | 'debug' | 'demo';
+
+function runtimeModeFromEnvironment(): ServerRuntimeMode {
+  const value = process.env.PIHUB_MODE;
+  return value === 'debug' || value === 'demo' ? value : 'production';
+}
+
+/**
+ * Effective server options:
+ * PIHUB_PORT → PORT → config.port → mode default.
+ *
+ * Production and demo use the installed product port (18384). Port 3001 is
+ * reserved for the explicit debug stack, where Vite owns 18384.
+ */
+export function effectiveServerConfig(
+  config: PihubConfig,
+  runtimeMode: ServerRuntimeMode = runtimeModeFromEnvironment(),
+): {
   port: number;
   host: string;
   url: string;
 } {
   const envPort = process.env.PIHUB_PORT ?? process.env.PORT;
+  const defaultPort = runtimeMode === 'debug' ? DEBUG_DEFAULT_PORT : PRODUCTION_DEFAULT_PORT;
   const port = envPort !== undefined && Number.isFinite(Number(envPort))
     ? Math.floor(Number(envPort))
-    : config.server.port ?? 3001;
+    : config.server.port ?? defaultPort;
   const host = config.server.host ?? '127.0.0.1';
   const url = config.server.url ?? `http://${host}:${String(port)}`;
   return { port, host, url };

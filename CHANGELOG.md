@@ -6,8 +6,17 @@ All notable changes to PiHub are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
 ### Added
 
+- Added a versioned host manifest with persistent random host identity,
+  independent capability grants and explicit session-target receipts.
+- Added bounded event replay for SSE and cursor-based clients, including
+  stream epochs and explicit resynchronization when a cursor is invalid,
+  stale or outside the replay window.
+- Added an independently controlled, default-off capability for continuing a
+  confirmed session from another device.
 - DSH Web discovery, session continuity, streamed events, approvals and model
   catalog support through the local PiHub server.
 - Persistent private workspaces with pre-session Files and Changes views, plus
@@ -15,6 +24,12 @@ All notable changes to PiHub are documented here. The format follows
 - Dedicated Pi runtime settings, capability reporting, terminal result fallback
   and remote-browser pairing/navigation.
 - Standard-input JSON-RPC access to the pipeline runtime through `pihub --mcp`.
+
+### Changed
+
+- Installed production mode now listens on `127.0.0.1:18384` by default.
+  Port `3001` is reserved for the explicit debug backend; environment and
+  configuration-file overrides keep their existing precedence.
 
 ### Fixed
 
@@ -26,8 +41,28 @@ All notable changes to PiHub are documented here. The format follows
 
 ### Security
 
+- Remote state-changing requests now carry and validate the same host,
+  session, stream epoch, revision and grant generation before execution.
+- Capability revocation or re-granting invalidates previously issued action
+  targets, while historical browsing remains available without write access.
 - Updated the transitive `nanoid` dependency to `3.3.18`; production and full
   dependency audits report zero known vulnerabilities.
+- Replaced reusable LAN pairing credentials with a 256-bit one-use bootstrap
+  (maximum 60 seconds) that atomically issues a separate, revocable HttpOnly
+  session cookie (maximum 15 minutes). LAN credentials no longer travel in
+  API or SSE URLs, JavaScript-readable Web Storage, referrers, or renderer
+  logs. The bootstrap appears only once in the local creation response; the
+  session credential is never returned in JSON.
+- Bound established SSE streams to remote-session expiry, logout and local
+  revocation; restored `Cache-Control: no-store` and unified remote-request
+  classification across socket, Host and proxy-marked requests.
+- Removed HTML and navigation responses from Service Worker CacheStorage,
+  rotated the shell cache to evict older token-bearing app shells, and kept
+  offline caching limited to non-HTML static assets.
+- Tightened exact Origin checks, remote capability method/path matching,
+  bootstrap throttling and the exchange JSON body limit. Plain HTTP LAN is
+  documented as compatibility-only/non-E2E, and reverse proxies that hide
+  request identity are not a supported trusted boundary.
 
 ## [0.3.2] - 2026-08-17
 
@@ -93,7 +128,6 @@ All notable changes to PiHub are documented here. The format follows
 - No new external network surface. The panel remains loopback-only by default;
   all new write surfaces are token-gated and demo routes stay 503 in
   non-demo modes.
-
 ## [0.3.0] - 2026-08-12
 
 ### Added
@@ -187,7 +221,7 @@ read-only with workspace containment._
   **Settings → Appearance**. An opt-in Codex `exec` adapter
   (JSONL event stream) is available and never touches a running Codex.
 - **LAN access modes**: optional `PIHUB_NET` mode (`local` default,
-  `pair` / `lan`) with one-time pairing codes (short TTL, revocable) and
+  `pair` / `lan`) with short-lived pairing credentials and
   per-capability switches for remote writes — all remote capabilities are
   **off by default**; loopback access is unchanged.
 - **Session tree visualization**: branch timeline in session details
@@ -211,10 +245,11 @@ read-only with workspace containment._
   per-process control token required on every write route and sensitive read
   route (model config, file preview, session/message state, SSE event
   stream). The SPA receives the token from the served index.html and sends it
-  as `X-PiHub-Token`; EventSource carries it as `?token=`. Token is never
-  persisted or logged.
+  as `X-PiHub-Token`. In 0.3.0, EventSource carried the token as `?token=`;
+  the Unreleased security update replaces that URL transport with a
+  same-origin HttpOnly cookie.
 - **Remote peers need a valid pair**: any non-loopback API request must
-  present a validated pairing code; capability switches gate each remote
+  present a validated LAN credential; capability switches gate each remote
   write class independently (all off by default).
 - **Service worker no longer caches API responses** (`/api/**`), and all API
   responses send `Cache-Control: no-store` — session content, file previews

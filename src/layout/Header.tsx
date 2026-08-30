@@ -19,6 +19,24 @@ function buildBarcode(version: string, build: string): string {
   return segments.map((value) => String.fromCharCode(0x20 + (value % 0x5e))).join('');
 }
 
+/** Frameless-window bridge exposed by the Electron preload (desktop shell). */
+interface PihubWindowBridge {
+  minimize(): void;
+  toggleMaximize(): void;
+  close(): void;
+  isMaximized(): Promise<boolean>;
+  onMaximizedChange(callback: (maximized: boolean) => void): () => void;
+  /** LAN compatibility mode: URL and bootstrap are separate IPC values. */
+  openRemote(url: string, bootstrap?: string): void;
+  takeRemoteBootstrap(): Promise<string | null>;
+}
+
+declare global {
+  interface Window {
+    pihubWindow?: PihubWindowBridge;
+  }
+}
+
 interface HeaderProps {
   theme: Theme;
   onThemeToggle: () => void;

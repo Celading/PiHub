@@ -4,7 +4,11 @@ import { THEMES, type SettingsSectionId, type Theme } from '../types/app.js';
 import { api, type DshSettingsInfo } from '../api/client.js';
 import { DshWebSection } from '../components/DshWebSection.js';
 import { AgentsSection } from '../components/AgentsSection.js';
-import { getPairCode, setPairCode as storePairCode } from '../api/pairToken.js';
+import {
+  exchangeRemoteBootstrap,
+  isRemoteBootstrap,
+  normalizeRemoteUrl,
+} from '../api/remoteSession.js';
 import {
   loadAdapterColors,
   saveAdapterColor,
@@ -260,12 +264,40 @@ export function SettingsPage({
     remoteApprove: false,
     remotePrompt: false,
     remoteShell: false,
+    remoteContinue: false,
   });
-  const [pairCode, setPairCode] = useState<string | null>(null);
-  // P2-02 remote side: the pairing code entered on THIS device (persisted via
-  // pairToken) — unlocks read-only supervision of a remote PiHub host.
-  const [enteredPair, setEnteredPair] = useState<string>(() => getPairCode());
-  const [pairTick, setPairTick] = useState(0);
+  const [issuedBootstrap, setIssuedBootstrap] = useState<{
+    id: string;
+    code: string;
+    expiresAt: number;
+  } | null>(null);
+  const [bootstraps, setBootstraps] = useState<Array<{ id: string; expiresAt: number }>>([]);
+  const [remoteSessions, setRemoteSessions] = useState<
+    Array<{ id: string; createdAt: number; expiresAt: number }>
+  >([]);
+  const [netRemote, setNetRemote] = useState(false);
+  // Remote-side bootstrap input is memory-only; exchange produces an
+  // HttpOnly cookie and never writes browser storage.
+  const [enteredPair, setEnteredPair] = useState('');
+  const [netTick, setNetTick] = useState(0);
+  useEffect(() => {
+    if (issuedBootstrap === null) {
+      return;
+    }
+    const remaining = issuedBootstrap.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setIssuedBootstrap(null);
+      setNetTick((prev) => prev + 1);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setIssuedBootstrap(null);
+      setNetTick((prev) => prev + 1);
+    }, remaining);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [issuedBootstrap]);
   // D2: embedded dsh kernel settings (provider/model surface).
   const [dshInfo, setDshInfo] = useState<DshSettingsInfo | null>(null);
   const [dshEnabled, setDshEnabled] = useState(true);
@@ -314,52 +346,103 @@ export function SettingsPage({
 
   const openRemote = useCallback((): void => {
     const url = remoteUrl.trim();
+    const bootstrap = remotePair.trim();
+    // Credential input is volatile: clear it on every success or validation
+    // failure instead of leaving a rejected value in renderer state.
+    setRemotePair('');
     if (url.length === 0) {
       setRemoteError(t('settings.network.remoteUrlRequired'));
       return;
     }
+    let target: string;
+    try {
+      target = normalizeRemoteUrl(url);
+    } catch {
+      setRemoteError(t('settings.network.remoteUrlInvalid'));
+      return;
+    }
+    if (bootstrap.length > 0 && !isRemoteBootstrap(bootstrap)) {
+      setRemoteError(t('settings.network.bootstrapInvalid'));
+      return;
+    }
+    const bridge = window.pihubWindow;
+    if (bridge === undefined) {
+      if (bootstrap.length > 0) {
+        setRemoteError(t('settings.network.remoteUnavailable'));
+        return;
+      }
+      setRemoteError(null);
+      window.location.assign(target);
+      return;
+    }
     setRemoteError(null);
-    const pair = remotePair.trim();
-    window.location.assign(
-      pair.length > 0 ? `${url}${url.includes('?') ? '&' : '?'}pair=${encodeURIComponent(pair)}` : url,
-    );
+    bridge.openRemote(target, bootstrap.length > 0 ? bootstrap : undefined);
   }, [remoteUrl, remotePair, t]);
 
   const generatePair = useCallback(async (): Promise<void> => {
     setError(null);
     try {
-      const result = await api.netPair();
-      setPairCode(result.code);
+      const result = await api.netBootstrap();
+      setIssuedBootstrap(result.bootstrap);
+      setNetTick((prev) => prev + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
-  const revokePair = useCallback(async (code: string): Promise<void> => {
+  const revokePair = useCallback(async (id: string): Promise<void> => {
     setError(null);
     try {
-      await api.netRevokePair(code);
-      setPairCode(null);
+      await api.netRevokeBootstrap(id);
+      setIssuedBootstrap((current) => (current?.id === id ? null : current));
+      setNetTick((prev) => prev + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
-  const saveEnteredPair = useCallback((): void => {
+  const saveEnteredPair = useCallback(async (): Promise<void> => {
     setError(null);
-    storePairCode(enteredPair);
-    setPairTick((prev) => prev + 1);
+    try {
+      await exchangeRemoteBootstrap(enteredPair);
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEnteredPair('');
+    }
   }, [enteredPair]);
 
   const clearEnteredPair = useCallback((): void => {
     setError(null);
     setEnteredPair('');
-    storePairCode('');
-    setPairTick((prev) => prev + 1);
+  }, []);
+
+  const logoutRemoteSession = useCallback(async (): Promise<void> => {
+    setError(null);
+    try {
+      await api.netLogout();
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const revokeRemoteSession = useCallback(async (id: string): Promise<void> => {
+    setError(null);
+    try {
+      await api.netRevokeSession(id);
+      setNetTick((prev) => prev + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const setCap = useCallback(
-    async (key: 'remoteApprove' | 'remotePrompt' | 'remoteShell', value: boolean): Promise<void> => {
+    async (
+      key: 'remoteApprove' | 'remotePrompt' | 'remoteShell' | 'remoteContinue',
+      value: boolean,
+    ): Promise<void> => {
       setError(null);
       try {
         const result = await api.netSetCap(key, value);
@@ -367,6 +450,7 @@ export function SettingsPage({
           remoteApprove: boolean;
           remotePrompt: boolean;
           remoteShell: boolean;
+          remoteContinue: boolean;
         };
         setCaps(next);
       } catch (err) {
@@ -456,7 +540,7 @@ export function SettingsPage({
     };
   }, []);
 
-  // P2-02: load access-mode state (mode/caps/pairs) once.
+  // P2-02/R0: load filtered network/session state.
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {
@@ -465,8 +549,9 @@ export function SettingsPage({
         if (!cancelled) {
           setNetMode(result.mode);
           setCaps(result.caps);
-          const active = result.pairs.find((pair) => pair.expiresAt > Date.now());
-          setPairCode(active?.code ?? null);
+          setNetRemote(result.remote);
+          setBootstraps(result.bootstraps ?? []);
+          setRemoteSessions(result.sessions ?? []);
         }
       } catch {
         // access mode stays local when the endpoint is unavailable
@@ -476,8 +561,7 @@ export function SettingsPage({
     return () => {
       cancelled = true;
     };
-    // pairTick re-runs the load after the user saves/clears a pairing code.
-  }, [pairTick]);
+  }, [netTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -940,45 +1024,97 @@ export function SettingsPage({
                   </span>
                 </div>
               </div>
-              <div className="setting-row">
-                <span className="setting-label mono">{t('settings.network.pairCode')}</span>
-                <div className="setting-row-value">
-                  {pairCode !== null ? (
-                    <>
-                      <span className="setting-value mono">{pairCode}</span>
+              {!netRemote ? (
+                <>
+                  <div className="setting-row">
+                    <span className="setting-label mono">{t('settings.network.pairCode')}</span>
+                    <div className="setting-row-value">
                       <button
                         type="button"
                         className="btn-primary"
+                        disabled={netMode === 'local'}
+                        title={netMode === 'local' ? t('settings.network.pairDisabled') : undefined}
                         onClick={() => {
-                          void revokePair(pairCode);
+                          void generatePair();
                         }}
                       >
-                        {t('settings.network.revokePair')}
+                        {t('settings.network.generatePair')}
                       </button>
-                    </>
-                  ) : (
+                      {issuedBootstrap !== null ? (
+                        <span className="setting-value mono" title={t('settings.network.bootstrapOnce')}>
+                          {issuedBootstrap.code}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  {bootstraps.map((bootstrap) => (
+                    <div className="setting-row" key={bootstrap.id}>
+                      <span className="setting-label mono">{t('settings.network.bootstrapActive')}</span>
+                      <div className="setting-row-value">
+                        <span className="setting-value mono">
+                          {bootstrap.id.slice(0, 12)} · {new Date(bootstrap.expiresAt).toLocaleTimeString()}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            void revokePair(bootstrap.id);
+                          }}
+                        >
+                          {t('settings.network.revokePair')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {remoteSessions.map((session) => (
+                    <div className="setting-row" key={session.id}>
+                      <span className="setting-label mono">{t('settings.network.session')}</span>
+                      <div className="setting-row-value">
+                        <span className="setting-value mono">
+                          {session.id.slice(0, 12)} · {new Date(session.expiresAt).toLocaleTimeString()}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            void revokeRemoteSession(session.id);
+                          }}
+                        >
+                          {t('settings.network.revokePair')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div className="setting-row">
+                  <span className="setting-label mono">{t('settings.network.session')}</span>
+                  <div className="setting-row-value">
+                    <span className="setting-value mono">{t('settings.network.sessionActive')}</span>
                     <button
                       type="button"
-                      className="btn-primary"
-                      disabled={netMode === 'local'}
-                      title={netMode === 'local' ? t('settings.network.pairDisabled') : undefined}
+                      className="btn-secondary"
                       onClick={() => {
-                        void generatePair();
+                        void logoutRemoteSession();
                       }}
                     >
-                      {t('settings.network.generatePair')}
+                      {t('settings.network.logout')}
                     </button>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )}
+              {!netRemote ? (
+                <>
               <div className="setting-row">
                 <span className="setting-label mono">{t('settings.network.enterPair')}</span>
                 <div className="setting-row-value">
                   <input
-                    type="text"
+                    type="password"
                     className="pair-input mono"
                     placeholder={t('settings.network.pairCode')}
                     value={enteredPair}
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(event) => {
                       setEnteredPair(event.target.value);
                     }}
@@ -987,7 +1123,7 @@ export function SettingsPage({
                     type="button"
                     className="btn-primary"
                     onClick={() => {
-                      saveEnteredPair();
+                      void saveEnteredPair();
                     }}
                   >
                     {t('settings.network.savePair')}
@@ -1017,10 +1153,12 @@ export function SettingsPage({
                     }}
                   />
                   <input
-                    type="text"
+                    type="password"
                     className="pair-input mono"
                     placeholder={t('settings.network.remotePair')}
                     value={remotePair}
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(event) => {
                       setRemotePair(event.target.value);
                     }}
@@ -1048,13 +1186,17 @@ export function SettingsPage({
                     { key: 'remoteApprove', label: t('settings.network.capApprove') },
                     { key: 'remotePrompt', label: t('settings.network.capPrompt') },
                     { key: 'remoteShell', label: t('settings.network.capShell') },
-                  ] as ReadonlyArray<{ key: 'remoteApprove' | 'remotePrompt' | 'remoteShell'; label: string }>
+                    { key: 'remoteContinue', label: t('settings.network.capContinue') },
+                  ] as ReadonlyArray<{
+                    key: 'remoteApprove' | 'remotePrompt' | 'remoteShell' | 'remoteContinue';
+                    label: string;
+                  }>
                 ).map((cap) => (
                   <label key={cap.key} className="network-cap mono">
                     <input
                       type="checkbox"
                       checked={caps[cap.key]}
-                      disabled={netMode === 'local'}
+                      disabled={netMode === 'local' || netRemote}
                       onChange={(event) => {
                         void setCap(cap.key, event.target.checked);
                       }}
@@ -1063,6 +1205,8 @@ export function SettingsPage({
                   </label>
                 ))}
               </div>
+                </>
+              ) : null}
             </section>
           </>
         ) : null}

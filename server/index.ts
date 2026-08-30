@@ -2,7 +2,7 @@
 import express from 'express';
 import path from 'node:path';
 import { RpcBridge } from './rpc-bridge.js';
-import { createRouter } from './routes.js';
+import { createRouter, publishedVersion } from './routes.js';
 import { createFileSessionProvider } from './providers/file-session-provider.js';
 import { createMockSessionProvider } from './providers/mock-session-provider.js';
 import { DemoStateMachine } from './demo/state-machine.js';
@@ -25,7 +25,12 @@ import { seedDemoPipelines } from './demo/demo-pipelines.js';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { createSecurityGate, LanGate, requiresToken } from './security.js';
+import {
+  createJsonBodyMiddleware,
+  createSecurityGate,
+  LanGate,
+  requiresToken,
+} from './security.js';
 import type { AgentMessage, RpcStreamEvent } from '../shared/types.js';
 import { PiAdapter } from './adapters/pi-adapter.js';
 import { listCodexSessions, parseRolloutFile, type CodexSessionDetail } from './adapters/codex-history.js';
@@ -37,6 +42,7 @@ import { createSystemPromptStore } from './system-prompt.js';
 import { buildRuntimeSurface, probeCapabilities } from './capabilities.js';
 import { createWorkspaceSnapshotStore } from './workspace-snapshot.js';
 import { gitStatus, isGitUnavailableError } from './git-status.js';
+import { HostContinuity } from './continuity.js';
 
 // PIHUB_HOME → ~/.pihub (fallback ./itData when no permission); config.toml
 // inside it holds the server options. Env (PIHUB_PORT/PORT) wins over the
@@ -69,34 +75,44 @@ const mode: PanelMode = rawMode === 'debug' || rawMode === 'demo' ? rawMode : 'p
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
 
 // SPRINT-2 A1: local control-plane security gate. Host + Origin checks run
 // for every request; the per-process control token is mandatory in
 // production (injected into the served index.html, read back by the SPA for
-// fetch headers and SSE query params). Demo/debug keep Host/Origin gating
+// fetch headers; SSE uses an HttpOnly control cookie). Demo/debug keep Host/Origin gating
 // but may disable the token via env — demo already has 503 write guards and
 // synthetic data, and the dev tooling (vite origin + curl probes) must keep
 // working.
 const security = createSecurityGate();
 const tokenEnabled = mode === 'production' || process.env.PIHUB_DEV_NO_TOKEN !== '1';
 app.use(security.middleware.bind(security));
-// P2-02: LAN gate runs FIRST — remote peers must present a valid pairing
-// token; once paired, the request is treated as authorized (the pair IS the
-// remote credential). Loopback traffic is untouched.
+// P2-02/R0: LAN gate runs first. Remote peers exchange a one-use bootstrap
+// for an independent HttpOnly cookie session; no LAN credential is accepted
+// from a URL. Loopback traffic is untouched.
 const lanGate = new LanGate();
 app.use(lanGate.middleware.bind(lanGate));
 
 app.use((req, res, next) => {
-  // A validated remote pairing satisfies the token requirement for API
-  // access; loopback still needs the control token.
-  const paired = lanGate.isRemote(req) && typeof req.query['pair'] === 'string';
-  if (tokenEnabled && requiresToken(req) && !paired && !security.isAuthorized(req)) {
+  // A validated remote cookie session satisfies the local-control-token
+  // requirement. The bootstrap exchange is the only tokenless remote write;
+  // its one-use secret is validated atomically by the route itself.
+  const remoteSession = lanGate.isRemote(req) && lanGate.isAuthenticated(req);
+  const remoteExchange = lanGate.isRemote(req) && lanGate.isSessionExchange(req);
+  if (
+    tokenEnabled &&
+    requiresToken(req) &&
+    !remoteSession &&
+    !remoteExchange &&
+    !security.isAuthorized(req)
+  ) {
     res.status(401).json({ error: 'missing or invalid control token' });
     return;
   }
   next();
 });
+// Parse request bodies only after the security gates. The bootstrap exchange
+// uses a narrow limit and fixed, non-reflective parse errors.
+app.use(createJsonBodyMiddleware(lanGate));
 // Sensitive API responses must never be cached (SPRINT-2 A2).
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
@@ -109,6 +125,9 @@ app.use((req, res, next) => {
 const sessions =
   mode === 'demo' ? createMockSessionProvider() : createFileSessionProvider();
 const hub = new SseHub();
+lanGate.onSessionRevoked((sessionId) => {
+  hub.closeRemoteSession(sessionId);
+});
 const bridge = new RpcBridge(PI_EXECUTABLE, AGENT_CWD, { baseArgs: PI_BASE_ARGS });
 
 // P2-01: adapter surface — pi is the primary adapter (wraps the existing
@@ -325,6 +344,18 @@ const demoShowcase = mode === 'demo' ? new DemoShowcase(hub, sessions) : null;
 // never writes PiHub-owned state on this machine; demo seeds show the surface
 // (runs stay read-only via the 503 write guards).
 const pihubHome = await pihubHomePromise;
+const continuity = await HostContinuity.create({
+  home: pihubHome.dir,
+  productVersion: publishedVersion(),
+  ...(process.env.PIHUB_HOST_LABEL === undefined
+    ? {}
+    : { displayLabel: process.env.PIHUB_HOST_LABEL }),
+});
+hub.configureContinuity({
+  hostId: continuity.hostId,
+  streamEpoch: continuity.streamEpoch,
+  targetRef: () => continuity.currentTarget(),
+});
 const workspaceChanges = createWorkspaceSnapshotStore(
   path.join(pihubHome.dir, 'workspace-baselines'),
 );
@@ -470,6 +501,7 @@ app.use(
       url: effectiveConfig.url,
     }),
     lanGate,
+    continuity,
     codexExec:
       codexAdapter === null
         ? null
@@ -788,7 +820,7 @@ app.use(
 // When dist is absent (dev mode), return a JSON hint instead of a 500.
 // The per-process control token is injected into the served HTML (SPRINT-2 A1):
 // the SPA reads window.__PIHUB_TOKEN__ and sends it as X-PiHub-Token on
-// writes / sensitive reads, and as ?token= on the SSE EventSource.
+// writes / sensitive reads. SSE authenticates through an HttpOnly cookie.
 // Published-bin safe dist resolution: the bin (dist-server/server/index.js)
 // sits two levels under the package root, so the frontend build is ALWAYS
 // at <pkg>/dist relative to this file — resolving from process.cwd() broke
@@ -801,6 +833,7 @@ const indexFile = path.join(distDir, 'index.html');
 app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api/')) {
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
   }
   next();
 });
@@ -820,7 +853,11 @@ app.use((req, res, next) => {
     try {
       const { readFile } = await import('node:fs/promises');
       let html = await readFile(indexFile, 'utf8');
-      if (tokenEnabled) {
+      // The per-process local control token is never exposed to a remote
+      // renderer. Local EventSource authentication uses an HttpOnly cookie;
+      // fetch keeps the injected header for backwards compatibility.
+      if (tokenEnabled && !lanGate.isRemote(req)) {
+        res.setHeader('Set-Cookie', security.cookie(req));
         html = html.replace(
           '</head>',
           `<script>window.__PIHUB_TOKEN__=${JSON.stringify(security.token)};</script></head>`,
@@ -840,13 +877,13 @@ app.use(express.static(distDir, { index: false }));
 // Express 5 forwards rejected async handlers here.
 app.use(
   (
-    err: unknown,
+    _err: unknown,
     _req: express.Request,
     res: express.Response,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _next: express.NextFunction,
   ) => {
-    console.error(`[http] ${err instanceof Error ? err.message : String(err)}`);
+    console.error('[http] internal request failure');
     if (!res.headersSent) {
       res.status(500).json({ error: 'internal server error' });
     }
